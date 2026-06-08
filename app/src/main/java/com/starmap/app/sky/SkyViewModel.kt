@@ -1,6 +1,7 @@
 package com.starmap.app.sky
 
 import android.app.Application
+import android.util.Log
 import androidx.compose.runtime.State
 import androidx.compose.runtime.mutableStateOf
 import androidx.lifecycle.AndroidViewModel
@@ -88,10 +89,17 @@ class SkyViewModel(app: Application) : AndroidViewModel(app) {
     val satMessage: State<String?> = _satMessage
 
     init {
+        Log.i(TAG, "SkyViewModel init")
         viewModelScope.launch {
-            constellations = catalogManager.loadConstellations()
-            catalog = catalogManager.loadStars(settings.value.useExtendedCatalog)
-            _loading.value = false
+            try {
+                constellations = catalogManager.loadConstellations()
+                catalog = catalogManager.loadStars(settings.value.useExtendedCatalog)
+                Log.i(TAG, "Catalog loaded: ${catalog?.count ?: 0} stars, ${constellations.size} constellations")
+            } catch (t: Throwable) {
+                Log.e(TAG, "Failed to load catalog", t)
+            } finally {
+                _loading.value = false
+            }
         }
         // Reload the star set whenever the extended-catalog preference flips.
         viewModelScope.launch {
@@ -125,23 +133,27 @@ class SkyViewModel(app: Application) : AndroidViewModel(app) {
             val fix = effectiveLocation.value
             val s = settings.value
             if (cat != null && fix != null) {
-                val sats: List<NamedSat> = when {
-                    issSats.isEmpty() && starlinkSats.isEmpty() -> emptyList()
-                    else -> issSats + starlinkSats
+                try {
+                    val sats: List<NamedSat> = when {
+                        issSats.isEmpty() && starlinkSats.isEmpty() -> emptyList()
+                        else -> issSats + starlinkSats
+                    }
+                    val built = withContext(Dispatchers.Default) {
+                        SkyBuilder.build(
+                            catalog = cat,
+                            constellations = constellations,
+                            fix = fix,
+                            timeMillis = System.currentTimeMillis(),
+                            includeConstellations = s.showConstellations,
+                            includePlanets = s.showPlanets,
+                            satellites = sats,
+                            showBelowHorizon = s.showBelowHorizon,
+                        )
+                    }
+                    _model.value = built
+                } catch (t: Throwable) {
+                    Log.e(TAG, "Sky build failed", t)
                 }
-                val built = withContext(Dispatchers.Default) {
-                    SkyBuilder.build(
-                        catalog = cat,
-                        constellations = constellations,
-                        fix = fix,
-                        timeMillis = System.currentTimeMillis(),
-                        includeConstellations = s.showConstellations,
-                        includePlanets = s.showPlanets,
-                        satellites = sats,
-                        showBelowHorizon = s.showBelowHorizon,
-                    )
-                }
-                _model.value = built
             }
             kotlinx.coroutines.delay(1000)
         }
@@ -265,5 +277,9 @@ class SkyViewModel(app: Application) : AndroidViewModel(app) {
         super.onCleared()
         orientation.stop()
         location.stop()
+    }
+
+    private companion object {
+        const val TAG = "Starmap"
     }
 }

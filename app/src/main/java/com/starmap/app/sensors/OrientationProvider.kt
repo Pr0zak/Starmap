@@ -36,8 +36,15 @@ class OrientationProvider(context: Context) : SensorEventListener {
         context.getSystemService(Context.SENSOR_SERVICE) as SensorManager
     private val rotationSensor: Sensor? =
         sensorManager.getDefaultSensor(Sensor.TYPE_ROTATION_VECTOR)
-    private val display = (context.getSystemService(Context.WINDOW_SERVICE) as WindowManager)
-        .defaultDisplay
+    private val windowManager =
+        context.getSystemService(Context.WINDOW_SERVICE) as WindowManager
+
+    private fun displayRotation(): Int = try {
+        @Suppress("DEPRECATION")
+        windowManager.defaultDisplay?.rotation ?: Surface.ROTATION_0
+    } catch (t: Throwable) {
+        Surface.ROTATION_0
+    }
 
     val hasSensor: Boolean get() = rotationSensor != null
 
@@ -74,7 +81,7 @@ class OrientationProvider(context: Context) : SensorEventListener {
 
         // Account for the display's natural rotation so the canvas axes line up
         // with the device axes regardless of how the panel is mounted.
-        val (axisX, axisY) = when (display?.rotation) {
+        val (axisX, axisY) = when (displayRotation()) {
             Surface.ROTATION_90 -> SensorManager.AXIS_Y to SensorManager.AXIS_MINUS_X
             Surface.ROTATION_180 -> SensorManager.AXIS_MINUS_X to SensorManager.AXIS_MINUS_Y
             Surface.ROTATION_270 -> SensorManager.AXIS_MINUS_Y to SensorManager.AXIS_X
