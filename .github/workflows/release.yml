@@ -2,8 +2,8 @@ name: Release
 
 # Two ways to cut a release:
 #  1. Run this workflow manually (Actions tab) and pick a version bump
-#     (patch/minor/major). It updates version.properties on main, tags it,
-#     builds a signed APK and publishes a GitHub Release.
+#     (none/patch/minor/major). It updates version.properties on the default
+#     branch, tags it, builds a signed APK and publishes a GitHub Release.
 #  2. Push a tag like v1.2.3 yourself — it builds and releases that tag.
 on:
   push:
@@ -14,7 +14,7 @@ on:
         description: Which part of the version to increment
         type: choice
         default: patch
-        options: [ patch, minor, major ]
+        options: [ none, patch, minor, major ]
 
 permissions:
   contents: write
@@ -32,28 +32,31 @@ jobs:
         id: ver
         run: |
           set -e
+          CODE=${{ github.run_number }}
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
             current=$(grep '^VERSION_NAME=' version.properties | cut -d= -f2)
             IFS=. read -r MA MI PA <<< "$current"
             case "${{ github.event.inputs.bump }}" in
               major) MA=$((MA+1)); MI=0; PA=0 ;;
               minor) MI=$((MI+1)); PA=0 ;;
-              *)     PA=$((PA+1)) ;;
+              patch) PA=$((PA+1)) ;;
+              none)  : ;;
             esac
             VERSION="$MA.$MI.$PA"
-            CODE=${{ github.run_number }}
+            BRANCH="${{ github.ref_name }}"
             sed -i "s/^VERSION_NAME=.*/VERSION_NAME=$VERSION/" version.properties
             sed -i "s/^VERSION_CODE=.*/VERSION_CODE=$CODE/" version.properties
             git config user.name "github-actions[bot]"
             git config user.email "github-actions[bot]@users.noreply.github.com"
             git add version.properties
-            git commit -m "chore: release v$VERSION"
-            git push origin HEAD:main
+            git commit -m "chore: release v$VERSION" || echo "nothing to commit"
+            git push origin "HEAD:$BRANCH"
             echo "tag=v$VERSION" >> "$GITHUB_OUTPUT"
+            echo "target=$BRANCH" >> "$GITHUB_OUTPUT"
           else
             VERSION="${GITHUB_REF_NAME#v}"
-            CODE=${{ github.run_number }}
             echo "tag=${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
+            echo "target=" >> "$GITHUB_OUTPUT"
           fi
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
           echo "code=$CODE" >> "$GITHUB_OUTPUT"
@@ -93,7 +96,7 @@ jobs:
         with:
           tag_name: ${{ steps.ver.outputs.tag }}
           name: Starmap ${{ steps.ver.outputs.version }}
-          target_commitish: main
+          target_commitish: ${{ steps.ver.outputs.target }}
           generate_release_notes: true
           files: |
             dist/Starmap-${{ steps.ver.outputs.version }}.apk
