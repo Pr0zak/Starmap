@@ -36,12 +36,19 @@ jobs:
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
 
-      - name: Build debug APK and run unit tests
-        run: ./gradlew --no-daemon assembleDebug testDebugUnitTest lintDebug
+      - name: Build debug + release APKs and run unit tests
+        run: ./gradlew --no-daemon assembleDebug assembleRelease testDebugUnitTest lintDebug
 
       - name: Upload debug APK
         uses: actions/upload-artifact@v4
         with:
           name: starmap-debug-apk
           path: app/build/outputs/apk/debug/*.apk
+          if-no-files-found: warn
+
+      - name: Upload release APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: starmap-release-apk
+          path: app/build/outputs/apk/release/*.apk
           if-no-files-found: warn
