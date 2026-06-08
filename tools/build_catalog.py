@@ -129,8 +129,11 @@ def main():
     print(f"stars.json: {len(bundled['ra'])} stars, {len(bundled['labels'])} labels")
 
     extended = load_stars(EXTENDED_MAG)
-    with open(os.path.join(CATALOG, "stars_ext.json"), "w") as f:
-        json.dump(extended, f, separators=(",", ":"), ensure_ascii=False)
+    # The extended catalog is bundled in the APK (assets/) and also kept under
+    # catalog/ for release attachments.
+    for out_dir in (ASSETS, CATALOG):
+        with open(os.path.join(out_dir, "stars_ext.json"), "w") as f:
+            json.dump(extended, f, separators=(",", ":"), ensure_ascii=False)
     print(f"stars_ext.json: {len(extended['ra'])} stars, {len(extended['labels'])} labels")
 
     cons = build_constellations()

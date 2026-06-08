@@ -70,15 +70,6 @@ class SkyViewModel(app: Application) : AndroidViewModel(app) {
     private val _updateDownload = mutableStateOf<ApkUpdater.State>(ApkUpdater.State.Idle)
     val updateDownload: State<ApkUpdater.State> = _updateDownload
 
-    private val _downloadState = mutableStateOf<CatalogManager.DownloadState>(
-        if (catalogManager.isExtendedDownloaded) {
-            CatalogManager.DownloadState.Done(catalogManager.extendedSizeBytes)
-        } else {
-            CatalogManager.DownloadState.Idle
-        },
-    )
-    val downloadState: State<CatalogManager.DownloadState> = _downloadState
-
     private val _issBusy = mutableStateOf(false)
     val issBusy: State<Boolean> = _issBusy
     private val _starlinkBusy = mutableStateOf(false)
@@ -206,27 +197,6 @@ class SkyViewModel(app: Application) : AndroidViewModel(app) {
 
     fun resetUpdateDownload() {
         _updateDownload.value = ApkUpdater.State.Idle
-    }
-
-    // --- Offline catalog downloads ---
-    fun downloadExtendedCatalog() {
-        if (_downloadState.value is CatalogManager.DownloadState.InProgress) return
-        _downloadState.value = CatalogManager.DownloadState.InProgress(0f)
-        viewModelScope.launch {
-            val result = catalogManager.downloadExtended { fraction ->
-                _downloadState.value = CatalogManager.DownloadState.InProgress(fraction)
-            }
-            _downloadState.value = result
-            if (result is CatalogManager.DownloadState.Done && settings.value.useExtendedCatalog) {
-                catalog = catalogManager.loadStars(true)
-            }
-        }
-    }
-
-    fun deleteExtendedCatalog() {
-        catalogManager.deleteExtended()
-        _downloadState.value = CatalogManager.DownloadState.Idle
-        viewModelScope.launch { catalog = catalogManager.loadStars(false) }
     }
 
     // --- Satellite (TLE) downloads ---

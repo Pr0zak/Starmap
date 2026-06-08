@@ -112,12 +112,10 @@ fun SettingsScreen(viewModel: SkyViewModel, settings: Settings, onBack: () -> Un
             }
 
             SectionHeader("Catalog")
-            val downloaded = viewModel.catalogManager.isExtendedDownloaded
             SettingSwitch(
-                "Use extended catalog",
-                if (downloaded) "Loads the downloaded extended star set" else "Download it first in Offline downloads",
+                "Extended star catalog",
+                "≈41,000 stars to magnitude 8 (built in). Turn off for a lighter naked-eye sky.",
                 checked = settings.useExtendedCatalog,
-                enabled = downloaded,
             ) {
                 viewModel.setBool(BoolSetting.ExtendedCatalog, it)
             }
