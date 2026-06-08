@@ -14,23 +14,34 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.starmap.app.BuildConfig
 import com.starmap.app.sky.SkyViewModel
 import com.starmap.app.update.ApkUpdater
+import com.starmap.app.update.DiagPrefs
+import com.starmap.app.update.LogUploader
 import com.starmap.app.update.UpdateChecker
+import kotlinx.coroutines.launch
+import java.io.File
 
 @Composable
 fun AboutScreen(viewModel: SkyViewModel, onBack: () -> Unit) {
     val context = LocalContext.current
+    val scope = rememberCoroutineScope()
     val checking by viewModel.checkingUpdate
     val result by viewModel.updateResult
 
@@ -77,6 +88,49 @@ fun AboutScreen(viewModel: SkyViewModel, onBack: () -> Unit) {
                         OutlinedButton(onClick = { viewModel.checkForUpdates() }) {
                             Text("Check for updates")
                         }
+                    }
+                }
+            }
+
+            Spacer(Modifier.height(20.dp))
+            Card(modifier = Modifier.fillMaxWidth()) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Text("Diagnostics", fontWeight = FontWeight.SemiBold, fontSize = 17.sp)
+                    Text(
+                        "Optional: paste a GitHub token with the 'gist' scope to upload reports " +
+                            "as a secret Gist. Stored only on this device; leave blank to use an " +
+                            "anonymous paste link instead.",
+                        fontSize = 12.sp,
+                        modifier = Modifier.padding(top = 4.dp, bottom = 8.dp),
+                    )
+                    var token by remember { mutableStateOf(DiagPrefs.getToken(context)) }
+                    OutlinedTextField(
+                        value = token,
+                        onValueChange = { token = it; DiagPrefs.setToken(context, it) },
+                        label = { Text("GitHub token (gist scope)") },
+                        singleLine = true,
+                        visualTransformation = PasswordVisualTransformation(),
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                    var diagStatus by remember { mutableStateOf<String?>(null) }
+                    Spacer(Modifier.height(8.dp))
+                    OutlinedButton(onClick = {
+                        scope.launch {
+                            diagStatus = "Uploading…"
+                            val crash = File(context.filesDir, "last_crash.txt")
+                            val text = if (crash.exists()) {
+                                crash.readText()
+                            } else {
+                                "Starmap diagnostics — no crash on record.\n" +
+                                    "Version ${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})"
+                            }
+                            LogUploader.upload(context, text)
+                                .onSuccess { diagStatus = "Uploaded (copy this link): $it" }
+                                .onFailure { diagStatus = "Failed: ${it.message}" }
+                        }
+                    }) { Text("Upload diagnostics") }
+                    diagStatus?.let {
+                        Text(it, fontSize = 12.sp, modifier = Modifier.padding(top = 8.dp))
                     }
                 }
             }

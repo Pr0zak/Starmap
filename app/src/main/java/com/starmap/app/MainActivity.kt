@@ -6,11 +6,13 @@ import android.content.Context
 import android.graphics.Color
 import android.graphics.Typeface
 import android.os.Bundle
+import android.text.InputType
 import android.util.Log
 import android.view.Gravity
 import android.view.ViewGroup
 import android.view.WindowManager
 import android.widget.Button
+import android.widget.EditText
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
@@ -25,6 +27,7 @@ import androidx.compose.ui.Modifier
 import androidx.lifecycle.lifecycleScope
 import com.starmap.app.ui.MainScreen
 import com.starmap.app.ui.theme.StarmapTheme
+import com.starmap.app.update.DiagPrefs
 import com.starmap.app.update.LogUploader
 import kotlinx.coroutines.launch
 import java.io.File
@@ -95,33 +98,47 @@ class MainActivity : ComponentActivity() {
             visibility = TextView.GONE
         }
 
-        val buttons = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
-        buttons.addView(Button(this).apply {
-            text = "Copy"
-            setOnClickListener { copyToClipboard(report); toast("Copied") }
-        })
-        buttons.addView(Button(this).apply {
-            text = "Upload link"
-            setOnClickListener {
-                status.visibility = TextView.VISIBLE
-                status.text = "Uploading…"
-                isEnabled = false
-                lifecycleScope.launch {
-                    LogUploader.upload(report)
-                        .onSuccess {
-                            status.text = "Shareable link (copied): $it"
-                            copyToClipboard(it)
-                            toast("Link copied")
-                        }
-                        .onFailure { status.text = "Upload failed: ${it.message}. Use Copy instead." }
-                    isEnabled = true
-                }
+        val tokenField = EditText(this).apply {
+            hint = "GitHub token (optional — paste to upload as a private Gist)"
+            setText(DiagPrefs.getToken(this@MainActivity))
+            setTextColor(Color.WHITE)
+            setHintTextColor(0xFF888888.toInt())
+            textSize = 12f
+            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
+        }
+        root.addView(tokenField)
+
+        val copyBtn = Button(this)
+        copyBtn.text = "Copy"
+        copyBtn.setOnClickListener { copyToClipboard(report); toast("Copied") }
+
+        val uploadBtn = Button(this)
+        uploadBtn.text = "Upload link"
+        uploadBtn.setOnClickListener {
+            DiagPrefs.setToken(this, tokenField.text.toString())
+            status.visibility = TextView.VISIBLE
+            status.text = if (tokenField.text.isNotBlank()) "Uploading to Gist…" else "Uploading…"
+            uploadBtn.isEnabled = false
+            lifecycleScope.launch {
+                LogUploader.upload(this@MainActivity, report)
+                    .onSuccess {
+                        status.text = "Link (copied): $it"
+                        copyToClipboard(it)
+                        toast("Link copied")
+                    }
+                    .onFailure { status.text = "Upload failed: ${it.message}. Use Copy instead." }
+                uploadBtn.isEnabled = true
             }
-        })
-        buttons.addView(Button(this).apply {
-            text = "Retry"
-            setOnClickListener { crashFile.delete(); recreate() }
-        })
+        }
+
+        val retryBtn = Button(this)
+        retryBtn.text = "Retry"
+        retryBtn.setOnClickListener { crashFile.delete(); recreate() }
+
+        val buttons = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+        buttons.addView(copyBtn)
+        buttons.addView(uploadBtn)
+        buttons.addView(retryBtn)
         root.addView(buttons)
         root.addView(status)
 
