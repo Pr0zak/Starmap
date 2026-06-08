@@ -20,10 +20,13 @@ data class Settings(
     val showConstellations: Boolean = true,
     val showConstellationNames: Boolean = true,
     val showHorizon: Boolean = true,
-    val showGround: Boolean = true,
     val showCardinals: Boolean = true,
     val showSun: Boolean = true,
     val showMoon: Boolean = true,
+    val showPlanets: Boolean = true,
+    val showIss: Boolean = true,
+    val showStarlink: Boolean = false,
+    val showBelowHorizon: Boolean = false,
     val nightMode: Boolean = false,
     val useExtendedCatalog: Boolean = false,
     val autoCheckUpdates: Boolean = true,
@@ -44,10 +47,13 @@ class SettingsRepository(private val context: Context) {
         val showConstellations = booleanPreferencesKey("show_constellations")
         val showConstellationNames = booleanPreferencesKey("show_constellation_names")
         val showHorizon = booleanPreferencesKey("show_horizon")
-        val showGround = booleanPreferencesKey("show_ground")
         val showCardinals = booleanPreferencesKey("show_cardinals")
         val showSun = booleanPreferencesKey("show_sun")
         val showMoon = booleanPreferencesKey("show_moon")
+        val showPlanets = booleanPreferencesKey("show_planets")
+        val showIss = booleanPreferencesKey("show_iss")
+        val showStarlink = booleanPreferencesKey("show_starlink")
+        val showBelowHorizon = booleanPreferencesKey("show_below_horizon")
         val nightMode = booleanPreferencesKey("night_mode")
         val useExtendedCatalog = booleanPreferencesKey("use_extended_catalog")
         val autoCheckUpdates = booleanPreferencesKey("auto_check_updates")
@@ -65,10 +71,13 @@ class SettingsRepository(private val context: Context) {
             showConstellations = p[Keys.showConstellations] ?: true,
             showConstellationNames = p[Keys.showConstellationNames] ?: true,
             showHorizon = p[Keys.showHorizon] ?: true,
-            showGround = p[Keys.showGround] ?: true,
             showCardinals = p[Keys.showCardinals] ?: true,
             showSun = p[Keys.showSun] ?: true,
             showMoon = p[Keys.showMoon] ?: true,
+            showPlanets = p[Keys.showPlanets] ?: true,
+            showIss = p[Keys.showIss] ?: true,
+            showStarlink = p[Keys.showStarlink] ?: false,
+            showBelowHorizon = p[Keys.showBelowHorizon] ?: false,
             nightMode = p[Keys.nightMode] ?: false,
             useExtendedCatalog = p[Keys.useExtendedCatalog] ?: false,
             autoCheckUpdates = p[Keys.autoCheckUpdates] ?: true,
@@ -102,10 +111,13 @@ class SettingsRepository(private val context: Context) {
         Constellations(Keys.showConstellations),
         ConstellationNames(Keys.showConstellationNames),
         Horizon(Keys.showHorizon),
-        Ground(Keys.showGround),
         Cardinals(Keys.showCardinals),
         Sun(Keys.showSun),
         Moon(Keys.showMoon),
+        Planets(Keys.showPlanets),
+        Iss(Keys.showIss),
+        Starlink(Keys.showStarlink),
+        BelowHorizon(Keys.showBelowHorizon),
         NightMode(Keys.nightMode),
         ExtendedCatalog(Keys.useExtendedCatalog),
         AutoCheckUpdates(Keys.autoCheckUpdates),

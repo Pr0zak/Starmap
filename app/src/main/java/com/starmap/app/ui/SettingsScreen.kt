@@ -56,7 +56,7 @@ fun SettingsScreen(viewModel: SkyViewModel, settings: Settings, onBack: () -> Un
                 onChange = { viewModel.setFloat(FloatSetting.Fov, it) },
             )
 
-            SectionHeader("Overlays")
+            SectionHeader("Show in the sky")
             SettingSwitch("Star labels", checked = settings.showStarLabels) {
                 viewModel.setBool(BoolSetting.StarLabels, it)
             }
@@ -67,22 +67,43 @@ fun SettingsScreen(viewModel: SkyViewModel, settings: Settings, onBack: () -> Un
                 enabled = settings.showConstellations) {
                 viewModel.setBool(BoolSetting.ConstellationNames, it)
             }
+            SettingSwitch("Planets", "Mercury through Neptune", checked = settings.showPlanets) {
+                viewModel.setBool(BoolSetting.Planets, it)
+            }
+            SettingSwitch("Sun", checked = settings.showSun) {
+                viewModel.setBool(BoolSetting.Sun, it)
+            }
+            SettingSwitch("Moon", checked = settings.showMoon) {
+                viewModel.setBool(BoolSetting.Moon, it)
+            }
+
+            SectionHeader("Horizon & compass")
             SettingSwitch("Horizon line", checked = settings.showHorizon) {
                 viewModel.setBool(BoolSetting.Horizon, it)
             }
-            SettingSwitch("Hide objects below horizon", "Treats the ground as opaque",
-                checked = settings.showGround) {
-                viewModel.setBool(BoolSetting.Ground, it)
-            }
-            SettingSwitch("Compass directions", checked = settings.showCardinals) {
+            SettingSwitch("Compass directions", "N/E/S/W markers", checked = settings.showCardinals) {
                 viewModel.setBool(BoolSetting.Cardinals, it)
             }
-            SettingSwitch("Show Sun", checked = settings.showSun) {
-                viewModel.setBool(BoolSetting.Sun, it)
+            SettingSwitch("Show objects below the horizon", "Draw things beneath the ground too",
+                checked = settings.showBelowHorizon) {
+                viewModel.setBool(BoolSetting.BelowHorizon, it)
             }
-            SettingSwitch("Show Moon", checked = settings.showMoon) {
-                viewModel.setBool(BoolSetting.Moon, it)
-            }
+
+            SectionHeader("Satellites")
+            val issReady = viewModel.satelliteManager.isIssDownloaded
+            val starlinkReady = viewModel.satelliteManager.isStarlinkDownloaded
+            SettingSwitch(
+                "Space Station (ISS)",
+                if (issReady) "Show the ISS when it passes over" else "Download ISS data in Offline downloads",
+                checked = settings.showIss,
+                enabled = issReady,
+            ) { viewModel.setBool(BoolSetting.Iss, it) }
+            SettingSwitch(
+                "Starlink satellites",
+                if (starlinkReady) "Show the Starlink fleet" else "Download Starlink data in Offline downloads",
+                checked = settings.showStarlink,
+                enabled = starlinkReady,
+            ) { viewModel.setBool(BoolSetting.Starlink, it) }
 
             SectionHeader("Display")
             SettingSwitch("Night mode (red)", "Preserves dark adaptation",

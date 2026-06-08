@@ -3,14 +3,20 @@ package com.starmap.app.sky
 import android.hardware.GeomagneticField
 import com.starmap.app.astro.AstroMath
 import com.starmap.app.astro.Constellation
+import com.starmap.app.astro.Planets
+import com.starmap.app.astro.Satellites
 import com.starmap.app.astro.StarCatalog
 import com.starmap.app.astro.SunMoon
+import com.starmap.app.satellite.NamedSat
 import com.starmap.app.sensors.LocationProvider
+import kotlin.math.sqrt
 
 /** A celestial object reduced to a true-north ENU unit vector ready for projection. */
 class BodyEnu(val enu: FloatArray, val label: String)
 
 class MoonEnu(val enu: FloatArray, val illuminatedFraction: Float, val waxing: Boolean, val label: String)
+
+class PlanetEnu(val name: String, val enu: FloatArray, val colorArgb: Long, val sizeDp: Float)
 
 class ConstellationEnu(
     val name: String,
@@ -30,12 +36,19 @@ class SkyModel(
     val starCi: FloatArray,
     val labels: Map<Int, String>,
     val constellations: List<ConstellationEnu>,
+    val planets: List<PlanetEnu>,
     val sun: BodyEnu?,
     val moon: MoonEnu?,
+    /** count*3 ENU vectors for visible satellites. */
+    val satEnu: FloatArray,
+    val satNames: List<String>,
+    val satIsIss: BooleanArray,
     val declinationDeg: Float,
     val location: LocationProvider.Fix,
     val timeMillis: Long,
-)
+) {
+    val satCount: Int get() = satNames.size
+}
 
 object SkyBuilder {
 
@@ -45,6 +58,9 @@ object SkyBuilder {
         fix: LocationProvider.Fix,
         timeMillis: Long,
         includeConstellations: Boolean,
+        includePlanets: Boolean,
+        satellites: List<NamedSat>,
+        showBelowHorizon: Boolean,
     ): SkyModel {
         val jd = AstroMath.julianDay(timeMillis)
         val lst = AstroMath.lstDegrees(jd, fix.longitude)
@@ -75,6 +91,15 @@ object SkyBuilder {
             phase.waxing,
             "Moon",
         )
+
+        val planets = if (includePlanets) {
+            Planets.positions(jd).map { p ->
+                val v = AstroMath.equatorialToVec(p.raDeg, p.decDeg)
+                PlanetEnu(p.name, toEnu(v, basis), p.colorArgb, p.sizeDp)
+            }
+        } else {
+            emptyList()
+        }
 
         val cons = if (includeConstellations) {
             constellations.map { c ->
@@ -108,6 +133,31 @@ object SkyBuilder {
             emptyList()
         }
 
+        // Satellites: propagate each TLE and convert to a local ENU direction.
+        val satCoords = ArrayList<Float>()
+        val satNames = ArrayList<String>()
+        val satIss = ArrayList<Boolean>()
+        if (satellites.isNotEmpty()) {
+            val gmstRad = Math.toRadians(AstroMath.gmstDegrees(jd))
+            val obsEcef = Satellites.observerEcef(fix.latitude, fix.longitude, fix.altitude)
+            for (sat in satellites) {
+                val tsince = (jd - sat.sgp4.tle.jdEpoch) * 1440.0
+                val teme = sat.sgp4.positionTeme(tsince) ?: continue
+                val enu = Satellites.lookEnu(teme, obsEcef, gmstRad, fix.latitude, fix.longitude)
+                val e = enu[0]; val north = enu[1]; val up = enu[2]
+                if (!showBelowHorizon && up < 0.0) continue
+                val range = sqrt(e * e + north * north + up * up)
+                if (range <= 0.0) continue
+                satCoords.add((e / range).toFloat())
+                satCoords.add((north / range).toFloat())
+                satCoords.add((up / range).toFloat())
+                satNames.add(sat.name)
+                satIss.add(sat.isIss)
+            }
+        }
+        val satEnu = FloatArray(satCoords.size) { satCoords[it] }
+        val satIsIss = BooleanArray(satIss.size) { satIss[it] }
+
         val declination = GeomagneticField(
             fix.latitude.toFloat(),
             fix.longitude.toFloat(),
@@ -117,7 +167,8 @@ object SkyBuilder {
 
         return SkyModel(
             n, starEnu, catalog.mag, catalog.ci, catalog.labels,
-            cons, sun, moon, declination, fix, timeMillis,
+            cons, planets, sun, moon, satEnu, satNames, satIsIss,
+            declination, fix, timeMillis,
         )
     }
 

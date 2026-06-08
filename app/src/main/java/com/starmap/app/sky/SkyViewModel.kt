@@ -9,6 +9,8 @@ import com.starmap.app.BuildConfig
 import com.starmap.app.astro.Constellation
 import com.starmap.app.astro.StarCatalog
 import com.starmap.app.catalog.CatalogManager
+import com.starmap.app.satellite.NamedSat
+import com.starmap.app.satellite.SatelliteManager
 import com.starmap.app.sensors.LocationProvider
 import com.starmap.app.sensors.OrientationProvider
 import com.starmap.app.settings.Settings
@@ -32,6 +34,7 @@ class SkyViewModel(app: Application) : AndroidViewModel(app) {
     private val location = LocationProvider(app)
     private val settingsRepo = SettingsRepository(app)
     val catalogManager = CatalogManager(app)
+    val satelliteManager = SatelliteManager(app)
 
     val settings: StateFlow<Settings> =
         settingsRepo.settings.stateIn(viewModelScope, SharingStarted.Eagerly, Settings())
@@ -48,6 +51,8 @@ class SkyViewModel(app: Application) : AndroidViewModel(app) {
 
     private var catalog: StarCatalog? = null
     private var constellations: List<Constellation> = emptyList()
+    private var issSats: List<NamedSat> = emptyList()
+    private var starlinkSats: List<NamedSat> = emptyList()
 
     private val _model = mutableStateOf<SkyModel?>(null)
     val model: State<SkyModel?> = _model
@@ -73,6 +78,15 @@ class SkyViewModel(app: Application) : AndroidViewModel(app) {
     )
     val downloadState: State<CatalogManager.DownloadState> = _downloadState
 
+    private val _issBusy = mutableStateOf(false)
+    val issBusy: State<Boolean> = _issBusy
+    private val _starlinkBusy = mutableStateOf(false)
+    val starlinkBusy: State<Boolean> = _starlinkBusy
+    private val _starlinkProgress = mutableStateOf(0f)
+    val starlinkProgress: State<Float> = _starlinkProgress
+    private val _satMessage = mutableStateOf<String?>(null)
+    val satMessage: State<String?> = _satMessage
+
     init {
         viewModelScope.launch {
             constellations = catalogManager.loadConstellations()
@@ -85,6 +99,18 @@ class SkyViewModel(app: Application) : AndroidViewModel(app) {
                 .collect { useExtended ->
                     catalog = catalogManager.loadStars(useExtended)
                 }
+        }
+        // Load satellite elements lazily, only while their layer is enabled.
+        viewModelScope.launch {
+            settingsRepo.settings.map { it.showIss }.distinctUntilChanged().collect { on ->
+                issSats = if (on && satelliteManager.isIssDownloaded) satelliteManager.loadIss() else emptyList()
+            }
+        }
+        viewModelScope.launch {
+            settingsRepo.settings.map { it.showStarlink }.distinctUntilChanged().collect { on ->
+                starlinkSats =
+                    if (on && satelliteManager.isStarlinkDownloaded) satelliteManager.loadStarlink() else emptyList()
+            }
         }
         // Auto-check for updates once on launch if enabled.
         viewModelScope.launch {
@@ -99,6 +125,10 @@ class SkyViewModel(app: Application) : AndroidViewModel(app) {
             val fix = effectiveLocation.value
             val s = settings.value
             if (cat != null && fix != null) {
+                val sats: List<NamedSat> = when {
+                    issSats.isEmpty() && starlinkSats.isEmpty() -> emptyList()
+                    else -> issSats + starlinkSats
+                }
                 val built = withContext(Dispatchers.Default) {
                     SkyBuilder.build(
                         catalog = cat,
@@ -106,6 +136,9 @@ class SkyViewModel(app: Application) : AndroidViewModel(app) {
                         fix = fix,
                         timeMillis = System.currentTimeMillis(),
                         includeConstellations = s.showConstellations,
+                        includePlanets = s.showPlanets,
+                        satellites = sats,
+                        showBelowHorizon = s.showBelowHorizon,
                     )
                 }
                 _model.value = built
@@ -182,6 +215,50 @@ class SkyViewModel(app: Application) : AndroidViewModel(app) {
         catalogManager.deleteExtended()
         _downloadState.value = CatalogManager.DownloadState.Idle
         viewModelScope.launch { catalog = catalogManager.loadStars(false) }
+    }
+
+    // --- Satellite (TLE) downloads ---
+    fun downloadIss() {
+        if (_issBusy.value) return
+        _issBusy.value = true
+        viewModelScope.launch {
+            when (val r = satelliteManager.downloadIss()) {
+                is SatelliteManager.Result.Ok -> {
+                    _satMessage.value = "ISS elements updated"
+                    if (settings.value.showIss) issSats = satelliteManager.loadIss()
+                }
+                is SatelliteManager.Result.Failed -> _satMessage.value = "ISS: ${r.message}"
+            }
+            _issBusy.value = false
+        }
+    }
+
+    fun downloadStarlink() {
+        if (_starlinkBusy.value) return
+        _starlinkBusy.value = true
+        _starlinkProgress.value = 0f
+        viewModelScope.launch {
+            when (val r = satelliteManager.downloadStarlink { _starlinkProgress.value = it }) {
+                is SatelliteManager.Result.Ok -> {
+                    _satMessage.value = "Starlink: ${r.count} satellites"
+                    if (settings.value.showStarlink) starlinkSats = satelliteManager.loadStarlink()
+                }
+                is SatelliteManager.Result.Failed -> _satMessage.value = "Starlink: ${r.message}"
+            }
+            _starlinkBusy.value = false
+        }
+    }
+
+    fun deleteIss() {
+        satelliteManager.deleteIss()
+        issSats = emptyList()
+        _satMessage.value = null
+    }
+
+    fun deleteStarlink() {
+        satelliteManager.deleteStarlink()
+        starlinkSats = emptyList()
+        _satMessage.value = null
     }
 
     override fun onCleared() {

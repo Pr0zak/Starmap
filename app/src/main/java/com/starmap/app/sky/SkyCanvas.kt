@@ -127,7 +127,7 @@ fun SkyCanvas(viewModel: SkyViewModel, settings: Settings, modifier: Modifier = 
                 conPaint.textSize = 12f * density
                 conPaint.color = (if (night) Color(0xAA993333) else Color(0xAA7090C0)).toArgb()
                 for (con in m.constellations) {
-                    if (settings.showGround && con.labelEnu[2] < 0f) continue
+                    if (!settings.showBelowHorizon && con.labelEnu[2] < 0f) continue
                     if (project(con.labelEnu, p)) {
                         drawContext.canvas.nativeCanvas.drawText(con.name, p[0], p[1], conPaint)
                     }
@@ -144,7 +144,7 @@ fun SkyCanvas(viewModel: SkyViewModel, settings: Settings, modifier: Modifier = 
             if (mag > magLimit) continue
             val base = i * 3
             val vz = m.starEnu[base + 2]
-            if (settings.showGround && vz < 0f) continue
+            if (!settings.showBelowHorizon && vz < 0f) continue
             val vx = m.starEnu[base]; val vy = m.starEnu[base + 1]
             val depth = vx * look[0] + vy * look[1] + vz * look[2]
             if (depth < MIN_DEPTH) continue
@@ -167,9 +167,26 @@ fun SkyCanvas(viewModel: SkyViewModel, settings: Settings, modifier: Modifier = 
             }
         }
 
+        // --- Planets ---
+        if (settings.showPlanets) {
+            bodyPaint.textSize = 13f * density
+            for (pl in m.planets) {
+                if (!settings.showBelowHorizon && pl.enu[2] < 0f) continue
+                if (project(pl.enu, p)) {
+                    val color = if (night) Color(1f, 0.3f, 0.25f) else Color(pl.colorArgb)
+                    val r = pl.sizeDp * density
+                    drawCircle(color, r, androidx.compose.ui.geometry.Offset(p[0], p[1]))
+                    bodyPaint.color = (if (night) Color(0xCCBB4444) else Color(0xFFE8E8F0)).toArgb()
+                    drawContext.canvas.nativeCanvas.drawText(
+                        pl.name, p[0] + r + 3f * density, p[1] + 4f * density, bodyPaint,
+                    )
+                }
+            }
+        }
+
         // --- Sun ---
         if (settings.showSun) m.sun?.let { sun ->
-            if (!(settings.showGround && sun.enu[2] < 0f) && project(sun.enu, p)) {
+            if (!(!settings.showBelowHorizon && sun.enu[2] < 0f) && project(sun.enu, p)) {
                 val r = 9f * density
                 if (!night) {
                     drawCircle(Color(0x33FFD060), r * 3.2f, androidx.compose.ui.geometry.Offset(p[0], p[1]))
@@ -186,12 +203,38 @@ fun SkyCanvas(viewModel: SkyViewModel, settings: Settings, modifier: Modifier = 
 
         // --- Moon (with phase) ---
         if (settings.showMoon) m.moon?.let { moon ->
-            if (!(settings.showGround && moon.enu[2] < 0f) && project(moon.enu, p)) {
+            if (!(!settings.showBelowHorizon && moon.enu[2] < 0f) && project(moon.enu, p)) {
                 val r = 8f * density
                 drawMoon(p[0], p[1], r, moon, sunScreen = m.sun?.let { if (project(it.enu, q)) q else null }, night)
                 bodyPaint.textSize = 14f * density
                 bodyPaint.color = (if (night) Color(0xFFAA4444) else Color(0xFFE8E8F0)).toArgb()
                 drawContext.canvas.nativeCanvas.drawText("Moon", p[0] + r + 4f * density, p[1], bodyPaint)
+            }
+        }
+
+        // --- Satellites (ISS labelled, Starlink as faint dots) ---
+        if (m.satCount > 0) {
+            val issColor = if (night) Color(0xFFCC6666) else Color(0xFF66FFCC)
+            val slColor = if (night) Color(0x88AA5555) else Color(0x99B0C4FF)
+            bodyPaint.textSize = 12f * density
+            for (i in 0 until m.satCount) {
+                val base = i * 3
+                val vx = m.satEnu[base]; val vy = m.satEnu[base + 1]; val vz = m.satEnu[base + 2]
+                val depth = vx * look[0] + vy * look[1] + vz * look[2]
+                if (depth < MIN_DEPTH) continue
+                val sx = cx + ((vx * right[0] + vy * right[1] + vz * right[2]) / depth) * focal
+                if (sx < -margin || sx > size.width + margin) continue
+                val sy = cy - ((vx * up[0] + vy * up[1] + vz * up[2]) / depth) * focal
+                if (sy < -margin || sy > size.height + margin) continue
+                if (m.satIsIss[i]) {
+                    drawCircle(issColor, 4f * density, androidx.compose.ui.geometry.Offset(sx, sy))
+                    bodyPaint.color = issColor.toArgb()
+                    drawContext.canvas.nativeCanvas.drawText(
+                        m.satNames[i].take(16), sx + 6f * density, sy + 4f * density, bodyPaint,
+                    )
+                } else {
+                    drawCircle(slColor, 1.6f * density, androidx.compose.ui.geometry.Offset(sx, sy))
+                }
             }
         }
 
