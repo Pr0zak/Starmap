@@ -1,0 +1,100 @@
+name: Release
+
+# Two ways to cut a release:
+#  1. Run this workflow manually (Actions tab) and pick a version bump
+#     (patch/minor/major). It updates version.properties on main, tags it,
+#     builds a signed APK and publishes a GitHub Release.
+#  2. Push a tag like v1.2.3 yourself — it builds and releases that tag.
+on:
+  push:
+    tags: [ 'v*' ]
+  workflow_dispatch:
+    inputs:
+      bump:
+        description: Which part of the version to increment
+        type: choice
+        default: patch
+        options: [ patch, minor, major ]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Determine version
+        id: ver
+        run: |
+          set -e
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            current=$(grep '^VERSION_NAME=' version.properties | cut -d= -f2)
+            IFS=. read -r MA MI PA <<< "$current"
+            case "${{ github.event.inputs.bump }}" in
+              major) MA=$((MA+1)); MI=0; PA=0 ;;
+              minor) MI=$((MI+1)); PA=0 ;;
+              *)     PA=$((PA+1)) ;;
+            esac
+            VERSION="$MA.$MI.$PA"
+            CODE=${{ github.run_number }}
+            sed -i "s/^VERSION_NAME=.*/VERSION_NAME=$VERSION/" version.properties
+            sed -i "s/^VERSION_CODE=.*/VERSION_CODE=$CODE/" version.properties
+            git config user.name "github-actions[bot]"
+            git config user.email "github-actions[bot]@users.noreply.github.com"
+            git add version.properties
+            git commit -m "chore: release v$VERSION"
+            git push origin HEAD:main
+            echo "tag=v$VERSION" >> "$GITHUB_OUTPUT"
+          else
+            VERSION="${GITHUB_REF_NAME#v}"
+            CODE=${{ github.run_number }}
+            echo "tag=${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
+          fi
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "code=$CODE" >> "$GITHUB_OUTPUT"
+          echo "Building version $VERSION (code $CODE)"
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install required SDK packages
+        run: |
+          yes | sdkmanager "platforms;android-35" "build-tools;35.0.0" >/dev/null
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Build release APK
+        run: |
+          ./gradlew --no-daemon assembleRelease \
+            -PVERSION_NAME=${{ steps.ver.outputs.version }} \
+            -PVERSION_CODE=${{ steps.ver.outputs.code }}
+
+      - name: Stage APK
+        run: |
+          mkdir -p dist
+          cp app/build/outputs/apk/release/*.apk \
+            "dist/Starmap-${{ steps.ver.outputs.version }}.apk"
+          ls -lh dist
+
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.ver.outputs.tag }}
+          name: Starmap ${{ steps.ver.outputs.version }}
+          target_commitish: main
+          generate_release_notes: true
+          files: |
+            dist/Starmap-${{ steps.ver.outputs.version }}.apk
+            catalog/stars_ext.json

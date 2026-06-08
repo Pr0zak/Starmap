@@ -1,0 +1,26 @@
+# Gradle
+.gradle/
+build/
+**/build/
+!gradle/wrapper/gradle-wrapper.jar
+
+# Android Studio / IntelliJ
+*.iml
+.idea/
+captures/
+.externalNativeBuild/
+.cxx/
+
+# Local config (SDK path, signing secrets)
+local.properties
+keystore.properties
+*.keystore
+*.jks
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Catalog build inputs (large; downloaded by tools/build_catalog.py).
+# The *generated* catalogs under app/src/main/assets and /catalog ARE committed.
+/tools/data/
