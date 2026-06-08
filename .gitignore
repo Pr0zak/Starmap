@@ -11,11 +11,17 @@ captures/
 .externalNativeBuild/
 .cxx/
 
-# Local config (SDK path, signing secrets)
+# Local config (SDK path)
 local.properties
-keystore.properties
+
+# Generic keystores are ignored, EXCEPT the project's committed release keystore
+# + properties. This is a private repo and the stable key is what enables in-place
+# in-app updates. If you make the app public, move these to GitHub Actions secrets.
 *.keystore
 *.jks
+keystore.properties
+!/app/starmap-release.jks
+!/keystore.properties
 
 # OS
 .DS_Store

@@ -13,6 +13,7 @@ import com.starmap.app.sensors.LocationProvider
 import com.starmap.app.sensors.OrientationProvider
 import com.starmap.app.settings.Settings
 import com.starmap.app.settings.SettingsRepository
+import com.starmap.app.update.ApkUpdater
 import com.starmap.app.update.UpdateChecker
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.SharingStarted
@@ -59,6 +60,9 @@ class SkyViewModel(app: Application) : AndroidViewModel(app) {
 
     private val _checkingUpdate = mutableStateOf(false)
     val checkingUpdate: State<Boolean> = _checkingUpdate
+
+    private val _updateDownload = mutableStateOf<ApkUpdater.State>(ApkUpdater.State.Idle)
+    val updateDownload: State<ApkUpdater.State> = _updateDownload
 
     private val _downloadState = mutableStateOf<CatalogManager.DownloadState>(
         if (catalogManager.isExtendedDownloaded) {
@@ -142,6 +146,21 @@ class SkyViewModel(app: Application) : AndroidViewModel(app) {
             _updateResult.value = UpdateChecker.check(BuildConfig.VERSION_NAME)
             _checkingUpdate.value = false
         }
+    }
+
+    /** Download the new release's APK so it can be installed over the top. */
+    fun downloadUpdate(apkUrl: String) {
+        if (_updateDownload.value is ApkUpdater.State.Downloading) return
+        _updateDownload.value = ApkUpdater.State.Downloading(0f)
+        viewModelScope.launch {
+            _updateDownload.value = ApkUpdater.download(getApplication<Application>(), apkUrl) { fraction ->
+                _updateDownload.value = ApkUpdater.State.Downloading(fraction)
+            }
+        }
+    }
+
+    fun resetUpdateDownload() {
+        _updateDownload.value = ApkUpdater.State.Idle
     }
 
     // --- Offline catalog downloads ---

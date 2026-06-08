@@ -27,8 +27,10 @@ phone running Android 8.0+ with the standard orientation sensors).
 - **Offline first** — the naked-eye catalog and constellations are bundled in the
   APK, so the app is fully usable with no network. An **extended catalog**
   (41,487 stars to magnitude 8.0) can be downloaded on demand.
-- **In-app updates** — checks GitHub Releases for a newer version and links to the
-  APK.
+- **In-app self-update** — checks GitHub Releases for a newer version and, when
+  found, downloads the APK and launches the installer *from inside the app*. Because
+  every release is signed with the same key, the new version installs **over the
+  top** — no uninstall, settings preserved.
 
 ## How it works
 
@@ -54,14 +56,57 @@ Everything builds with the Gradle wrapper — no local Android Studio required.
 Requirements: JDK 17, Android SDK with platform 35 / build-tools 35.0.0.
 Minimum device: Android 8.0 (API 26); target: API 35.
 
-### Signing
+### Signing (and why it matters for updates)
 
-By default the release build is signed with the debug key so the CI-built APK is
-installable for sideloading. To sign with your own key, set these environment
-variables before `assembleRelease` (e.g. as GitHub Actions secrets):
+Android only lets an APK update an installed app **in place** if both are signed
+with the **same certificate**; otherwise it refuses with `INSTALL_FAILED_UPDATE_
+INCOMPATIBLE` and the user must uninstall first (losing data). So every Starmap
+release must use one stable key.
 
+Signing key resolution (highest priority first):
+
+1. **CI secrets** — set `RELEASE_STORE_FILE`, `RELEASE_STORE_PASSWORD`,
+   `RELEASE_KEY_ALIAS`, `RELEASE_KEY_PASSWORD` (e.g. GitHub Actions secrets).
+   Preferred if you ever make the app public.
+2. **Committed keystore** — `app/starmap-release.jks` described by
+   `keystore.properties`. Committed on purpose so releases are stably signed with
+   zero setup (fine for a private repo; rotate later if needed).
+3. **Debug key** — fallback for local dev only; APKs signed this way will *not*
+   update an existing install in place.
+
+The committed key's certificate fingerprint is fixed, so all releases are
+mutually update-compatible.
+
+## Self-update: how it works and how to verify
+
+1. **About → Check for updates** queries `…/releases/latest` and compares the tag
+   to `BuildConfig.VERSION_NAME` (`UpdateChecker.isNewer`, unit-tested).
+2. If newer, **Download & install** fetches the release's `.apk` asset to
+   `filesDir/updates/` and launches the system installer via a `FileProvider`
+   (the app holds `REQUEST_INSTALL_PACKAGES`; the user grants "install unknown
+   apps" once).
+3. Same signature ⇒ Android installs it **as an update**, preserving app data.
+
+**Requirements:** the repository (its Releases API + release assets) must be
+reachable by the app. For a **public** repo this works with no token. For a
+private repo the in-app check/download need auth, so the app falls back to opening
+the release page in your browser.
+
+**To verify end-to-end on a device:**
+
+```bash
+# 1. Cut v1.0.0 (Actions ▸ Release ▸ bump=none) and install that APK on the phone.
+# 2. Cut v1.0.1 (Actions ▸ Release ▸ bump=patch).
+# 3. In the app: About ▸ Check for updates ▸ Download & install.
+#    It should update in place — open About again and confirm build 1.0.1,
+#    with your settings still intact.
 ```
-RELEASE_STORE_FILE, RELEASE_STORE_PASSWORD, RELEASE_KEY_ALIAS, RELEASE_KEY_PASSWORD
+
+The signing half is verifiable without a device — every release carries the same
+certificate; confirm with:
+
+```bash
+keytool -list -v -keystore app/starmap-release.jks -storepass starmap | grep SHA256
 ```
 
 ## Continuous integration, versioning & releases

@@ -12,8 +12,10 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
@@ -23,6 +25,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.starmap.app.BuildConfig
 import com.starmap.app.sky.SkyViewModel
+import com.starmap.app.update.ApkUpdater
 import com.starmap.app.update.UpdateChecker
 
 @Composable
@@ -59,20 +62,8 @@ fun AboutScreen(viewModel: SkyViewModel, onBack: () -> Unit) {
                     Text("Software updates", fontWeight = FontWeight.SemiBold, fontSize = 17.sp)
                     Spacer(Modifier.height(8.dp))
                     when (val r = result) {
-                        is UpdateChecker.Result.Available -> {
-                            Text("Version ${r.release.versionName} is available!", fontSize = 15.sp)
-                            if (r.release.notes.isNotBlank()) {
-                                Text(
-                                    r.release.notes.take(400),
-                                    fontSize = 12.sp,
-                                    modifier = Modifier.padding(top = 6.dp),
-                                )
-                            }
-                            Spacer(Modifier.height(8.dp))
-                            Button(onClick = { openUrl(r.release.apkUrl ?: r.release.htmlUrl) }) {
-                                Text("Get update")
-                            }
-                        }
+                        is UpdateChecker.Result.Available ->
+                            UpdateAvailableSection(viewModel, r.release) { openUrl(it) }
                         is UpdateChecker.Result.UpToDate ->
                             Text("You're on the latest version.", fontSize = 14.sp)
                         is UpdateChecker.Result.Failed ->
@@ -105,6 +96,75 @@ fun AboutScreen(viewModel: SkyViewModel, onBack: () -> Unit) {
                 fontSize = 12.sp,
                 modifier = Modifier.padding(top = 6.dp),
             )
+        }
+    }
+}
+
+/** Download-and-install flow for an available release (in-place self-update). */
+@Composable
+private fun UpdateAvailableSection(
+    viewModel: SkyViewModel,
+    release: UpdateChecker.Release,
+    openUrl: (String) -> Unit,
+) {
+    val context = LocalContext.current
+    val download by viewModel.updateDownload
+
+    Column {
+        Text("Version ${release.versionName} is available!", fontSize = 15.sp)
+        if (release.notes.isNotBlank()) {
+            Text(release.notes.take(400), fontSize = 12.sp, modifier = Modifier.padding(top = 6.dp))
+        }
+        Spacer(Modifier.height(10.dp))
+
+        when (val d = download) {
+            is ApkUpdater.State.Idle -> {
+                if (release.apkUrl != null) {
+                    Button(onClick = { viewModel.downloadUpdate(release.apkUrl) }) {
+                        Text("Download & install")
+                    }
+                } else {
+                    // No APK attached to the release — fall back to the release page.
+                    Button(onClick = { openUrl(release.htmlUrl) }) { Text("Open release page") }
+                }
+            }
+
+            is ApkUpdater.State.Downloading -> {
+                LinearProgressIndicator(progress = { d.fraction }, modifier = Modifier.fillMaxWidth())
+                Text(
+                    "Downloading ${(d.fraction * 100).toInt()}%…",
+                    fontSize = 12.sp,
+                    modifier = Modifier.padding(top = 6.dp),
+                )
+            }
+
+            is ApkUpdater.State.ReadyToInstall -> {
+                Text(
+                    "Downloaded. Installing updates over the top keeps your settings — " +
+                        "if prompted, allow Starmap to install apps.",
+                    fontSize = 12.sp,
+                )
+                Spacer(Modifier.height(8.dp))
+                Button(onClick = {
+                    if (ApkUpdater.canInstall(context)) {
+                        ApkUpdater.install(context, d.file)
+                    } else {
+                        context.startActivity(ApkUpdater.installPermissionIntent(context))
+                    }
+                }) { Text("Install now") }
+            }
+
+            is ApkUpdater.State.Failed -> {
+                Text("Update download failed: ${d.message}", fontSize = 13.sp)
+                Spacer(Modifier.height(8.dp))
+                Button(onClick = {
+                    viewModel.resetUpdateDownload()
+                    release.apkUrl?.let { viewModel.downloadUpdate(it) }
+                }) { Text("Retry") }
+                TextButton(onClick = { openUrl(release.apkUrl ?: release.htmlUrl) }) {
+                    Text("Open in browser instead")
+                }
+            }
         }
     }
 }

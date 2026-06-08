@@ -37,18 +37,34 @@ android {
         buildConfigField("String", "GITHUB_REPO", "\"$githubRepo\"")
     }
 
-    // Use a real release keystore if the standard env vars are present,
-    // otherwise fall back to the debug key so CI always builds an
-    // installable (sideloadable) APK without any secret configured.
-    val releaseStorePath = System.getenv("RELEASE_STORE_FILE")
-    val hasReleaseKeystore = releaseStorePath != null && file(releaseStorePath).exists()
-    if (hasReleaseKeystore) {
+    // Release signing. Every release MUST use the same certificate so the app can
+    // update itself in place. Resolution order:
+    //   1. CI secrets via RELEASE_* env vars (preferred for public distribution)
+    //   2. The committed keystore described by /keystore.properties
+    //   3. Debug key fallback (local dev only; updates won't install in place)
+    val keystoreProps = Properties().apply {
+        val f = rootProject.file("keystore.properties")
+        if (f.exists()) f.inputStream().use { load(it) }
+    }
+    val envStore = System.getenv("RELEASE_STORE_FILE")
+    val useEnv = envStore != null && file(envStore).exists()
+    val committedStore = keystoreProps.getProperty("storeFile")?.let { rootProject.file(it) }
+    val useCommitted = committedStore != null && committedStore.exists()
+    val signRelease = useEnv || useCommitted
+    if (signRelease) {
         signingConfigs {
             create("release") {
-                storeFile = file(releaseStorePath!!)
-                storePassword = System.getenv("RELEASE_STORE_PASSWORD")
-                keyAlias = System.getenv("RELEASE_KEY_ALIAS")
-                keyPassword = System.getenv("RELEASE_KEY_PASSWORD")
+                if (useEnv) {
+                    storeFile = file(envStore!!)
+                    storePassword = System.getenv("RELEASE_STORE_PASSWORD")
+                    keyAlias = System.getenv("RELEASE_KEY_ALIAS")
+                    keyPassword = System.getenv("RELEASE_KEY_PASSWORD")
+                } else {
+                    storeFile = committedStore
+                    storePassword = keystoreProps.getProperty("storePassword")
+                    keyAlias = keystoreProps.getProperty("keyAlias")
+                    keyPassword = keystoreProps.getProperty("keyPassword")
+                }
             }
         }
     }
@@ -61,7 +77,7 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro",
             )
-            signingConfig = if (hasReleaseKeystore) {
+            signingConfig = if (signRelease) {
                 signingConfigs.getByName("release")
             } else {
                 signingConfigs.getByName("debug")
