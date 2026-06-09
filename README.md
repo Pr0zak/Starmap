@@ -32,6 +32,9 @@ then draws everything in that direction:
   type, altitude, speed, heading, distance, route (origin → destination) and a photo.
 - **Reference lines** — the ecliptic, celestial equator and an RA/Dec grid.
 - **Horizon & compass** — a horizon line and N/E/S/W markers.
+- **Time machine** — scrub the sky to any date and time, or run a time-lapse.
+- **Realistic sky** — daytime-blue and twilight backgrounds, plus atmospheric
+  refraction that lifts objects near the horizon.
 
 Everything is worked out on the device from the current time and your location, so
 it stays accurate through the night and wherever you travel.
@@ -43,6 +46,8 @@ it stays accurate through the night and wherever you travel.
   deep-sky object or the ISS by name — even nicknames like "Big Dipper". The sky then guides you to
   it with a marker, or an arrow pointing the way.
 - **Tap an aircraft** for its details.
+- Tap the **clock** to open the time machine — jump or time-lapse to any moment,
+  then **Now** to snap back to live.
 - **Pinch** to zoom; switch to **manual mode** (hand icon) to drag around the sky
   without moving the phone.
 - Rotate to **landscape** any time.
