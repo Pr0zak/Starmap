@@ -6,6 +6,7 @@ import android.content.Context
 import android.content.ContextWrapper
 import android.content.pm.ActivityInfo
 import android.content.pm.PackageManager
+import android.content.res.Configuration
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
@@ -70,6 +71,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -83,6 +85,7 @@ import coil.compose.AsyncImage
 import coil.compose.AsyncImagePainter
 import coil.request.ImageRequest
 import com.starmap.app.aircraft.AircraftManager
+import com.starmap.app.settings.SettingsRepository
 import com.starmap.app.settings.SettingsRepository.BoolSetting
 import com.starmap.app.sky.AircraftRender
 import com.starmap.app.sky.IdentifiedObject
@@ -205,6 +208,25 @@ private fun SkyScreen(
     val manualMode by viewModel.manualMode
     val liveTime by viewModel.liveTime
     var showTimePanel by remember { mutableStateOf(false) }
+
+    // Auto-match the render field of view to the camera while AR is on; restore after.
+    val context = LocalContext.current
+    val configuration = LocalConfiguration.current
+    var preArFov by remember { mutableStateOf<Float?>(null) }
+    LaunchedEffect(arActive, configuration.orientation) {
+        if (arActive) {
+            val portrait = configuration.orientation == Configuration.ORIENTATION_PORTRAIT
+            CameraFov.screenVerticalFovDeg(context, portrait)?.let { camFov ->
+                if (preArFov == null) preArFov = settings.fovDeg
+                viewModel.setFloat(SettingsRepository.FloatSetting.Fov, camFov.coerceIn(30f, 90f))
+            }
+        } else {
+            preArFov?.let {
+                viewModel.setFloat(SettingsRepository.FloatSetting.Fov, it)
+                preArFov = null
+            }
+        }
+    }
 
     // Live heading read for the HUD.
     var heading by remember { mutableFloatStateOf(0f) }
