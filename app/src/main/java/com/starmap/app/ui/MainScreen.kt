@@ -47,7 +47,9 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -57,6 +59,7 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.viewmodel.compose.viewModel
+import coil.compose.AsyncImage
 import com.starmap.app.aircraft.AircraftManager
 import com.starmap.app.sky.AircraftRender
 import com.starmap.app.sky.SkyCanvas
@@ -64,6 +67,7 @@ import com.starmap.app.sky.SkyModel
 import com.starmap.app.sky.SkyViewModel
 import com.starmap.app.sky.resolveTargetEnu
 import kotlinx.coroutines.android.awaitFrame
+import kotlin.math.abs
 import kotlin.math.asin
 import kotlin.math.atan2
 import kotlin.math.roundToInt
@@ -211,8 +215,9 @@ private fun SkyScreen(
         ) {
             val selAc by viewModel.selectedAircraft
             val selRoute by viewModel.selectedRoute
+            val selPhoto by viewModel.selectedPhoto
             selAc?.let { ac ->
-                AircraftInfoCard(ac, selRoute) { viewModel.selectAircraft(null) }
+                AircraftInfoCard(ac, selRoute, selPhoto) { viewModel.selectAircraft(null) }
                 Spacer(Modifier.height(8.dp))
             }
             if (location == null) {
@@ -344,45 +349,89 @@ private fun describeDirection(enu: FloatArray): String {
 }
 
 @Composable
-private fun AircraftInfoCard(ac: AircraftRender, route: AircraftManager.Route?, onClose: () -> Unit) {
+private fun AircraftInfoCard(
+    ac: AircraftRender,
+    route: AircraftManager.Route?,
+    photo: AircraftManager.Photo?,
+    onClose: () -> Unit,
+) {
     Surface(
-        color = Color(0xF21B2030),
+        color = if (ac.isEmergency) Color(0xF2401A1A) else Color(0xF21B2030),
         shape = RoundedCornerShape(14.dp),
         modifier = Modifier.fillMaxWidth(),
     ) {
         Column(modifier = Modifier.padding(start = 16.dp, top = 8.dp, bottom = 12.dp, end = 8.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(
-                    ac.callsign.ifBlank { "Aircraft" },
-                    color = Color(0xFFFFE9A8), fontSize = 18.sp, fontWeight = FontWeight.SemiBold,
-                    modifier = Modifier.weight(1f),
-                )
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        ac.callsign.ifBlank { "Aircraft" },
+                        color = Color(0xFFFFE9A8), fontSize = 18.sp, fontWeight = FontWeight.SemiBold,
+                    )
+                    if (ac.registration.isNotBlank()) {
+                        Text(ac.registration, color = Color(0x99FFFFFF), fontSize = 12.sp)
+                    }
+                }
                 IconButton(onClick = onClose) {
                     Icon(Icons.Filled.Close, contentDescription = "Close", tint = Color(0xFFD8E0F0))
                 }
             }
+
+            if (ac.isEmergency) {
+                val em = ac.emergencyText.takeIf {
+                    it.isNotBlank() && !it.equals("none", ignoreCase = true)
+                }?.replaceFirstChar { it.uppercase() }
+                Text(
+                    "⚠ EMERGENCY" + (if (em != null) " · $em" else "") +
+                        (if (ac.squawk in listOf("7500", "7600", "7700")) " · squawk ${ac.squawk}" else ""),
+                    color = Color(0xFFFF8A8A), fontSize = 13.sp, fontWeight = FontWeight.SemiBold,
+                )
+            }
+
+            photo?.let {
+                AsyncImage(
+                    model = it.thumbnailUrl,
+                    contentDescription = "Photo of ${ac.registration}",
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(150.dp)
+                        .padding(top = 8.dp, end = 8.dp)
+                        .clip(RoundedCornerShape(10.dp)),
+                )
+                if (it.photographer.isNotBlank()) {
+                    Text("📷 ${it.photographer} / planespotters.net", color = Color(0x66FFFFFF), fontSize = 10.sp)
+                }
+            }
+
             val kind = when {
                 ac.isHelicopter && ac.typeCode.isNotBlank() -> "Helicopter · ${ac.typeCode}"
                 ac.isHelicopter -> "Helicopter"
                 ac.typeCode.isNotBlank() -> ac.typeCode
                 else -> "Aircraft"
             }
-            Text(kind, color = Color(0xCCFFFFFF), fontSize = 13.sp)
+            val kindLine = if (route?.airline?.isNotBlank() == true) "$kind · ${route.airline}" else kind
+            Text(kindLine, color = Color(0xCCFFFFFF), fontSize = 13.sp, modifier = Modifier.padding(top = 6.dp))
+
             val ft = (ac.altitudeMeters / 0.3048).toInt()
+            val vr = ac.verticalRateFpm
+            val vrStr = if (abs(vr) > 100) " ${if (vr > 0) "↑" else "↓"}${abs(vr).toInt()}fpm" else ""
             Text(
-                "Alt ${"%,d".format(ft)} ft · ${ac.groundSpeedKts.toInt()} kt · heading ${ac.trackDeg.toInt()}°",
+                "Alt ${"%,d".format(ft)} ft$vrStr · ${ac.groundSpeedKts.toInt()} kt · heading ${ac.trackDeg.toInt()}°",
                 color = Color(0xCCFFFFFF), fontSize = 13.sp,
             )
             Text(
-                "%.0f km (%.0f mi) away".format(ac.rangeKm, ac.rangeKm * 0.621371),
+                "%.0f km (%.0f mi) away".format(ac.rangeKm, ac.rangeKm * 0.621371) +
+                    (if (ac.squawk.isNotBlank() && !ac.isEmergency) " · squawk ${ac.squawk}" else ""),
                 color = Color(0x99FFFFFF), fontSize = 12.sp,
             )
             route?.let {
-                Text(
-                    "${it.origin}  →  ${it.destination}",
-                    color = Color(0xFF9FE0C0), fontSize = 15.sp,
-                    modifier = Modifier.padding(top = 4.dp),
-                )
+                if (it.origin != "?" || it.destination != "?") {
+                    Text(
+                        "${it.origin}  →  ${it.destination}",
+                        color = Color(0xFF9FE0C0), fontSize = 15.sp,
+                        modifier = Modifier.padding(top = 4.dp),
+                    )
+                }
             }
         }
     }

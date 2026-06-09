@@ -18,6 +18,11 @@ class Aircraft(
     val typeCode: String,
     val groundSpeedKts: Double,
     val trackDeg: Double,
+    val registration: String,
+    val verticalRateFpm: Double,
+    val squawk: String,
+    val isEmergency: Boolean,
+    val emergencyText: String,
 )
 
 /** An aircraft plus its recent geodetic trail ([lat, lon, altMeters] points, oldest→newest). */
@@ -30,6 +35,11 @@ class AircraftTrack(
     val typeCode: String,
     val groundSpeedKts: Double,
     val trackDeg: Double,
+    val registration: String,
+    val verticalRateFpm: Double,
+    val squawk: String,
+    val isEmergency: Boolean,
+    val emergencyText: String,
     val trail: List<DoubleArray>,
 )
 
@@ -83,7 +93,18 @@ class AircraftManager {
                         val id = o.optString("hex", callsign)
                         val gs = numberOrNull(o.opt("gs")) ?: 0.0
                         val track = numberOrNull(o.opt("track")) ?: numberOrNull(o.opt("true_heading")) ?: 0.0
-                        out.add(Aircraft(id, callsign, lat, lon, altFt * 0.3048, isHeli, typeCode, gs, track))
+                        val registration = o.optString("r", "")
+                        val vrate = numberOrNull(o.opt("baro_rate")) ?: numberOrNull(o.opt("geom_rate")) ?: 0.0
+                        val squawk = o.optString("squawk", "")
+                        val emergencyText = o.optString("emergency", "")
+                        val isEmergency = squawk in EMERGENCY_SQUAWKS ||
+                            (emergencyText.isNotBlank() && !emergencyText.equals("none", ignoreCase = true))
+                        out.add(
+                            Aircraft(
+                                id, callsign, lat, lon, altFt * 0.3048, isHeli, typeCode, gs, track,
+                                registration, vrate, squawk, isEmergency, emergencyText,
+                            ),
+                        )
                     }
                 }
                 Result.Ok(out)
@@ -92,8 +113,8 @@ class AircraftManager {
             }
         }
 
-    /** Flight route (origin → destination) for a callsign, from adsbdb. */
-    data class Route(val origin: String, val destination: String)
+    /** Flight route (origin → destination, with airline) for a callsign, from adsbdb. */
+    data class Route(val origin: String, val destination: String, val airline: String)
 
     suspend fun fetchRoute(callsign: String): Route? = withContext(Dispatchers.IO) {
         val cs = callsign.trim()
@@ -113,7 +134,35 @@ class AircraftManager {
                 return a.optString("iata_code").ifBlank { a.optString("icao_code") }
                     .ifBlank { "?" }
             }
-            Route(airport("origin"), airport("destination"))
+            val airline = fr.optJSONObject("airline")?.optString("name", "").orEmpty()
+            Route(airport("origin"), airport("destination"), airline)
+        } catch (e: Exception) {
+            null
+        }
+    }
+
+    /** A photo of the aircraft (thumbnail URL + credit), from planespotters.net. */
+    data class Photo(val thumbnailUrl: String, val link: String, val photographer: String)
+
+    suspend fun fetchPhoto(registration: String): Photo? = withContext(Dispatchers.IO) {
+        val reg = registration.trim()
+        if (reg.isEmpty()) return@withContext null
+        try {
+            val conn = (URL("https://api.planespotters.net/pub/photos/reg/$reg").openConnection() as HttpURLConnection).apply {
+                requestMethod = "GET"
+                setRequestProperty("User-Agent", "Starmap-Android")
+                connectTimeout = 10_000
+                readTimeout = 10_000
+            }
+            if (conn.responseCode !in 200..299) return@withContext null
+            val resp = JSONObject(conn.inputStream.bufferedReader().use { it.readText() })
+            val photos = resp.optJSONArray("photos") ?: return@withContext null
+            if (photos.length() == 0) return@withContext null
+            val ph = photos.getJSONObject(0)
+            val thumb = ph.optJSONObject("thumbnail_large") ?: ph.optJSONObject("thumbnail")
+            val url = thumb?.optString("src").orEmpty()
+            if (url.isBlank()) return@withContext null
+            Photo(url, ph.optString("link"), ph.optString("photographer"))
         } catch (e: Exception) {
             null
         }
@@ -122,6 +171,8 @@ class AircraftManager {
     private fun numberOrNull(v: Any?): Double? = (v as? Number)?.toDouble()
 
     private companion object {
+        val EMERGENCY_SQUAWKS = setOf("7500", "7600", "7700")
+
         // Common ICAO helicopter type codes, for feeds that omit the emitter category.
         val HELI_TYPES = setOf(
             "EC35", "EC45", "EC30", "EC20", "EC55", "EC75", "H135", "H145", "H125", "H155",

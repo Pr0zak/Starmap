@@ -66,12 +66,20 @@ class SkyViewModel(app: Application) : AndroidViewModel(app) {
     val selectedAircraft: State<AircraftRender?> = _selectedAircraft
     private val _selectedRoute = mutableStateOf<AircraftManager.Route?>(null)
     val selectedRoute: State<AircraftManager.Route?> = _selectedRoute
+    private val _selectedPhoto = mutableStateOf<AircraftManager.Photo?>(null)
+    val selectedPhoto: State<AircraftManager.Photo?> = _selectedPhoto
 
     fun selectAircraft(ac: AircraftRender?) {
         _selectedAircraft.value = ac
         _selectedRoute.value = null
-        if (ac != null && ac.callsign.isNotBlank() && ac.callsign != "?") {
-            viewModelScope.launch { _selectedRoute.value = aircraftManager.fetchRoute(ac.callsign) }
+        _selectedPhoto.value = null
+        if (ac != null) {
+            if (ac.callsign.isNotBlank() && ac.callsign != "?") {
+                viewModelScope.launch { _selectedRoute.value = aircraftManager.fetchRoute(ac.callsign) }
+            }
+            if (ac.registration.isNotBlank()) {
+                viewModelScope.launch { _selectedPhoto.value = aircraftManager.fetchPhoto(ac.registration) }
+            }
         }
     }
 
@@ -169,7 +177,8 @@ class SkyViewModel(app: Application) : AndroidViewModel(app) {
                             AircraftTrack(
                                 ac.callsign, ac.isHelicopter, ac.latitude, ac.longitude,
                                 ac.altitudeMeters, ac.typeCode, ac.groundSpeedKts, ac.trackDeg,
-                                dq.dropLast(1).toList(),
+                                ac.registration, ac.verticalRateFpm, ac.squawk, ac.isEmergency,
+                                ac.emergencyText, dq.dropLast(1).toList(),
                             )
                         }
                         aircraftHistory.keys.retainAll(seen)

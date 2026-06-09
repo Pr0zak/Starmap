@@ -46,6 +46,11 @@ class AircraftRender(
     val groundSpeedKts: Double,
     val trackDeg: Double,
     val rangeKm: Double,
+    val registration: String,
+    val verticalRateFpm: Double,
+    val squawk: String,
+    val isEmergency: Boolean,
+    val emergencyText: String,
     /** Flattened ENU trail polyline x,y,z,… (oldest→newest). */
     val trail: FloatArray,
 )
@@ -292,7 +297,9 @@ object SkyBuilder {
                 aircraftRenders.add(
                     AircraftRender(
                         unit, ac.callsign, ac.isHelicopter, ac.typeCode,
-                        ac.altitudeMeters, ac.groundSpeedKts, ac.trackDeg, range, trail,
+                        ac.altitudeMeters, ac.groundSpeedKts, ac.trackDeg, range,
+                        ac.registration, ac.verticalRateFpm, ac.squawk, ac.isEmergency, ac.emergencyText,
+                        trail,
                     ),
                 )
             }
