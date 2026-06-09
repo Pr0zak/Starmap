@@ -173,7 +173,7 @@ class SkyViewModel(app: Application) : AndroidViewModel(app) {
                             seen.add(ac.id)
                             val dq = aircraftHistory.getOrPut(ac.id) { ArrayDeque() }
                             dq.addLast(doubleArrayOf(ac.latitude, ac.longitude, ac.altitudeMeters))
-                            while (dq.size > 18) dq.removeFirst()
+                            while (dq.size > 30) dq.removeFirst()
                             AircraftTrack(
                                 ac.callsign, ac.isHelicopter, ac.latitude, ac.longitude,
                                 ac.altitudeMeters, ac.typeCode, ac.groundSpeedKts, ac.trackDeg,

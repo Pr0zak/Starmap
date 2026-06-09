@@ -32,6 +32,7 @@ import kotlin.math.cos
 import kotlin.math.hypot
 import kotlin.math.min
 import kotlin.math.sin
+import kotlin.math.sqrt
 import kotlin.math.tan
 
 private const val MIN_DEPTH = 0.15f
@@ -436,20 +437,41 @@ fun SkyCanvas(viewModel: SkyViewModel, settings: Settings, modifier: Modifier = 
                 val heli = ac.isHelicopter
                 val color = if (heli) heliColor else planeColor
 
-                if (settings.showAircraftTrails) {
+                if (settings.showAircraftTrails && ac.trail.size >= 3) {
                     val trail = ac.trail
                     val n = trail.size / 3
+                    val steps = 5 // interpolated dots between each pair of samples
                     var k = 0
                     while (k < n) {
                         val b = k * 3
-                        val tx = trail[b]; val ty = trail[b + 1]; val tz = trail[b + 2]
-                        val td = tx * look[0] + ty * look[1] + tz * look[2]
-                        if (td >= MIN_DEPTH) {
-                            val px = cx + ((tx * right[0] + ty * right[1] + tz * right[2]) / td) * focal
-                            val py = cy - ((tx * up[0] + ty * up[1] + tz * up[2]) / td) * focal
-                            val a = 0.06f + 0.4f * (k.toFloat() / n) // older = fainter
-                            drawCircle(color.copy(alpha = a), 1.7f * density,
-                                androidx.compose.ui.geometry.Offset(px, py))
+                        val ax = trail[b]; val ay = trail[b + 1]; val az = trail[b + 2]
+                        // Connect toward the next sample, or the aircraft itself for the last.
+                        val nb = (k + 1) * 3
+                        val bx2: Float; val by2: Float; val bz2: Float
+                        if (k + 1 < n) {
+                            bx2 = trail[nb]; by2 = trail[nb + 1]; bz2 = trail[nb + 2]
+                        } else {
+                            bx2 = ac.enu[0]; by2 = ac.enu[1]; bz2 = ac.enu[2]
+                        }
+                        var s = 0
+                        while (s < steps) {
+                            val t = s.toFloat() / steps
+                            var ix = ax + (bx2 - ax) * t
+                            var iy = ay + (by2 - ay) * t
+                            var iz = az + (bz2 - az) * t
+                            val inv = 1f / (sqrt(ix * ix + iy * iy + iz * iz) + 1e-6f)
+                            ix *= inv; iy *= inv; iz *= inv
+                            val td = ix * look[0] + iy * look[1] + iz * look[2]
+                            if (td >= MIN_DEPTH) {
+                                val px = cx + ((ix * right[0] + iy * right[1] + iz * right[2]) / td) * focal
+                                val py = cy - ((ix * up[0] + iy * up[1] + iz * up[2]) / td) * focal
+                                val frac = (k + t) / n // 0 (oldest) … 1 (newest)
+                                drawCircle(
+                                    color.copy(alpha = 0.14f + 0.55f * frac), 2f * density,
+                                    androidx.compose.ui.geometry.Offset(px, py),
+                                )
+                            }
+                            s++
                         }
                         k++
                     }
