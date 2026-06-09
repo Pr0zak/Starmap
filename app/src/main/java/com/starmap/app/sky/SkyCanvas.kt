@@ -306,18 +306,29 @@ fun SkyCanvas(viewModel: SkyViewModel, settings: Settings, modifier: Modifier = 
             }
             val dst = FloatArray(6)
             for (art in m.constellationArt) {
-                var front = true
+                // Skip only if the whole figure is behind us; otherwise clamp anchors at
+                // the near plane so a figure straddling the view edge stretches off-screen
+                // instead of popping out entirely.
+                var maxDepth = -2f
                 var k = 0
+                while (k < 3) {
+                    val b = k * 3
+                    val d = art.anchorEnu[b] * look[0] + art.anchorEnu[b + 1] * look[1] +
+                        art.anchorEnu[b + 2] * look[2]
+                    if (d > maxDepth) maxDepth = d
+                    k++
+                }
+                if (maxDepth < 0.05f) continue
+                k = 0
                 while (k < 3) {
                     val b = k * 3
                     val vx = art.anchorEnu[b]; val vy = art.anchorEnu[b + 1]; val vz = art.anchorEnu[b + 2]
                     val depth = vx * look[0] + vy * look[1] + vz * look[2]
-                    if (depth < MIN_DEPTH) { front = false; break }
-                    dst[k * 2] = cx + ((vx * right[0] + vy * right[1] + vz * right[2]) / depth) * focal
-                    dst[k * 2 + 1] = cy - ((vx * up[0] + vy * up[1] + vz * up[2]) / depth) * focal
+                    val d = if (depth < 0.04f) 0.04f else depth
+                    dst[k * 2] = cx + ((vx * right[0] + vy * right[1] + vz * right[2]) / d) * focal
+                    dst[k * 2 + 1] = cy - ((vx * up[0] + vy * up[1] + vz * up[2]) / d) * focal
                     k++
                 }
-                if (!front) continue
                 val bmp = artCache.getOrPut(art.file) {
                     try {
                         appContext.assets.open("constellation_art/${art.file}").use {
