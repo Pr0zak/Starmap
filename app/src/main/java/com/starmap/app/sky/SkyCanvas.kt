@@ -36,6 +36,7 @@ import kotlin.math.sqrt
 import kotlin.math.tan
 
 private const val MIN_DEPTH = 0.15f
+private const val ART_MESH = 8 // grid subdivisions per constellation figure
 
 /**
  * Sky-background colour for a given Sun altitude (degrees): night → twilight → day.
@@ -139,11 +140,12 @@ fun SkyCanvas(viewModel: SkyViewModel, settings: Settings, modifier: Modifier = 
         }
     }
 
-    // Constellation artwork: a lazily-decoded bitmap cache and a reusable warp matrix.
+    // Constellation artwork: a lazily-decoded bitmap cache and reusable mesh buffers.
     val appContext = androidx.compose.ui.platform.LocalContext.current
     val artCache = remember { HashMap<String, android.graphics.Bitmap?>() }
-    val artMatrix = remember { android.graphics.Matrix() }
     val artPaint = remember { android.graphics.Paint(android.graphics.Paint.FILTER_BITMAP_FLAG) }
+    val artVerts = remember { FloatArray((ART_MESH + 1) * (ART_MESH + 1) * 2) }
+    val artColors = remember { IntArray((ART_MESH + 1) * (ART_MESH + 1)) }
 
     Canvas(
         modifier = modifier
@@ -296,39 +298,65 @@ fun SkyCanvas(viewModel: SkyViewModel, settings: Settings, modifier: Modifier = 
             }
         }
 
-        // --- Constellation artwork: warp each figure onto its 3 anchor stars ---
+        // --- Constellation artwork: render each figure as a projected, faded mesh ---
         if (settings.showConstellationArt && m.constellationArt.isNotEmpty()) {
-            artPaint.alpha = if (night) 60 else 105
-            artPaint.colorFilter = if (night) {
-                android.graphics.PorterDuffColorFilter(0xFFCC5544.toInt(), android.graphics.PorterDuff.Mode.MULTIPLY)
-            } else {
-                null
-            }
-            val dst = FloatArray(6)
+            artPaint.alpha = 255
+            val baseA = if (night) 70 else 120          // overall opacity (0..255)
+            val rgb = if (night) 0xCC4433 else 0xFFFFFF // night tint via vertex colour
             for (art in m.constellationArt) {
-                // Skip only if the whole figure is behind us; otherwise clamp anchors at
-                // the near plane so a figure straddling the view edge stretches off-screen
-                // instead of popping out entirely.
+                val ef = art.anchorEnu
+                val fr = art.imgFrac
+                // Skip only if the whole figure is behind us.
                 var maxDepth = -2f
-                var k = 0
-                while (k < 3) {
-                    val b = k * 3
-                    val d = art.anchorEnu[b] * look[0] + art.anchorEnu[b + 1] * look[1] +
-                        art.anchorEnu[b + 2] * look[2]
+                var t = 0
+                while (t < 3) {
+                    val b = t * 3
+                    val d = ef[b] * look[0] + ef[b + 1] * look[1] + ef[b + 2] * look[2]
                     if (d > maxDepth) maxDepth = d
-                    k++
+                    t++
                 }
                 if (maxDepth < 0.05f) continue
-                k = 0
-                while (k < 3) {
-                    val b = k * 3
-                    val vx = art.anchorEnu[b]; val vy = art.anchorEnu[b + 1]; val vz = art.anchorEnu[b + 2]
-                    val depth = vx * look[0] + vy * look[1] + vz * look[2]
-                    val d = if (depth < 0.04f) 0.04f else depth
-                    dst[k * 2] = cx + ((vx * right[0] + vy * right[1] + vz * right[2]) / d) * focal
-                    dst[k * 2 + 1] = cy - ((vx * up[0] + vy * up[1] + vz * up[2]) / d) * focal
-                    k++
+                // Affine map image fraction (u,v) -> 3D direction, from the 3 anchors.
+                val d1x = fr[2] - fr[0]; val d1y = fr[3] - fr[1]
+                val d2x = fr[4] - fr[0]; val d2y = fr[5] - fr[1]
+                val det = d1x * d2y - d2x * d1y
+                if (kotlin.math.abs(det) < 1e-7f) continue
+                val f1x = ef[3] - ef[0]; val f1y = ef[4] - ef[1]; val f1z = ef[5] - ef[2]
+                val f2x = ef[6] - ef[0]; val f2y = ef[7] - ef[1]; val f2z = ef[8] - ef[2]
+                var vi = 0
+                var anyVisible = false
+                var j = 0
+                while (j <= ART_MESH) {
+                    val v = j.toFloat() / ART_MESH
+                    var i = 0
+                    while (i <= ART_MESH) {
+                        val u = i.toFloat() / ART_MESH
+                        val du = u - fr[0]; val dv = v - fr[1]
+                        val a = (du * d2y - dv * d2x) / det
+                        val b = (dv * d1x - du * d1y) / det
+                        var dx = ef[0] + a * f1x + b * f2x
+                        var dy = ef[1] + a * f1y + b * f2y
+                        var dz = ef[2] + a * f1z + b * f2z
+                        val len = sqrt(dx * dx + dy * dy + dz * dz)
+                        if (len > 1e-6f) { dx /= len; dy /= len; dz /= len }
+                        val depth = dx * look[0] + dy * look[1] + dz * look[2]
+                        val dd = if (depth < 0.04f) 0.04f else depth
+                        artVerts[vi * 2] = cx + ((dx * right[0] + dy * right[1] + dz * right[2]) / dd) * focal
+                        artVerts[vi * 2 + 1] = cy - ((dx * up[0] + dy * up[1] + dz * up[2]) / dd) * focal
+                        // Fade vertices toward the near plane so figures dissolve, not clip.
+                        val fade = when {
+                            depth <= 0.03f -> 0f
+                            depth >= 0.13f -> 1f
+                            else -> (depth - 0.03f) / 0.10f
+                        }
+                        val av = (fade * baseA).toInt()
+                        artColors[vi] = (av shl 24) or rgb
+                        if (av > 0) anyVisible = true
+                        vi++; i++
+                    }
+                    j++
                 }
+                if (!anyVisible) continue
                 val bmp = artCache.getOrPut(art.file) {
                     try {
                         appContext.assets.open("constellation_art/${art.file}").use {
@@ -339,14 +367,9 @@ fun SkyCanvas(viewModel: SkyViewModel, settings: Settings, modifier: Modifier = 
                         null
                     }
                 } ?: continue
-                val src = floatArrayOf(
-                    art.imgFrac[0] * bmp.width, art.imgFrac[1] * bmp.height,
-                    art.imgFrac[2] * bmp.width, art.imgFrac[3] * bmp.height,
-                    art.imgFrac[4] * bmp.width, art.imgFrac[5] * bmp.height,
+                drawContext.canvas.nativeCanvas.drawBitmapMesh(
+                    bmp, ART_MESH, ART_MESH, artVerts, 0, artColors, 0, artPaint,
                 )
-                if (artMatrix.setPolyToPoly(src, 0, dst, 0, 3)) {
-                    drawContext.canvas.nativeCanvas.drawBitmap(bmp, artMatrix, artPaint)
-                }
             }
         }
 
