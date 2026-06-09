@@ -74,6 +74,23 @@ fun SkyCanvas(viewModel: SkyViewModel, settings: Settings, modifier: Modifier = 
         }
     }
 
+    // Follow: while active, keep the manual camera aimed at the search target.
+    val following by viewModel.followActive
+    androidx.compose.runtime.LaunchedEffect(following) {
+        if (!following) return@LaunchedEffect
+        while (true) {
+            val mm = viewModel.model.value
+            val tt = viewModel.searchTarget.value
+            if (mm != null && tt != null) {
+                resolveTargetEnu(mm, tt)?.let { enu ->
+                    manualAlt = Math.toDegrees(asin(enu[2].coerceIn(-1f, 1f).toDouble())).toFloat()
+                    manualAz = (((Math.toDegrees(atan2(enu[0].toDouble(), enu[1].toDouble())) + 360) % 360)).toFloat()
+                }
+            }
+            awaitFrame()
+        }
+    }
+
     // Drive ~60fps redraws.
     var frame by remember { mutableLongStateOf(0L) }
     androidx.compose.runtime.LaunchedEffect(Unit) {
@@ -104,6 +121,7 @@ fun SkyCanvas(viewModel: SkyViewModel, settings: Settings, modifier: Modifier = 
                 detectTransformGestures { _, pan, zoom, _ ->
                     if (zoom != 1f) fov = (fov / zoom).coerceIn(12f, 90f)
                     if (viewModel.manualMode.value) {
+                        if (viewModel.followActive.value) viewModel.setFollow(false)
                         val degPerPx = fov / size.height
                         manualAz = (((manualAz - pan.x * degPerPx) % 360f) + 360f) % 360f
                         manualAlt = (manualAlt + pan.y * degPerPx).coerceIn(-89f, 89f)

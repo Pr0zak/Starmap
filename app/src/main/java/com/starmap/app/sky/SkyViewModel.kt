@@ -131,7 +131,18 @@ class SkyViewModel(app: Application) : AndroidViewModel(app) {
     /** When true the view is controlled by dragging instead of the phone's sensors. */
     private val _manualMode = mutableStateOf(false)
     val manualMode: State<Boolean> = _manualMode
-    fun toggleManualMode() { _manualMode.value = !_manualMode.value }
+    fun toggleManualMode() {
+        _manualMode.value = !_manualMode.value
+        if (!_manualMode.value) _followActive.value = false
+    }
+
+    /** When true the view auto-slews to keep the current search target centred. */
+    private val _followActive = mutableStateOf(false)
+    val followActive: State<Boolean> = _followActive
+    fun setFollow(on: Boolean) {
+        _followActive.value = on
+        if (on) _manualMode.value = true // following only makes sense in manual look
+    }
 
     // --- Time machine -------------------------------------------------------
     /** When live, the sky tracks the real clock; otherwise it shows [_simTimeMillis]. */
@@ -463,6 +474,7 @@ class SkyViewModel(app: Application) : AndroidViewModel(app) {
 
     fun selectSearchTarget(target: SearchTarget?) {
         _searchTarget.value = target
+        if (target == null) _followActive.value = false
     }
 
     override fun onCleared() {

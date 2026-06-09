@@ -28,6 +28,7 @@ import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.LocationOff
 import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.MyLocation
 import androidx.compose.material.icons.filled.PanTool
 import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material.icons.filled.Search
@@ -454,6 +455,14 @@ private fun SearchBanner(viewModel: SkyViewModel, model: SkyModel?) {
                 Text(
                     if (enu == null) "Locating…" else describeDirection(enu),
                     color = Color(0xCCFFFFFF), fontSize = 12.sp,
+                )
+            }
+            val following by viewModel.followActive
+            IconButton(onClick = { viewModel.setFollow(!following) }) {
+                Icon(
+                    Icons.Filled.MyLocation,
+                    contentDescription = "Follow",
+                    tint = if (following) Color(0xFFFFD54F) else Color(0xFFD8E0F0),
                 )
             }
             IconButton(onClick = { viewModel.selectSearchTarget(null) }) {
