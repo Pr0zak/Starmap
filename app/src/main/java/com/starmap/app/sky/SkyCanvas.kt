@@ -758,12 +758,11 @@ fun SkyCanvas(viewModel: SkyViewModel, settings: Settings, modifier: Modifier = 
                     }
                 }
 
-                // Marker size shrinks with distance, as a depth cue.
+                // Marker size is a strong depth cue: ~9dp when near/overhead, ~2dp far off.
                 val distNm = (ac.rangeKm * 0.539957).toFloat()
-                val sizeFactor = (1.2f - distNm / 80f * 0.75f).coerceIn(0.45f, 1.2f)
-                val s = 4f * density * sizeFactor
+                val s = (9f - distNm * 0.085f).coerceIn(2.2f, 9f) * density
                 if (heli) {
-                    drawCircle(color, 3f * density * sizeFactor, androidx.compose.ui.geometry.Offset(sx, sy))
+                    drawCircle(color, s * 0.7f, androidx.compose.ui.geometry.Offset(sx, sy))
                     drawLine(color, androidx.compose.ui.geometry.Offset(sx - s, sy - s),
                         androidx.compose.ui.geometry.Offset(sx + s, sy - s), strokeWidth = 1.6f * density)
                 } else {
