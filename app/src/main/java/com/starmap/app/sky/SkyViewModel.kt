@@ -31,6 +31,9 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
+/** A sky object the user tapped to identify. */
+data class IdentifiedObject(val name: String, val kind: String, val detail: String)
+
 class SkyViewModel(app: Application) : AndroidViewModel(app) {
 
     val orientation = OrientationProvider(app)
@@ -71,10 +74,20 @@ class SkyViewModel(app: Application) : AndroidViewModel(app) {
     private val _selectedPhoto = mutableStateOf<AircraftManager.Photo?>(null)
     val selectedPhoto: State<AircraftManager.Photo?> = _selectedPhoto
 
+    private val _selectedObject = mutableStateOf<IdentifiedObject?>(null)
+    val selectedObject: State<IdentifiedObject?> = _selectedObject
+
+    /** Show the info card for a tapped sky object (clears any selected aircraft). */
+    fun selectObject(obj: IdentifiedObject?) {
+        _selectedObject.value = obj
+        if (obj != null) _selectedAircraft.value = null
+    }
+
     fun selectAircraft(ac: AircraftRender?) {
         _selectedAircraft.value = ac
         _selectedRoute.value = null
         _selectedPhoto.value = null
+        if (ac != null) _selectedObject.value = null
         if (ac != null) {
             if (ac.callsign.isNotBlank() && ac.callsign != "?") {
                 viewModelScope.launch { _selectedRoute.value = aircraftManager.fetchRoute(ac.callsign) }

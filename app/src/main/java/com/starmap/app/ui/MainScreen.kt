@@ -67,6 +67,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import coil.compose.AsyncImage
 import com.starmap.app.aircraft.AircraftManager
 import com.starmap.app.sky.AircraftRender
+import com.starmap.app.sky.IdentifiedObject
 import com.starmap.app.sky.SkyCanvas
 import com.starmap.app.sky.SkyModel
 import com.starmap.app.sky.SkyViewModel
@@ -237,6 +238,13 @@ private fun SkyScreen(
                 AircraftInfoCard(ac, selRoute, selPhoto) { viewModel.selectAircraft(null) }
                 Spacer(Modifier.height(8.dp))
             }
+            val selObj by viewModel.selectedObject
+            if (selAc == null) {
+                selObj?.let { obj ->
+                    ObjectInfoCard(obj) { viewModel.selectObject(null) }
+                    Spacer(Modifier.height(8.dp))
+                }
+            }
             if (location == null) {
                 StatusCard {
                     Row(verticalAlignment = Alignment.CenterVertically) {
@@ -295,6 +303,35 @@ private fun OverflowMenu(onOpen: (Screen) -> Unit) {
                 leadingIcon = { Icon(Icons.Filled.Info, null) },
                 onClick = { expanded = false; onOpen(Screen.About) },
             )
+        }
+    }
+}
+
+@Composable
+private fun ObjectInfoCard(obj: IdentifiedObject, onClose: () -> Unit) {
+    Surface(
+        color = Color(0xF21B2030),
+        shape = RoundedCornerShape(14.dp),
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Row(
+            modifier = Modifier.padding(start = 16.dp, top = 8.dp, bottom = 12.dp, end = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    obj.name, color = Color(0xFFFFE9A8), fontSize = 18.sp,
+                    fontWeight = FontWeight.SemiBold,
+                )
+                Text(obj.kind, color = Color(0x99FFFFFF), fontSize = 12.sp)
+                Text(
+                    obj.detail, color = Color(0xCCFFFFFF), fontSize = 13.sp,
+                    modifier = Modifier.padding(top = 4.dp),
+                )
+            }
+            IconButton(onClick = onClose) {
+                Icon(Icons.Filled.Close, contentDescription = "Close", tint = Color(0xFFD8E0F0))
+            }
         }
     }
 }

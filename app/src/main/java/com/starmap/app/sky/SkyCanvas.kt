@@ -85,6 +85,8 @@ fun SkyCanvas(viewModel: SkyViewModel, settings: Settings, modifier: Modifier = 
 
     // Tappable aircraft hit-boxes, refreshed each frame by the draw pass.
     val aircraftHits = remember { mutableListOf<AircraftHit>() }
+    // Latest projection basis, so a tap can re-project any sky object to identify it.
+    val projState = remember { ProjState() }
 
     // Reusable text paints.
     val starPaint = remember { android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG) }
@@ -114,8 +116,22 @@ fun SkyCanvas(viewModel: SkyViewModel, settings: Settings, modifier: Modifier = 
                         val dx = it.x - offset.x; val dy = it.y - offset.y
                         dx * dx + dy * dy
                     }
-                    val near = hit != null && hypot(hit.x - offset.x, hit.y - offset.y) < 40f * density
-                    viewModel.selectAircraft(if (near) hit!!.render else null)
+                    if (hit != null && hypot(hit.x - offset.x, hit.y - offset.y) < 40f * density) {
+                        viewModel.selectAircraft(hit.render)
+                    } else {
+                        val m = viewModel.model.value
+                        val id = if (m != null) {
+                            nearestObject(m, projState, offset.x, offset.y, 36f * density)
+                        } else {
+                            null
+                        }
+                        if (id != null) {
+                            viewModel.selectObject(id)
+                        } else {
+                            viewModel.selectAircraft(null)
+                            viewModel.selectObject(null)
+                        }
+                    }
                 }
             },
     ) {
@@ -176,6 +192,11 @@ fun SkyCanvas(viewModel: SkyViewModel, settings: Settings, modifier: Modifier = 
 
         val p = FloatArray(2)
         val q = FloatArray(2)
+
+        // Record this frame's projection so taps can identify objects (see tap handler).
+        projState.look = look; projState.right = right; projState.up = up
+        projState.cx = cx; projState.cy = cy; projState.focal = focal
+        projState.width = size.width; projState.height = size.height; projState.margin = margin
 
         fun drawEnuPolyline(line: FloatArray, color: Color, width: Float) {
             var hasPrev = false; var px = 0f; var py = 0f
@@ -785,3 +806,88 @@ private fun LaunchedPersistFov(viewModel: SkyViewModel, fovProvider: () -> Float
 
 /** A tappable aircraft position recorded during the draw pass. */
 private class AircraftHit(val x: Float, val y: Float, val render: AircraftRender)
+
+/** The last frame's projection basis, captured so a tap can re-project sky objects. */
+private class ProjState {
+    var look: FloatArray? = null
+    var right: FloatArray? = null
+    var up: FloatArray? = null
+    var cx = 0f
+    var cy = 0f
+    var focal = 0f
+    var width = 0f
+    var height = 0f
+    var margin = 0f
+
+    fun project(v: FloatArray, out: FloatArray): Boolean {
+        val lk = look ?: return false
+        val rt = right ?: return false
+        val u = up ?: return false
+        val depth = v[0] * lk[0] + v[1] * lk[1] + v[2] * lk[2]
+        if (depth < MIN_DEPTH) return false
+        out[0] = cx + ((v[0] * rt[0] + v[1] * rt[1] + v[2] * rt[2]) / depth) * focal
+        out[1] = cy - ((v[0] * u[0] + v[1] * u[1] + v[2] * u[2]) / depth) * focal
+        return out[0] >= -margin && out[0] <= width + margin &&
+            out[1] >= -margin && out[1] <= height + margin
+    }
+}
+
+/** Finds the nearest identifiable sky object within [thresh] px of ([ox],[oy]). */
+private fun nearestObject(
+    m: SkyModel,
+    ps: ProjState,
+    ox: Float,
+    oy: Float,
+    thresh: Float,
+): IdentifiedObject? {
+    val out = FloatArray(2)
+    var bestD2 = thresh * thresh
+    var best: IdentifiedObject? = null
+    fun consider(enu: FloatArray, name: String, kind: String, mag: Float?) {
+        if (enu[2] < 0f) return
+        if (!ps.project(enu, out)) return
+        val dx = out[0] - ox
+        val dy = out[1] - oy
+        val d2 = dx * dx + dy * dy
+        if (d2 < bestD2) {
+            bestD2 = d2
+            best = identify(name, kind, enu, mag)
+        }
+    }
+    m.sun?.let { consider(it.enu, "Sun", "Star", null) }
+    m.moon?.let { consider(it.enu, "Moon", "Moon", null) }
+    for (pl in m.planets) consider(pl.enu, pl.name, "Planet", null)
+    for (c in m.comets) consider(c.enu, c.name, "Comet", c.magnitude)
+    for (a in m.asteroids) consider(a.enu, a.name, "Asteroid", null)
+    for (d in m.messier) {
+        val label = if (d.common.isBlank()) d.name else "${d.name} · ${d.common}"
+        consider(d.enu, label, d.type, d.mag)
+    }
+    var s = 0
+    while (s < m.satCount) {
+        val b = s * 3
+        consider(floatArrayOf(m.satEnu[b], m.satEnu[b + 1], m.satEnu[b + 2]), m.satNames[s], "Satellite", null)
+        s++
+    }
+    for ((idx, name) in m.labels) {
+        if (idx < 0 || idx >= m.count) continue
+        val b = idx * 3
+        val mag = if (idx < m.starMag.size) m.starMag[idx] else null
+        consider(floatArrayOf(m.starEnu[b], m.starEnu[b + 1], m.starEnu[b + 2]), name, "Star", mag)
+    }
+    return best
+}
+
+private fun identify(name: String, kind: String, enu: FloatArray, mag: Float?): IdentifiedObject {
+    val alt = Math.toDegrees(asin(enu[2].coerceIn(-1f, 1f).toDouble()))
+    val az = (Math.toDegrees(atan2(enu[0].toDouble(), enu[1].toDouble())) + 360.0) % 360.0
+    val dirs = arrayOf("N", "NE", "E", "SE", "S", "SW", "W", "NW")
+    val compass = dirs[(((az + 22.5) % 360.0) / 45.0).toInt() % 8]
+    val magStr = if (mag != null && mag.isFinite() && kind != "Satellite") {
+        " · mag %.1f".format(mag)
+    } else {
+        ""
+    }
+    val detail = "Alt %.0f° · Az %.0f° %s%s".format(alt, az, compass, magStr)
+    return IdentifiedObject(name, kind, detail)
+}
