@@ -9,8 +9,10 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
+import androidx.compose.ui.unit.sp
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -110,6 +112,7 @@ fun SettingsScreen(viewModel: SkyViewModel, settings: Settings, onBack: () -> Un
                 checked = settings.nightMode) {
                 viewModel.setBool(BoolSetting.NightMode, it)
             }
+            OrientationRow(settings.orientationMode) { viewModel.setOrientation(it) }
 
             SectionHeader("Catalog")
             SettingSwitch(
@@ -178,5 +181,25 @@ private fun ManualLocationSection(viewModel: SkyViewModel, settings: Settings) {
             },
             modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
         ) { Text("Apply location") }
+    }
+}
+
+@Composable
+private fun OrientationRow(mode: Int, onSelect: (Int) -> Unit) {
+    Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp)) {
+        Text("Screen orientation", fontSize = 16.sp)
+        Row(modifier = Modifier.padding(top = 8.dp)) {
+            listOf("Auto", "Portrait", "Landscape").forEachIndexed { i, label ->
+                if (mode == i) {
+                    Button(onClick = { onSelect(i) }, modifier = Modifier.padding(end = 8.dp)) {
+                        Text(label)
+                    }
+                } else {
+                    OutlinedButton(onClick = { onSelect(i) }, modifier = Modifier.padding(end = 8.dp)) {
+                        Text(label)
+                    }
+                }
+            }
+        }
     }
 }

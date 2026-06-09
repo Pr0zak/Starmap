@@ -7,6 +7,7 @@ import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.doublePreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.floatPreferencesKey
+import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
@@ -28,6 +29,8 @@ data class Settings(
     val showStarlink: Boolean = false,
     val showBelowHorizon: Boolean = false,
     val nightMode: Boolean = false,
+    /** 0 = follow system auto-rotate, 1 = portrait, 2 = landscape. */
+    val orientationMode: Int = 0,
     val useExtendedCatalog: Boolean = true,
     val autoCheckUpdates: Boolean = true,
     val manualLocation: Boolean = false,
@@ -55,6 +58,7 @@ class SettingsRepository(private val context: Context) {
         val showStarlink = booleanPreferencesKey("show_starlink")
         val showBelowHorizon = booleanPreferencesKey("show_below_horizon")
         val nightMode = booleanPreferencesKey("night_mode")
+        val orientationMode = intPreferencesKey("orientation_mode")
         val useExtendedCatalog = booleanPreferencesKey("use_extended_catalog")
         val autoCheckUpdates = booleanPreferencesKey("auto_check_updates")
         val manualLocation = booleanPreferencesKey("manual_location")
@@ -79,6 +83,7 @@ class SettingsRepository(private val context: Context) {
             showStarlink = p[Keys.showStarlink] ?: false,
             showBelowHorizon = p[Keys.showBelowHorizon] ?: false,
             nightMode = p[Keys.nightMode] ?: false,
+            orientationMode = p[Keys.orientationMode] ?: 0,
             useExtendedCatalog = p[Keys.useExtendedCatalog] ?: true,
             autoCheckUpdates = p[Keys.autoCheckUpdates] ?: true,
             manualLocation = p[Keys.manualLocation] ?: false,
@@ -99,6 +104,9 @@ class SettingsRepository(private val context: Context) {
             it[Keys.manualLat] = lat
             it[Keys.manualLon] = lon
         }
+
+    suspend fun setOrientation(mode: Int) =
+        context.dataStore.edit { it[Keys.orientationMode] = mode }
 
     enum class FloatSetting(val key: Preferences.Key<Float>) {
         MagnitudeLimit(Keys.magnitudeLimit),

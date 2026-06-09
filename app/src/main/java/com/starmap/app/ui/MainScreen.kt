@@ -1,6 +1,10 @@
 package com.starmap.app.ui
 
 import android.Manifest
+import android.app.Activity
+import android.content.Context
+import android.content.ContextWrapper
+import android.content.pm.ActivityInfo
 import android.content.pm.PackageManager
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -66,6 +70,16 @@ fun MainScreen(viewModel: SkyViewModel = viewModel()) {
     var screen by remember { mutableStateOf(Screen.Sky) }
     val settings by viewModel.settings.collectAsState()
     val context = LocalContext.current
+
+    // Apply the chosen screen orientation to the activity.
+    val activity = remember(context) { context.findActivity() }
+    LaunchedEffect(settings.orientationMode) {
+        activity?.requestedOrientation = when (settings.orientationMode) {
+            1 -> ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+            2 -> ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
+            else -> ActivityInfo.SCREEN_ORIENTATION_FULL_USER
+        }
+    }
 
     // Start/stop the sensors with the lifecycle.
     DisposableEffectLifecycle(
@@ -306,7 +320,16 @@ private fun describeDirection(enu: FloatArray): String {
     val alt = Math.toDegrees(asin(enu[2].coerceIn(-1f, 1f).toDouble())).roundToInt()
     val az = (((Math.toDegrees(atan2(enu[0].toDouble(), enu[1].toDouble())) + 360) % 360)).roundToInt()
     val updown = if (alt >= 0) "$alt° up" else "${-alt}° below horizon"
-    return "$az° ${compassLabel(az.toFloat())} · $updown — point your phone here"
+    return "$az° ${compassLabel(az.toFloat())} · $updown"
+}
+
+private fun Context.findActivity(): Activity? {
+    var c: Context? = this
+    while (c is ContextWrapper) {
+        if (c is Activity) return c
+        c = c.baseContext
+    }
+    return null
 }
 
 private fun compassLabel(deg: Float): String {

@@ -83,6 +83,32 @@ object FuzzySearch {
     }
 }
 
+/** Common nicknames / asterisms so "big dipper" finds Ursa Major, etc. (keyed by IAU abbr). */
+val constellationAliases: Map<String, String> = mapOf(
+    "uma" to "big dipper plough plow saucepan the great bear wagon",
+    "umi" to "little dipper little bear",
+    "ori" to "the hunter orions belt",
+    "cyg" to "northern cross the swan",
+    "sgr" to "the teapot the archer",
+    "sco" to "the scorpion fishhook",
+    "cru" to "southern cross",
+    "leo" to "the lion the sickle",
+    "tau" to "the bull pleiades seven sisters hyades",
+    "gem" to "the twins",
+    "cas" to "the w the queen",
+    "lyr" to "the harp",
+    "aql" to "the eagle",
+    "cma" to "great dog",
+    "cmi" to "little dog",
+    "boo" to "the herdsman the kite",
+    "peg" to "great square the winged horse",
+    "and" to "the chained princess",
+    "aur" to "the charioteer",
+    "del" to "the dolphin jobs coffin",
+    "crv" to "the crow",
+    "her" to "the keystone",
+)
+
 /** Resolves the current local ENU direction of a search target from the sky model. */
 fun resolveTargetEnu(model: SkyModel, target: SearchTarget): FloatArray? = when (target) {
     is SearchTarget.StarT -> if (target.index in 0 until model.count) {

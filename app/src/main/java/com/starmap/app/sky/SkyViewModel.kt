@@ -181,6 +181,8 @@ class SkyViewModel(app: Application) : AndroidViewModel(app) {
         if (enabled) location.setManual(lat, lon) else location.start()
     }
 
+    fun setOrientation(mode: Int) = viewModelScope.launch { settingsRepo.setOrientation(mode) }
+
     // --- Updates ---
     fun checkForUpdates() {
         if (_checkingUpdate.value) return
@@ -274,10 +276,11 @@ class SkyViewModel(app: Application) : AndroidViewModel(app) {
         entries.add(SearchEntry(SearchTarget.SpecialT("Moon"), "Moon", "Solar System", "moon"))
         entries.add(SearchEntry(SearchTarget.SpecialT("ISS"), "ISS (Space Station)", "Satellite", "iss space station"))
         for (c in cons) {
+            val alias = constellationAliases[c.abbr.lowercase()] ?: ""
             entries.add(
                 SearchEntry(
                     SearchTarget.ConstellationT(c.name), c.name, "Constellation",
-                    FuzzySearch.normalize("${c.name} ${c.abbr}"),
+                    FuzzySearch.normalize("${c.name} ${c.abbr} $alias"),
                 ),
             )
         }
