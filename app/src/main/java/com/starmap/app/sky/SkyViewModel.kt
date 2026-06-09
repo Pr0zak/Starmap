@@ -284,6 +284,7 @@ class SkyViewModel(app: Application) : AndroidViewModel(app) {
                             includeCometPaths = s.showCometPaths,
                             includeMilkyWay = s.showMilkyWay,
                             milkyWay = milkyWay,
+                            includeRefraction = s.applyRefraction,
                             satellites = sats,
                             aircraft = aircraftTracks,
                             showBelowHorizon = s.showBelowHorizon,

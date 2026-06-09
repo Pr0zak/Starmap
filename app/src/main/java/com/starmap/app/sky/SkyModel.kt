@@ -140,6 +140,7 @@ object SkyBuilder {
         includeCometPaths: Boolean,
         includeMilkyWay: Boolean,
         milkyWay: MilkyWay?,
+        includeRefraction: Boolean,
         satellites: List<NamedSat>,
         aircraft: List<AircraftTrack>,
         showBelowHorizon: Boolean,
@@ -158,6 +159,7 @@ object SkyBuilder {
             starEnu[i * 3] = AstroMath.dot(tmp, basis.east).toFloat()
             starEnu[i * 3 + 1] = AstroMath.dot(tmp, basis.north).toFloat()
             starEnu[i * 3 + 2] = AstroMath.dot(tmp, basis.up).toFloat()
+            if (includeRefraction) AstroMath.refract(starEnu, i * 3)
         }
 
         // Milky Way dot cloud: rotate each equatorial vector into the local frame.
@@ -181,13 +183,17 @@ object SkyBuilder {
 
         val sunEq = SunMoon.sun(jd)
         val sunVec = AstroMath.equatorialToVec(sunEq.raDeg, sunEq.decDeg)
-        val sun = BodyEnu(toEnu(sunVec, basis), "Sun")
+        val sunEnu = toEnu(sunVec, basis)
+        if (includeRefraction) AstroMath.refract(sunEnu, 0)
+        val sun = BodyEnu(sunEnu, "Sun")
 
         val moonEq = SunMoon.moon(jd, fix.latitude, lst)
         val moonVec = AstroMath.equatorialToVec(moonEq.raDeg, moonEq.decDeg)
         val phase = SunMoon.moonPhase(jd)
+        val moonEnu = toEnu(moonVec, basis)
+        if (includeRefraction) AstroMath.refract(moonEnu, 0)
         val moon = MoonEnu(
-            toEnu(moonVec, basis),
+            moonEnu,
             phase.illuminatedFraction.toFloat(),
             phase.waxing,
             "Moon",
@@ -200,7 +206,9 @@ object SkyBuilder {
         val planets = if (includePlanets) {
             Planets.positions(jd).map { p ->
                 val v = AstroMath.equatorialToVec(p.raDeg, p.decDeg)
-                PlanetEnu(p.name, toEnu(v, basis), p.colorArgb, p.sizeDp)
+                val enu = toEnu(v, basis)
+                if (includeRefraction) AstroMath.refract(enu, 0)
+                PlanetEnu(p.name, enu, p.colorArgb, p.sizeDp)
             }
         } else {
             emptyList()

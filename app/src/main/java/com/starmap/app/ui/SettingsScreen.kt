@@ -128,6 +128,10 @@ fun SettingsScreen(viewModel: SkyViewModel, settings: Settings, onBack: () -> Un
                 checked = settings.showBelowHorizon) {
                 viewModel.setBool(BoolSetting.BelowHorizon, it)
             }
+            SettingSwitch("Atmospheric refraction", "Lift objects near the horizon, as the air does",
+                checked = settings.applyRefraction) {
+                viewModel.setBool(BoolSetting.Refraction, it)
+            }
 
             SectionHeader("Satellites")
             val issReady = viewModel.satelliteManager.isIssDownloaded

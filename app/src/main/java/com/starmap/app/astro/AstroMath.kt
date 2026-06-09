@@ -1,9 +1,12 @@
 package com.starmap.app.astro
 
 import kotlin.math.PI
+import kotlin.math.asin
 import kotlin.math.atan2
 import kotlin.math.cos
+import kotlin.math.hypot
 import kotlin.math.sin
+import kotlin.math.tan
 
 /**
  * Core astronomical coordinate math.
@@ -45,6 +48,29 @@ object AstroMath {
         val dec = decDeg * DEG2RAD
         val cd = cos(dec)
         return doubleArrayOf(cd * cos(ra), cd * sin(ra), sin(dec))
+    }
+
+    /**
+     * Bends a local ENU **unit** vector (stored at [arr]\[base..base+2]) upward to
+     * account for atmospheric refraction, which lifts objects near the horizon (up
+     * to ~34′ at the horizon). Uses Saemundsson's true→apparent altitude formula and
+     * only touches objects below ~15° altitude, where refraction is visible.
+     */
+    fun refract(arr: FloatArray, base: Int) {
+        val u = arr[base + 2]
+        if (u < -0.035f || u > 0.26f) return // skip well-below-horizon / high-altitude
+        val h = asin(u.toDouble().coerceIn(-1.0, 1.0)) * RAD2DEG
+        if (h < -2.0) return
+        val rDeg = 1.02 / tan((h + 10.3 / (h + 5.11)) * DEG2RAD) / 60.0
+        val hApp = (h + rDeg) * DEG2RAD
+        val e = arr[base]
+        val n = arr[base + 1]
+        val horiz = hypot(e, n)
+        if (horiz < 1e-6f) return
+        val scale = (cos(hApp) / horiz).toFloat()
+        arr[base] = e * scale
+        arr[base + 1] = n * scale
+        arr[base + 2] = sin(hApp).toFloat()
     }
 
     /**

@@ -43,6 +43,7 @@ data class Settings(
     val aircraftRangeNm: Float = 120f,
     val showBelowHorizon: Boolean = false,
     val showDaylightSky: Boolean = true,
+    val applyRefraction: Boolean = true,
     val nightMode: Boolean = false,
     /** 0 = follow system auto-rotate, 1 = portrait, 2 = landscape. */
     val orientationMode: Int = 0,
@@ -87,6 +88,7 @@ class SettingsRepository(private val context: Context) {
         val aircraftRangeNm = floatPreferencesKey("aircraft_range_nm")
         val showBelowHorizon = booleanPreferencesKey("show_below_horizon")
         val showDaylightSky = booleanPreferencesKey("show_daylight_sky")
+        val applyRefraction = booleanPreferencesKey("apply_refraction")
         val nightMode = booleanPreferencesKey("night_mode")
         val orientationMode = intPreferencesKey("orientation_mode")
         val useExtendedCatalog = booleanPreferencesKey("use_extended_catalog")
@@ -127,6 +129,7 @@ class SettingsRepository(private val context: Context) {
             aircraftRangeNm = p[Keys.aircraftRangeNm] ?: 120f,
             showBelowHorizon = p[Keys.showBelowHorizon] ?: false,
             showDaylightSky = p[Keys.showDaylightSky] ?: true,
+            applyRefraction = p[Keys.applyRefraction] ?: true,
             nightMode = p[Keys.nightMode] ?: false,
             orientationMode = p[Keys.orientationMode] ?: 0,
             useExtendedCatalog = p[Keys.useExtendedCatalog] ?: true,
@@ -186,6 +189,7 @@ class SettingsRepository(private val context: Context) {
         AircraftLabels(Keys.showAircraftLabels),
         BelowHorizon(Keys.showBelowHorizon),
         DaylightSky(Keys.showDaylightSky),
+        Refraction(Keys.applyRefraction),
         NightMode(Keys.nightMode),
         ExtendedCatalog(Keys.useExtendedCatalog),
         AutoCheckUpdates(Keys.autoCheckUpdates),
