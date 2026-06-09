@@ -181,6 +181,12 @@ fun SettingsScreen(viewModel: SkyViewModel, settings: Settings, onBack: () -> Un
                 checked = settings.nightMode) {
                 viewModel.setBool(BoolSetting.NightMode, it)
             }
+            SettingSwitch(
+                "Centre identify", "Show what's under the centre reticle automatically",
+                checked = settings.centerIdentify,
+            ) {
+                viewModel.setBool(BoolSetting.CenterIdentify, it)
+            }
             OrientationRow(settings.orientationMode) { viewModel.setOrientation(it) }
             FovCirclesRow(settings.fovCirclesMode) { viewModel.setFovCircles(it) }
 

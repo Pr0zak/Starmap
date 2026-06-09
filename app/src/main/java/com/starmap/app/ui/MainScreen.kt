@@ -8,6 +8,7 @@ import android.content.pm.ActivityInfo
 import android.content.pm.PackageManager
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -21,10 +22,16 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.AutoAwesome
+import androidx.compose.material.icons.filled.BlurOn
+import androidx.compose.material.icons.filled.Brightness1
+import androidx.compose.material.icons.filled.BubbleChart
 import androidx.compose.material.icons.filled.CameraAlt
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.DarkMode
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Flight
 import androidx.compose.material.icons.filled.Info
@@ -32,7 +39,11 @@ import androidx.compose.material.icons.filled.LocationOff
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.MyLocation
 import androidx.compose.material.icons.filled.PanTool
+import androidx.compose.material.icons.filled.Public
+import androidx.compose.material.icons.filled.SatelliteAlt
 import androidx.compose.material.icons.filled.Schedule
+import androidx.compose.material.icons.filled.Star
+import androidx.compose.material.icons.filled.WbSunny
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.DropdownMenu
@@ -57,6 +68,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -279,9 +291,10 @@ private fun SkyScreen(
                 Spacer(Modifier.height(8.dp))
             }
             val selObj by viewModel.selectedObject
+            val centerObj by viewModel.centerObject
             if (selAc == null) {
-                selObj?.let { obj ->
-                    ObjectInfoCard(obj) { viewModel.selectObject(null) }
+                (selObj ?: centerObj)?.let { obj ->
+                    ObjectInfoCard(obj, onClose = selObj?.let { { viewModel.selectObject(null) } })
                     Spacer(Modifier.height(8.dp))
                 }
             }
@@ -348,31 +361,59 @@ private fun OverflowMenu(onOpen: (Screen) -> Unit) {
 }
 
 @Composable
-private fun ObjectInfoCard(obj: IdentifiedObject, onClose: () -> Unit) {
+private fun ObjectInfoCard(obj: IdentifiedObject, onClose: (() -> Unit)? = null) {
+    val (icon, accent) = objectVisual(obj)
     Surface(
         color = Color(0xF21B2030),
-        shape = RoundedCornerShape(14.dp),
+        shape = RoundedCornerShape(16.dp),
         modifier = Modifier.fillMaxWidth(),
     ) {
         Row(
-            modifier = Modifier.padding(start = 16.dp, top = 8.dp, bottom = 12.dp, end = 8.dp),
+            modifier = Modifier.padding(start = 14.dp, top = 10.dp, bottom = 12.dp, end = 8.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Column(modifier = Modifier.weight(1f)) {
+            Box(
+                modifier = Modifier
+                    .size(44.dp)
+                    .clip(CircleShape)
+                    .background(accent.copy(alpha = 0.16f)),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(icon, contentDescription = null, tint = accent, modifier = Modifier.size(26.dp))
+            }
+            Column(modifier = Modifier.weight(1f).padding(start = 14.dp)) {
                 Text(
-                    obj.name, color = Color(0xFFFFE9A8), fontSize = 18.sp,
+                    obj.name, color = Color(0xFFF1F4FA), fontSize = 18.sp,
                     fontWeight = FontWeight.SemiBold,
                 )
-                Text(obj.kind, color = Color(0x99FFFFFF), fontSize = 12.sp)
+                Text(obj.kind, color = accent, fontSize = 12.sp, fontWeight = FontWeight.Medium)
                 Text(
-                    obj.detail, color = Color(0xCCFFFFFF), fontSize = 13.sp,
-                    modifier = Modifier.padding(top = 4.dp),
+                    obj.detail, color = Color(0xB3FFFFFF), fontSize = 13.sp,
+                    modifier = Modifier.padding(top = 3.dp),
                 )
             }
-            IconButton(onClick = onClose) {
-                Icon(Icons.Filled.Close, contentDescription = "Close", tint = Color(0xFFD8E0F0))
+            if (onClose != null) {
+                IconButton(onClick = onClose) {
+                    Icon(Icons.Filled.Close, contentDescription = "Close", tint = Color(0xFFD8E0F0))
+                }
             }
         }
+    }
+}
+
+/** Maps an identified object to a representative icon and accent colour. */
+private fun objectVisual(obj: IdentifiedObject): Pair<ImageVector, Color> {
+    val k = obj.kind
+    return when {
+        obj.name == "Sun" -> Icons.Filled.WbSunny to Color(0xFFFFB74D)
+        k == "Moon" -> Icons.Filled.DarkMode to Color(0xFFB0BEC5)
+        k == "Planet" -> Icons.Filled.Public to Color(0xFF80DEEA)
+        k == "Comet" -> Icons.Filled.AutoAwesome to Color(0xFFB3E5FC)
+        k == "Asteroid" -> Icons.Filled.Brightness1 to Color(0xFFD7CCC8)
+        k == "Satellite" -> Icons.Filled.SatelliteAlt to Color(0xFF80CBC4)
+        k == "Star" -> Icons.Filled.Star to Color(0xFFFFE082)
+        k.contains("Cluster", ignoreCase = true) -> Icons.Filled.BubbleChart to Color(0xFFCE93D8)
+        else -> Icons.Filled.BlurOn to Color(0xFFCE93D8) // galaxies, nebulae & other deep-sky
     }
 }
 
@@ -518,7 +559,6 @@ private fun describeDirection(enu: FloatArray): String {
     return "$az° ${compassLabel(az.toFloat())} · $updown"
 }
 
-@Composable
 @Composable
 private fun PhotoNote(text: String) {
     Text(

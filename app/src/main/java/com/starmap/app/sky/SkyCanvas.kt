@@ -102,8 +102,28 @@ fun SkyCanvas(viewModel: SkyViewModel, settings: Settings, modifier: Modifier = 
 
     // Tappable aircraft hit-boxes, refreshed each frame by the draw pass.
     val aircraftHits = remember { mutableListOf<AircraftHit>() }
-    // Latest projection basis, so a tap can re-project any sky object to identify it.
+    // Latest projection basis, so a tap (or the centre reticle) can identify objects.
     val projState = remember { ProjState() }
+
+    // Live "what's under the centre reticle" identification.
+    androidx.compose.runtime.LaunchedEffect(settings.centerIdentify, density) {
+        if (!settings.centerIdentify) {
+            viewModel.setCenterObject(null)
+            return@LaunchedEffect
+        }
+        var lastName: String? = null
+        while (true) {
+            val mm = viewModel.model.value
+            if (mm != null && projState.look != null) {
+                val id = nearestObject(mm, projState, projState.cx, projState.cy, 26f * density)
+                if (id?.name != lastName) {
+                    lastName = id?.name
+                    viewModel.setCenterObject(id)
+                }
+            }
+            kotlinx.coroutines.delay(120)
+        }
+    }
 
     // Reusable text paints.
     val starPaint = remember { android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG) }
@@ -729,6 +749,25 @@ fun SkyCanvas(viewModel: SkyViewModel, settings: Settings, modifier: Modifier = 
             drawCircle(ringColor, 1.5f * density, center)
         }
 
+        // --- Centre reticle: brightens when an object sits under it ---
+        if (settings.centerIdentify) {
+            val centered = viewModel.centerObject.value != null
+            val rc = when {
+                centered && night -> Color(0xCCFF7777)
+                centered -> Color(0xCCFFE082)
+                night -> Color(0x66CC5555)
+                else -> Color(0x55C0CCE0)
+            }
+            val center = androidx.compose.ui.geometry.Offset(cx, cy)
+            val rr = 9f * density
+            val t = 4f * density
+            drawCircle(rc, rr, center, style = Stroke(1.2f * density))
+            drawLine(rc, androidx.compose.ui.geometry.Offset(cx - rr - t, cy), androidx.compose.ui.geometry.Offset(cx - rr + t, cy), strokeWidth = 1.2f * density)
+            drawLine(rc, androidx.compose.ui.geometry.Offset(cx + rr - t, cy), androidx.compose.ui.geometry.Offset(cx + rr + t, cy), strokeWidth = 1.2f * density)
+            drawLine(rc, androidx.compose.ui.geometry.Offset(cx, cy - rr - t), androidx.compose.ui.geometry.Offset(cx, cy - rr + t), strokeWidth = 1.2f * density)
+            drawLine(rc, androidx.compose.ui.geometry.Offset(cx, cy + rr - t), androidx.compose.ui.geometry.Offset(cx, cy + rr + t), strokeWidth = 1.2f * density)
+        }
+
         // --- Search target: reticle when on screen, edge arrow when not ---
         viewModel.searchTarget.value?.let { target ->
             val tenu = resolveTargetEnu(m, target)
@@ -854,20 +893,25 @@ private class ProjState {
     var height = 0f
     var margin = 0f
 
-    fun project(v: FloatArray, out: FloatArray): Boolean {
+    fun projectAt(arr: FloatArray, base: Int, out: FloatArray): Boolean {
         val lk = look ?: return false
         val rt = right ?: return false
         val u = up ?: return false
-        val depth = v[0] * lk[0] + v[1] * lk[1] + v[2] * lk[2]
+        val x = arr[base]; val y = arr[base + 1]; val z = arr[base + 2]
+        val depth = x * lk[0] + y * lk[1] + z * lk[2]
         if (depth < MIN_DEPTH) return false
-        out[0] = cx + ((v[0] * rt[0] + v[1] * rt[1] + v[2] * rt[2]) / depth) * focal
-        out[1] = cy - ((v[0] * u[0] + v[1] * u[1] + v[2] * u[2]) / depth) * focal
+        out[0] = cx + ((x * rt[0] + y * rt[1] + z * rt[2]) / depth) * focal
+        out[1] = cy - ((x * u[0] + y * u[1] + z * u[2]) / depth) * focal
         return out[0] >= -margin && out[0] <= width + margin &&
             out[1] >= -margin && out[1] <= height + margin
     }
 }
 
-/** Finds the nearest identifiable sky object within [thresh] px of ([ox],[oy]). */
+/**
+ * Finds the nearest identifiable sky object within [thresh] px of ([ox],[oy]).
+ * Index-based so it allocates nothing per candidate (it runs every frame for
+ * the centre reticle as well as on tap).
+ */
 private fun nearestObject(
     m: SkyModel,
     ps: ProjState,
@@ -878,44 +922,42 @@ private fun nearestObject(
     val out = FloatArray(2)
     var bestD2 = thresh * thresh
     var best: IdentifiedObject? = null
-    fun consider(enu: FloatArray, name: String, kind: String, mag: Float?) {
-        if (enu[2] < 0f) return
-        if (!ps.project(enu, out)) return
+    fun consider(arr: FloatArray, base: Int, name: String, kind: String, mag: Float?) {
+        if (arr[base + 2] < 0f) return
+        if (!ps.projectAt(arr, base, out)) return
         val dx = out[0] - ox
         val dy = out[1] - oy
         val d2 = dx * dx + dy * dy
         if (d2 < bestD2) {
             bestD2 = d2
-            best = identify(name, kind, enu, mag)
+            best = identify(arr, base, name, kind, mag)
         }
     }
-    m.sun?.let { consider(it.enu, "Sun", "Star", null) }
-    m.moon?.let { consider(it.enu, "Moon", "Moon", null) }
-    for (pl in m.planets) consider(pl.enu, pl.name, "Planet", null)
-    for (c in m.comets) consider(c.enu, c.name, "Comet", c.magnitude)
-    for (a in m.asteroids) consider(a.enu, a.name, "Asteroid", null)
+    m.sun?.let { consider(it.enu, 0, "Sun", "Star", null) }
+    m.moon?.let { consider(it.enu, 0, "Moon", "Moon", null) }
+    for (pl in m.planets) consider(pl.enu, 0, pl.name, "Planet", null)
+    for (c in m.comets) consider(c.enu, 0, c.name, "Comet", c.magnitude)
+    for (a in m.asteroids) consider(a.enu, 0, a.name, "Asteroid", null)
     for (d in m.messier) {
         val label = if (d.common.isBlank()) d.name else "${d.name} · ${d.common}"
-        consider(d.enu, label, d.type, d.mag)
+        consider(d.enu, 0, label, d.type, d.mag)
     }
     var s = 0
     while (s < m.satCount) {
-        val b = s * 3
-        consider(floatArrayOf(m.satEnu[b], m.satEnu[b + 1], m.satEnu[b + 2]), m.satNames[s], "Satellite", null)
+        consider(m.satEnu, s * 3, m.satNames[s], "Satellite", null)
         s++
     }
     for ((idx, name) in m.labels) {
         if (idx < 0 || idx >= m.count) continue
-        val b = idx * 3
         val mag = if (idx < m.starMag.size) m.starMag[idx] else null
-        consider(floatArrayOf(m.starEnu[b], m.starEnu[b + 1], m.starEnu[b + 2]), name, "Star", mag)
+        consider(m.starEnu, idx * 3, name, "Star", mag)
     }
     return best
 }
 
-private fun identify(name: String, kind: String, enu: FloatArray, mag: Float?): IdentifiedObject {
-    val alt = Math.toDegrees(asin(enu[2].coerceIn(-1f, 1f).toDouble()))
-    val az = (Math.toDegrees(atan2(enu[0].toDouble(), enu[1].toDouble())) + 360.0) % 360.0
+private fun identify(arr: FloatArray, base: Int, name: String, kind: String, mag: Float?): IdentifiedObject {
+    val alt = Math.toDegrees(asin(arr[base + 2].coerceIn(-1f, 1f).toDouble()))
+    val az = (Math.toDegrees(atan2(arr[base].toDouble(), arr[base + 1].toDouble())) + 360.0) % 360.0
     val dirs = arrayOf("N", "NE", "E", "SE", "S", "SW", "W", "NW")
     val compass = dirs[(((az + 22.5) % 360.0) / 45.0).toInt() % 8]
     val magStr = if (mag != null && mag.isFinite() && kind != "Satellite") {

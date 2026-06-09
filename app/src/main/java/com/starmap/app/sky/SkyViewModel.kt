@@ -80,6 +80,11 @@ class SkyViewModel(app: Application) : AndroidViewModel(app) {
     private val _selectedObject = mutableStateOf<IdentifiedObject?>(null)
     val selectedObject: State<IdentifiedObject?> = _selectedObject
 
+    /** The object currently under the centre reticle (live), shown when nothing is pinned. */
+    private val _centerObject = mutableStateOf<IdentifiedObject?>(null)
+    val centerObject: State<IdentifiedObject?> = _centerObject
+    fun setCenterObject(obj: IdentifiedObject?) { _centerObject.value = obj }
+
     /** Show the info card for a tapped sky object (clears any selected aircraft). */
     fun selectObject(obj: IdentifiedObject?) {
         _selectedObject.value = obj
