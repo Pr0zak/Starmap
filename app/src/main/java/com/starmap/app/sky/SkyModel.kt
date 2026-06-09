@@ -6,6 +6,7 @@ import com.starmap.app.astro.Asteroids
 import com.starmap.app.astro.AstroMath
 import com.starmap.app.astro.Comets
 import com.starmap.app.astro.Constellation
+import com.starmap.app.astro.ConstellationArt
 import com.starmap.app.astro.Messier
 import com.starmap.app.astro.MeteorShowers
 import com.starmap.app.astro.MilkyWay
@@ -76,6 +77,13 @@ class ConstellationEnu(
     val segments: List<FloatArray>, // each: x0,y0,z0,x1,y1,z1,... in ENU
 )
 
+/** A constellation artwork with its 3 anchor points in the local frame. */
+class ConstellationArtEnu(
+    val file: String,
+    val imgFrac: FloatArray,   // fx0,fy0, fx1,fy1, fx2,fy2
+    val anchorEnu: FloatArray, // 3 anchor ENU unit vectors (x,y,z ×3)
+)
+
 /**
  * A snapshot of the sky in the observer's local ENU frame for a specific instant
  * and location. Recomputed every couple of seconds; the per-frame render loop only
@@ -91,6 +99,7 @@ class SkyModel(
     val milkyWayEnu: FloatArray,
     val milkyWayLevel: ByteArray,
     val constellations: List<ConstellationEnu>,
+    val constellationArt: List<ConstellationArtEnu>,
     val eclipticLine: FloatArray,
     val equatorLine: FloatArray,
     val gridLines: List<FloatArray>,
@@ -125,6 +134,8 @@ object SkyBuilder {
         fix: LocationProvider.Fix,
         timeMillis: Long,
         includeConstellations: Boolean,
+        includeConstellationArt: Boolean,
+        constellationArt: List<ConstellationArt.Art>,
         includeEcliptic: Boolean,
         includeEquator: Boolean,
         includeGrid: Boolean,
@@ -325,6 +336,23 @@ object SkyBuilder {
             emptyList()
         }
 
+        val artEnu = if (includeConstellationArt) {
+            constellationArt.map { art ->
+                val enu = FloatArray(9)
+                for (k in 0 until 3) {
+                    tmp[0] = art.eqVec[k * 3].toDouble()
+                    tmp[1] = art.eqVec[k * 3 + 1].toDouble()
+                    tmp[2] = art.eqVec[k * 3 + 2].toDouble()
+                    enu[k * 3] = AstroMath.dot(tmp, basis.east).toFloat()
+                    enu[k * 3 + 1] = AstroMath.dot(tmp, basis.north).toFloat()
+                    enu[k * 3 + 2] = AstroMath.dot(tmp, basis.up).toFloat()
+                }
+                ConstellationArtEnu(art.file, art.imgFrac, enu)
+            }
+        } else {
+            emptyList()
+        }
+
         // Satellites: propagate each TLE and convert to a local ENU direction.
         val satCoords = ArrayList<Float>()
         val satNames = ArrayList<String>()
@@ -396,7 +424,7 @@ object SkyBuilder {
 
         return SkyModel(
             n, starEnu, catalog.mag, catalog.ci, catalog.labels, mwEnu, mwLevel,
-            cons, eclipticLine, equatorLine, gridLines, planets, radiants, messierEnu, asteroids,
+            cons, artEnu, eclipticLine, equatorLine, gridLines, planets, radiants, messierEnu, asteroids,
             asteroidPaths, comets, cometPaths, sun, moon, satEnu, satNames, satIsIss,
             aircraftRenders, declination, fix, timeMillis,
         )

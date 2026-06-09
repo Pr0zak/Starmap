@@ -72,6 +72,10 @@ fun SettingsScreen(viewModel: SkyViewModel, settings: Settings, onBack: () -> Un
                 enabled = settings.showConstellations) {
                 viewModel.setBool(BoolSetting.ConstellationNames, it)
             }
+            SettingSwitch("Constellation figures", "Overlay the classic artwork (the lion, the hunter…)",
+                checked = settings.showConstellationArt) {
+                viewModel.setBool(BoolSetting.ConstellationArt, it)
+            }
             SettingSwitch("Meteor shower radiants", "Showers active tonight, with peak dates",
                 checked = settings.showMeteorShowers) {
                 viewModel.setBool(BoolSetting.MeteorShowers, it)

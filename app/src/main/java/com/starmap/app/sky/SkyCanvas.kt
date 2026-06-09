@@ -139,6 +139,12 @@ fun SkyCanvas(viewModel: SkyViewModel, settings: Settings, modifier: Modifier = 
         }
     }
 
+    // Constellation artwork: a lazily-decoded bitmap cache and a reusable warp matrix.
+    val appContext = androidx.compose.ui.platform.LocalContext.current
+    val artCache = remember { HashMap<String, android.graphics.Bitmap?>() }
+    val artMatrix = remember { android.graphics.Matrix() }
+    val artPaint = remember { android.graphics.Paint(android.graphics.Paint.FILTER_BITMAP_FLAG) }
+
     Canvas(
         modifier = modifier
             .pointerInput(Unit) {
@@ -287,6 +293,49 @@ fun SkyCanvas(viewModel: SkyViewModel, settings: Settings, modifier: Modifier = 
                     }
                 }
                 i++
+            }
+        }
+
+        // --- Constellation artwork: warp each figure onto its 3 anchor stars ---
+        if (settings.showConstellationArt && m.constellationArt.isNotEmpty()) {
+            artPaint.alpha = if (night) 60 else 105
+            artPaint.colorFilter = if (night) {
+                android.graphics.PorterDuffColorFilter(0xFFCC5544.toInt(), android.graphics.PorterDuff.Mode.MULTIPLY)
+            } else {
+                null
+            }
+            val dst = FloatArray(6)
+            for (art in m.constellationArt) {
+                var front = true
+                var k = 0
+                while (k < 3) {
+                    val b = k * 3
+                    val vx = art.anchorEnu[b]; val vy = art.anchorEnu[b + 1]; val vz = art.anchorEnu[b + 2]
+                    val depth = vx * look[0] + vy * look[1] + vz * look[2]
+                    if (depth < MIN_DEPTH) { front = false; break }
+                    dst[k * 2] = cx + ((vx * right[0] + vy * right[1] + vz * right[2]) / depth) * focal
+                    dst[k * 2 + 1] = cy - ((vx * up[0] + vy * up[1] + vz * up[2]) / depth) * focal
+                    k++
+                }
+                if (!front) continue
+                val bmp = artCache.getOrPut(art.file) {
+                    try {
+                        appContext.assets.open("constellation_art/${art.file}").use {
+                            val opts = android.graphics.BitmapFactory.Options().apply { inSampleSize = 2 }
+                            android.graphics.BitmapFactory.decodeStream(it, null, opts)
+                        }
+                    } catch (e: Exception) {
+                        null
+                    }
+                } ?: continue
+                val src = floatArrayOf(
+                    art.imgFrac[0] * bmp.width, art.imgFrac[1] * bmp.height,
+                    art.imgFrac[2] * bmp.width, art.imgFrac[3] * bmp.height,
+                    art.imgFrac[4] * bmp.width, art.imgFrac[5] * bmp.height,
+                )
+                if (artMatrix.setPolyToPoly(src, 0, dst, 0, 3)) {
+                    drawContext.canvas.nativeCanvas.drawBitmap(bmp, artMatrix, artPaint)
+                }
             }
         }
 

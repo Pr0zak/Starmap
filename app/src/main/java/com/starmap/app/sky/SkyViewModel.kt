@@ -81,6 +81,7 @@ class SkyViewModel(app: Application) : AndroidViewModel(app) {
 
     private var catalog: StarCatalog? = null
     private var constellations: List<Constellation> = emptyList()
+    private var constellationArt: List<com.starmap.app.astro.ConstellationArt.Art> = emptyList()
     private var asteroidElements: List<com.starmap.app.astro.Asteroids.Element> = emptyList()
     private var cometElements: List<com.starmap.app.astro.Comets.Element> = emptyList()
     private var messierDsos: List<com.starmap.app.astro.Messier.Dso> = emptyList()
@@ -330,6 +331,7 @@ class SkyViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch {
             try {
                 constellations = catalogManager.loadConstellations()
+                constellationArt = catalogManager.loadConstellationArt()
                 asteroidElements = catalogManager.loadAsteroids()
                 cometElements = catalogManager.loadComets()
                 messierDsos = catalogManager.loadMessier()
@@ -440,6 +442,8 @@ class SkyViewModel(app: Application) : AndroidViewModel(app) {
                             fix = fix,
                             timeMillis = currentSkyTimeMillis(),
                             includeConstellations = s.showConstellations,
+                            includeConstellationArt = s.showConstellationArt,
+                            constellationArt = constellationArt,
                             includeEcliptic = s.showEcliptic,
                             includeEquator = s.showEquator,
                             includeGrid = s.showGrid,
