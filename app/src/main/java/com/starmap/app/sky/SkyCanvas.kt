@@ -79,17 +79,22 @@ fun SkyCanvas(viewModel: SkyViewModel, settings: Settings, modifier: Modifier = 
         }
     }
 
-    // Follow: while active, keep the manual camera aimed at the search target.
+    // Follow: while active, keep the manual camera aimed at the tracked aircraft or search target.
     val following by viewModel.followActive
     androidx.compose.runtime.LaunchedEffect(following) {
         if (!following) return@LaunchedEffect
         while (true) {
             val mm = viewModel.model.value
-            val tt = viewModel.searchTarget.value
-            if (mm != null && tt != null) {
-                resolveTargetEnu(mm, tt)?.let { enu ->
-                    manualAlt = Math.toDegrees(asin(enu[2].coerceIn(-1f, 1f).toDouble())).toFloat()
-                    manualAz = (((Math.toDegrees(atan2(enu[0].toDouble(), enu[1].toDouble())) + 360) % 360)).toFloat()
+            if (mm != null) {
+                val hex = viewModel.followAircraftHex.value
+                val enu = if (hex != null) {
+                    mm.aircraft.firstOrNull { it.icaoHex == hex }?.enu
+                } else {
+                    viewModel.searchTarget.value?.let { resolveTargetEnu(mm, it) }
+                }
+                enu?.let {
+                    manualAlt = Math.toDegrees(asin(it[2].coerceIn(-1f, 1f).toDouble())).toFloat()
+                    manualAz = (((Math.toDegrees(atan2(it[0].toDouble(), it[1].toDouble())) + 360) % 360)).toFloat()
                 }
             }
             awaitFrame()
@@ -753,9 +758,12 @@ fun SkyCanvas(viewModel: SkyViewModel, settings: Settings, modifier: Modifier = 
                     }
                 }
 
-                val s = 4f * density
+                // Marker size shrinks with distance, as a depth cue.
+                val distNm = (ac.rangeKm * 0.539957).toFloat()
+                val sizeFactor = (1.2f - distNm / 80f * 0.75f).coerceIn(0.45f, 1.2f)
+                val s = 4f * density * sizeFactor
                 if (heli) {
-                    drawCircle(color, 3f * density, androidx.compose.ui.geometry.Offset(sx, sy))
+                    drawCircle(color, 3f * density * sizeFactor, androidx.compose.ui.geometry.Offset(sx, sy))
                     drawLine(color, androidx.compose.ui.geometry.Offset(sx - s, sy - s),
                         androidx.compose.ui.geometry.Offset(sx + s, sy - s), strokeWidth = 1.6f * density)
                 } else {
@@ -1044,7 +1052,34 @@ private fun nearestObject(
         val mag = if (idx < m.starMag.size) m.starMag[idx] else null
         consider(m.starEnu, idx * 3, name, "Star", mag, SearchTarget.StarT(idx, name))
     }
+    for (ac in m.aircraft) {
+        if (!ps.showBelow && ac.enu[2] < 0f) continue
+        if (!ps.projectAt(ac.enu, 0, out)) continue
+        val dx = out[0] - ox
+        val dy = out[1] - oy
+        val d2 = dx * dx + dy * dy
+        if (d2 < bestD2) {
+            bestD2 = d2
+            best = aircraftIdentified(ac)
+        }
+    }
     return best
+}
+
+private fun aircraftIdentified(ac: AircraftRender): IdentifiedObject {
+    val ft = (ac.altitudeMeters / 0.3048).toInt()
+    val nm = (ac.rangeKm * 0.539957).toInt()
+    val detail = buildString {
+        if (ac.typeCode.isNotBlank()) append(ac.typeCode).append(" · ")
+        append("%,d ft · %d kt · %d nm".format(ft, ac.groundSpeedKts.toInt(), nm))
+    }
+    return IdentifiedObject(
+        ac.callsign.ifBlank { "Aircraft" },
+        if (ac.isHelicopter) "Helicopter" else "Aircraft",
+        detail,
+        target = null,
+        aircraftHex = ac.icaoHex,
+    )
 }
 
 private fun identify(

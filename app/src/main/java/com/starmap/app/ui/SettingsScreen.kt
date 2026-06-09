@@ -165,7 +165,8 @@ fun SettingsScreen(viewModel: SkyViewModel, settings: Settings, onBack: () -> Un
                 label = "Range",
                 value = settings.aircraftRangeNm,
                 valueText = "${settings.aircraftRangeNm.toInt()} nm",
-                range = 10f..250f,
+                range = 5f..80f,
+                steps = 14,
                 onChange = { viewModel.setFloat(FloatSetting.AircraftRange, it) },
             )
             SettingSwitch(

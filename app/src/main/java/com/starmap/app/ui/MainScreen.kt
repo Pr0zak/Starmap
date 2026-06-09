@@ -316,29 +316,44 @@ private fun SkyScreen(
             val selRoute by viewModel.selectedRoute
             val selPhoto by viewModel.selectedPhoto
             val selPhotoStatus by viewModel.photoStatus
+            val followingState by viewModel.followActive
+            val followHex by viewModel.followAircraftHex
             selAc?.let { ac ->
-                AircraftInfoCard(ac, selRoute, selPhoto, selPhotoStatus) { viewModel.selectAircraft(null) }
+                AircraftInfoCard(
+                    ac, selRoute, selPhoto, selPhotoStatus,
+                    tracking = followHex == ac.icaoHex,
+                    onTrack = { viewModel.followAircraft(if (followHex == ac.icaoHex) null else ac.icaoHex) },
+                    onClose = { viewModel.selectAircraft(null) },
+                )
                 Spacer(Modifier.height(8.dp))
             }
             val selObj by viewModel.selectedObject
             val centerObj by viewModel.centerObject
-            val followingState by viewModel.followActive
             if (selAc == null) {
                 (selObj ?: centerObj)?.let { obj ->
-                    val onFollow: (() -> Unit)? = obj.target?.let { tgt ->
-                        {
-                            if (followingState) {
-                                viewModel.setFollow(false)
-                            } else {
-                                viewModel.selectSearchTarget(tgt)
-                                viewModel.setFollow(true)
+                    val hex = obj.aircraftHex
+                    val followingThis = if (hex != null) followHex == hex else followingState
+                    val openDetails = { viewModel.openObjectDetail(obj) }
+                    val onFollow: (() -> Unit)? = when {
+                        hex != null -> {
+                            { viewModel.followAircraft(if (followHex == hex) null else hex) }
+                        }
+                        obj.target != null -> {
+                            {
+                                if (followingState) {
+                                    viewModel.setFollow(false)
+                                } else {
+                                    viewModel.selectSearchTarget(obj.target)
+                                    viewModel.setFollow(true)
+                                }
                             }
                         }
+                        else -> null
                     }
                     ObjectInfoCard(
                         obj,
-                        following = followingState,
-                        onDetails = { viewModel.openObjectDetail(obj) },
+                        following = followingThis,
+                        onDetails = if (hex != null) null else openDetails,
                         onFollow = onFollow,
                         onClose = selObj?.let { { viewModel.selectObject(null) } },
                     )
@@ -493,6 +508,8 @@ private fun objectVisual(obj: IdentifiedObject): Pair<ImageVector, Color> {
         k == "Comet" -> Icons.Filled.AutoAwesome to Color(0xFFB3E5FC)
         k == "Asteroid" -> Icons.Filled.Brightness1 to Color(0xFFD7CCC8)
         k == "Satellite" -> Icons.Filled.SatelliteAlt to Color(0xFF80CBC4)
+        k == "Aircraft" -> Icons.Filled.Flight to Color(0xFFFFC061)
+        k == "Helicopter" -> Icons.Filled.Flight to Color(0xFF7FD8C6)
         k == "Constellation" -> Icons.Filled.Hub to Color(0xFF90CAF9)
         k == "Star" -> Icons.Filled.Star to Color(0xFFFFE082)
         k.contains("Cluster", ignoreCase = true) -> Icons.Filled.BubbleChart to Color(0xFFCE93D8)
@@ -738,6 +755,8 @@ private fun AircraftInfoCard(
     route: AircraftManager.Route?,
     photo: AircraftManager.Photo?,
     photoStatus: String?,
+    tracking: Boolean,
+    onTrack: () -> Unit,
     onClose: () -> Unit,
 ) {
     Surface(
@@ -760,6 +779,12 @@ private fun AircraftInfoCard(
                     if (ac.registration.isNotBlank()) {
                         Text(ac.registration, color = Color(0x99FFFFFF), fontSize = 12.sp)
                     }
+                }
+                IconButton(onClick = onTrack) {
+                    Icon(
+                        Icons.Filled.MyLocation, contentDescription = "Track",
+                        tint = if (tracking) Color(0xFFFFD54F) else Color(0xFFD8E0F0),
+                    )
                 }
                 IconButton(onClick = onClose) {
                     Icon(Icons.Filled.Close, contentDescription = "Close", tint = Color(0xFFD8E0F0))

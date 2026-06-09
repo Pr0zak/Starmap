@@ -40,6 +40,8 @@ data class IdentifiedObject(
     val detail: String,
     /** Re-resolvable handle so the object can be followed as it moves. */
     val target: SearchTarget? = null,
+    /** ICAO hex when this is an aircraft, so it can be tracked. */
+    val aircraftHex: String? = null,
 )
 
 /** Progress of pre-downloading object info for offline use. */
@@ -281,15 +283,38 @@ class SkyViewModel(app: Application) : AndroidViewModel(app) {
     val manualMode: State<Boolean> = _manualMode
     fun toggleManualMode() {
         _manualMode.value = !_manualMode.value
-        if (!_manualMode.value) _followActive.value = false
+        if (!_manualMode.value) {
+            _followActive.value = false
+            _followAircraftHex.value = null
+        }
     }
 
-    /** When true the view auto-slews to keep the current search target centred. */
+    /** When true the view auto-slews to keep the current search target (or aircraft) centred. */
     private val _followActive = mutableStateOf(false)
     val followActive: State<Boolean> = _followActive
+    /** ICAO hex of the aircraft being tracked, if any (else the search target is followed). */
+    private val _followAircraftHex = mutableStateOf<String?>(null)
+    val followAircraftHex: State<String?> = _followAircraftHex
+
     fun setFollow(on: Boolean) {
         _followActive.value = on
-        if (on) _manualMode.value = true // following only makes sense in manual look
+        if (on) {
+            _manualMode.value = true // following only makes sense in manual look
+        } else {
+            _followAircraftHex.value = null
+        }
+    }
+
+    /** Track [hex] as it moves (null stops tracking). */
+    fun followAircraft(hex: String?) {
+        _followAircraftHex.value = hex
+        if (hex != null) {
+            _searchTarget.value = null // mutually exclusive with search-target follow
+            _followActive.value = true
+            _manualMode.value = true
+        } else {
+            _followActive.value = false
+        }
     }
 
     // --- Time machine -------------------------------------------------------
@@ -625,6 +650,7 @@ class SkyViewModel(app: Application) : AndroidViewModel(app) {
 
     fun selectSearchTarget(target: SearchTarget?) {
         _searchTarget.value = target
+        _followAircraftHex.value = null
         if (target == null) {
             _followActive.value = false
             return
