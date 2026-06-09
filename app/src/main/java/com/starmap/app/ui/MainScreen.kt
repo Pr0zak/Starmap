@@ -23,6 +23,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.CameraAlt
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Info
@@ -67,6 +68,7 @@ import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.viewmodel.compose.viewModel
 import coil.compose.AsyncImage
 import com.starmap.app.aircraft.AircraftManager
+import com.starmap.app.settings.SettingsRepository.BoolSetting
 import com.starmap.app.sky.AircraftRender
 import com.starmap.app.sky.IdentifiedObject
 import com.starmap.app.sky.SkyCanvas
@@ -129,11 +131,33 @@ fun MainScreen(viewModel: SkyViewModel = viewModel()) {
         }
     }
 
+    // Camera permission for AR mode, requested only when AR is switched on.
+    var hasCameraPermission by remember {
+        mutableStateOf(
+            ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) ==
+                PackageManager.PERMISSION_GRANTED,
+        )
+    }
+    val cameraPermLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission(),
+    ) { granted ->
+        hasCameraPermission = granted
+        if (granted) viewModel.setBool(BoolSetting.ArMode, true)
+    }
+
     when (screen) {
         Screen.Sky -> SkyScreen(
             viewModel = viewModel,
             settings = settings,
             hasLocationPermission = hasLocationPermission,
+            arActive = settings.arMode && hasCameraPermission,
+            onToggleAr = {
+                when {
+                    settings.arMode -> viewModel.setBool(BoolSetting.ArMode, false)
+                    hasCameraPermission -> viewModel.setBool(BoolSetting.ArMode, true)
+                    else -> cameraPermLauncher.launch(Manifest.permission.CAMERA)
+                }
+            },
             onOpen = { screen = it },
             onRequestPermission = {
                 permLauncher.launch(
@@ -156,6 +180,8 @@ private fun SkyScreen(
     viewModel: SkyViewModel,
     settings: com.starmap.app.settings.Settings,
     hasLocationPermission: Boolean,
+    arActive: Boolean,
+    onToggleAr: () -> Unit,
     onOpen: (Screen) -> Unit,
     onRequestPermission: () -> Unit,
 ) {
@@ -177,6 +203,9 @@ private fun SkyScreen(
     }
 
     Box(modifier = Modifier.fillMaxSize()) {
+        if (arActive) {
+            CameraPreview(modifier = Modifier.fillMaxSize())
+        }
         SkyCanvas(viewModel = viewModel, settings = settings, modifier = Modifier.fillMaxSize())
 
         // Top HUD bar + active-search banner.
@@ -204,6 +233,12 @@ private fun SkyScreen(
                     Icon(
                         Icons.Filled.PanTool, contentDescription = "Manual look",
                         tint = if (manualMode) Color(0xFFFFD54F) else Color(0xFFD8E0F0),
+                    )
+                }
+                IconButton(onClick = onToggleAr) {
+                    Icon(
+                        Icons.Filled.CameraAlt, contentDescription = "Camera AR",
+                        tint = if (arActive) Color(0xFFFFD54F) else Color(0xFFD8E0F0),
                     )
                 }
                 IconButton(onClick = { showTimePanel = !showTimePanel }) {

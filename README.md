@@ -35,6 +35,8 @@ then draws everything in that direction:
 - **Time machine** — scrub the sky to any date and time, or run a time-lapse.
 - **Realistic sky** — daytime-blue and twilight backgrounds, plus atmospheric
   refraction that lifts objects near the horizon.
+- **Augmented reality** — overlay the map on the live camera view.
+- **Field-of-view rings** — Telrad, binocular and eyepiece guides at screen centre.
 
 Everything is worked out on the device from the current time and your location, so
 it stays accurate through the night and wherever you travel.
@@ -45,7 +47,9 @@ it stays accurate through the night and wherever you travel.
 - **Search** (magnifier icon) for any star, planet, asteroid, comet, constellation,
   deep-sky object or the ISS by name — even nicknames like "Big Dipper". The sky then guides you to
   it with a marker, or an arrow pointing the way.
-- **Tap an aircraft** for its details.
+- **Tap anything** — a star, planet, the Moon, a comet, a satellite or an
+  aircraft — to identify it and see its details.
+- Tap the **camera** icon for augmented reality: the sky drawn over the live view.
 - Tap the **clock** to open the time machine — jump or time-lapse to any moment,
   then **Now** to snap back to live.
 - **Pinch** to zoom; switch to **manual mode** (hand icon) to drag around the sky

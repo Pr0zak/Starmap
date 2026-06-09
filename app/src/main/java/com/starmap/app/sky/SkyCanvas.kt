@@ -155,21 +155,22 @@ fun SkyCanvas(viewModel: SkyViewModel, settings: Settings, modifier: Modifier = 
     ) {
         frame // subscribe to the frame clock
         val night = settings.nightMode
+        val arMode = settings.arMode // transparent background: the camera shows through
         val m = model
         if (m == null) {
-            drawRect(if (night) Color.Black else Color(0xFF05070D))
+            if (!arMode) drawRect(if (night) Color.Black else Color(0xFF05070D))
             return@Canvas
         }
 
         // Realistic sky tint from the Sun's altitude: night → twilight → day.
         val sunAltDeg = m.sun?.let { asin(it.enu[2].coerceIn(-1f, 1f)) * 57.29578f } ?: -90f
-        val daylight = !night && settings.showDaylightSky
+        val daylight = !night && !arMode && settings.showDaylightSky
         val skyColor = when {
             daylight -> skyTint(sunAltDeg)
             night -> Color.Black
             else -> Color(0xFF05070D)
         }
-        drawRect(skyColor)
+        if (!arMode) drawRect(skyColor)
         // How strongly the bright sky washes out faint stars/lines (0 = night, 1 = day).
         val dayWash = if (daylight) {
             val f = ((sunAltDeg + 12f) / 12f).coerceIn(0f, 1f)

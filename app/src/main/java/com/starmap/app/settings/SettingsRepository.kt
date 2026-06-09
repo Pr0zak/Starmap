@@ -44,6 +44,7 @@ data class Settings(
     val showBelowHorizon: Boolean = false,
     val showDaylightSky: Boolean = true,
     val applyRefraction: Boolean = true,
+    val arMode: Boolean = false,
     val nightMode: Boolean = false,
     /** 0 = follow system auto-rotate, 1 = portrait, 2 = landscape. */
     val orientationMode: Int = 0,
@@ -91,6 +92,7 @@ class SettingsRepository(private val context: Context) {
         val showBelowHorizon = booleanPreferencesKey("show_below_horizon")
         val showDaylightSky = booleanPreferencesKey("show_daylight_sky")
         val applyRefraction = booleanPreferencesKey("apply_refraction")
+        val arMode = booleanPreferencesKey("ar_mode")
         val nightMode = booleanPreferencesKey("night_mode")
         val orientationMode = intPreferencesKey("orientation_mode")
         val fovCirclesMode = intPreferencesKey("fov_circles_mode")
@@ -133,6 +135,7 @@ class SettingsRepository(private val context: Context) {
             showBelowHorizon = p[Keys.showBelowHorizon] ?: false,
             showDaylightSky = p[Keys.showDaylightSky] ?: true,
             applyRefraction = p[Keys.applyRefraction] ?: true,
+            arMode = p[Keys.arMode] ?: false,
             nightMode = p[Keys.nightMode] ?: false,
             orientationMode = p[Keys.orientationMode] ?: 0,
             fovCirclesMode = p[Keys.fovCirclesMode] ?: 0,
@@ -197,6 +200,7 @@ class SettingsRepository(private val context: Context) {
         BelowHorizon(Keys.showBelowHorizon),
         DaylightSky(Keys.showDaylightSky),
         Refraction(Keys.applyRefraction),
+        ArMode(Keys.arMode),
         NightMode(Keys.nightMode),
         ExtendedCatalog(Keys.useExtendedCatalog),
         AutoCheckUpdates(Keys.autoCheckUpdates),
