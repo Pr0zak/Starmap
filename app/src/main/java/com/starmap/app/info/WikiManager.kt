@@ -64,7 +64,7 @@ class WikiManager {
     private fun getJson(url: String): JSONObject? {
         val conn = (URL(url).openConnection() as HttpURLConnection).apply {
             requestMethod = "GET"
-            setRequestProperty("User-Agent", "Starmap/1.0 (Android; +https://github.com/pr0zak/starmap)")
+            setRequestProperty("User-Agent", USER_AGENT)
             setRequestProperty("Accept", "application/json")
             connectTimeout = 10_000
             readTimeout = 10_000
@@ -75,4 +75,9 @@ class WikiManager {
     }
 
     private fun enc(s: String) = URLEncoder.encode(s, "UTF-8").replace("+", "%20")
+
+    companion object {
+        /** Wikimedia blocks generic clients, so every request (incl. images) needs this. */
+        const val USER_AGENT = "Starmap/1.0 (Android; +https://github.com/pr0zak/starmap)"
+    }
 }

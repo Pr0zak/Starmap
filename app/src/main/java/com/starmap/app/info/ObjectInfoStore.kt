@@ -30,7 +30,12 @@ class ObjectInfoStore(private val context: Context) {
     /** Download an image into Coil's disk cache so it shows offline later. */
     suspend fun prewarmImage(url: String) {
         runCatching {
-            context.imageLoader.execute(ImageRequest.Builder(context).data(url).build())
+            context.imageLoader.execute(
+                ImageRequest.Builder(context)
+                    .data(url)
+                    .setHeader("User-Agent", WikiManager.USER_AGENT)
+                    .build(),
+            )
         }
     }
 

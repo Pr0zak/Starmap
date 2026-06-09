@@ -90,6 +90,7 @@ import coil.compose.AsyncImage
 import coil.compose.AsyncImagePainter
 import coil.request.ImageRequest
 import com.starmap.app.aircraft.AircraftManager
+import com.starmap.app.info.WikiManager
 import com.starmap.app.settings.SettingsRepository
 import com.starmap.app.settings.SettingsRepository.BoolSetting
 import com.starmap.app.sky.AircraftRender
@@ -535,7 +536,11 @@ private fun ObjectDetailDialog(
                         ) {
                             detail.info.imageUrl?.let { url ->
                                 AsyncImage(
-                                    model = url,
+                                    model = ImageRequest.Builder(LocalContext.current)
+                                        .data(url.replaceFirst("http://", "https://"))
+                                        .setHeader("User-Agent", WikiManager.USER_AGENT)
+                                        .crossfade(true)
+                                        .build(),
                                     contentDescription = null,
                                     contentScale = ContentScale.Crop,
                                     modifier = Modifier
