@@ -381,7 +381,12 @@ private fun SkyScreen(
             ObjectDetailDialog(
                 d,
                 onOpenLink = { url ->
-                    runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url))) }
+                    runCatching {
+                        context.startActivity(
+                            Intent(Intent.ACTION_VIEW, Uri.parse(url))
+                                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+                        )
+                    }
                 },
                 onClose = { viewModel.closeObjectDetail() },
             )
@@ -544,18 +549,25 @@ private fun ObjectDetailDialog(
                                 detail.info.extract, color = Color(0xDDFFFFFF),
                                 fontSize = 14.sp, lineHeight = 20.sp,
                             )
-                            detail.info.pageUrl?.let { page ->
-                                Spacer(Modifier.height(10.dp))
-                                TextButton(onClick = { onOpenLink(page) }) {
-                                    Text("Read more on Wikipedia ↗", color = Color(0xFF8AB4F8))
-                                }
-                            }
                             Text(
                                 "Text from Wikipedia (CC BY-SA)",
                                 color = Color(0x66FFFFFF), fontSize = 10.sp,
                                 modifier = Modifier.padding(top = 6.dp),
                             )
                         }
+                    }
+                }
+                // Always offer a Wikipedia link (the article, or a search for it).
+                if (detail !is ObjectDetail.Loading) {
+                    val pageLink = (detail as? ObjectDetail.Loaded)?.info?.pageUrl
+                    val link = pageLink
+                        ?: ("https://en.wikipedia.org/wiki/Special:Search?search=" + Uri.encode(detail.title))
+                    Spacer(Modifier.height(8.dp))
+                    TextButton(onClick = { onOpenLink(link) }) {
+                        Text(
+                            if (pageLink != null) "Read more on Wikipedia ↗" else "Search Wikipedia ↗",
+                            color = Color(0xFF8AB4F8),
+                        )
                     }
                 }
             }

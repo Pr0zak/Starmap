@@ -548,7 +548,26 @@ class SkyViewModel(app: Application) : AndroidViewModel(app) {
 
     fun selectSearchTarget(target: SearchTarget?) {
         _searchTarget.value = target
-        if (target == null) _followActive.value = false
+        if (target == null) {
+            _followActive.value = false
+            return
+        }
+        // Turn on the layer the target lives in, so it can actually be located
+        // instead of showing "Locating…" forever when that layer is off.
+        val layer = when (target) {
+            is SearchTarget.PlanetT -> SettingsRepository.BoolSetting.Planets
+            is SearchTarget.AsteroidT -> SettingsRepository.BoolSetting.Asteroids
+            is SearchTarget.CometT -> SettingsRepository.BoolSetting.Comets
+            is SearchTarget.MessierT -> SettingsRepository.BoolSetting.Messier
+            is SearchTarget.ConstellationT -> SettingsRepository.BoolSetting.Constellations
+            is SearchTarget.SpecialT -> when {
+                target.label.contains("ISS", ignoreCase = true) -> SettingsRepository.BoolSetting.Iss
+                target.label.contains("STARLINK", ignoreCase = true) -> SettingsRepository.BoolSetting.Starlink
+                else -> null // Sun/Moon are always computed
+            }
+            is SearchTarget.StarT -> null // stars are always in the model
+        }
+        if (layer != null) setBool(layer, true)
     }
 
     override fun onCleared() {

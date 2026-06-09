@@ -37,15 +37,19 @@ import kotlin.math.tan
 
 private const val MIN_DEPTH = 0.15f
 
-/** Sky-background colour for a given Sun altitude (degrees): night → twilight → day. */
+/**
+ * Sky-background colour for a given Sun altitude (degrees): night → twilight → day.
+ * Kept muted (a deep slate-blue at noon, not a bright sky) so labels and the HUD
+ * stay readable against it.
+ */
 private fun skyTint(sunAltDeg: Float): Color {
     val t = ((sunAltDeg + 18f) / 18f).coerceIn(0f, 1f)
     val s = t * t * (3f - 2f * t)
     // Warm horizon glow peaking around civil twilight (Sun ≈ −2°).
     val warm = (1f - kotlin.math.abs(sunAltDeg + 2f) / 8f).coerceIn(0f, 1f)
-    val r = (0.02f + (0.36f - 0.02f) * s + warm * 0.20f).coerceIn(0f, 1f)
-    val g = (0.027f + (0.52f - 0.027f) * s + warm * 0.10f).coerceIn(0f, 1f)
-    val b = (0.051f + (0.72f - 0.051f) * s).coerceIn(0f, 1f)
+    val r = (0.02f + (0.20f - 0.02f) * s + warm * 0.10f).coerceIn(0f, 1f)
+    val g = (0.027f + (0.29f - 0.027f) * s + warm * 0.05f).coerceIn(0f, 1f)
+    val b = (0.051f + (0.46f - 0.051f) * s).coerceIn(0f, 1f)
     return Color(r, g, b)
 }
 
@@ -194,7 +198,7 @@ fun SkyCanvas(viewModel: SkyViewModel, settings: Settings, modifier: Modifier = 
         // How strongly the bright sky washes out faint stars/lines (0 = night, 1 = day).
         val dayWash = if (daylight) {
             val f = ((sunAltDeg + 12f) / 12f).coerceIn(0f, 1f)
-            f * f * (3f - 2f * f)
+            f * f * (3f - 2f * f) * 0.7f // cap so faint objects fade rather than vanish
         } else {
             0f
         }
