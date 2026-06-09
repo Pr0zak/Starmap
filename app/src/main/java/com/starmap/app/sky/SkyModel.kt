@@ -4,6 +4,7 @@ import android.hardware.GeomagneticField
 import com.starmap.app.aircraft.AircraftTrack
 import com.starmap.app.astro.Asteroids
 import com.starmap.app.astro.AstroMath
+import com.starmap.app.astro.Comets
 import com.starmap.app.astro.Constellation
 import com.starmap.app.astro.Messier
 import com.starmap.app.astro.MeteorShowers
@@ -23,6 +24,18 @@ class MoonEnu(val enu: FloatArray, val illuminatedFraction: Float, val waxing: B
 
 class PlanetEnu(val name: String, val enu: FloatArray, val colorArgb: Long, val sizeDp: Float)
 
+/**
+ * A comet placed in the local frame: its head direction plus a unit ENU vector
+ * tangent to the sky pointing anti-sunward (the direction to draw its tail).
+ */
+class CometEnu(
+    val name: String,
+    val enu: FloatArray,
+    val tailEnu: FloatArray,
+    val sizeDp: Float,
+    val magnitude: Float,
+)
+
 /** A meteor shower radiant (the point meteors stream from) for the current night. */
 class RadiantEnu(val name: String, val enu: FloatArray, val sublabel: String)
 
@@ -39,6 +52,7 @@ class DsoEnu(
 /** A rendered aircraft: its direction, a fading trail, and details for the info card. */
 class AircraftRender(
     val enu: FloatArray,
+    val icaoHex: String,
     val callsign: String,
     val isHelicopter: Boolean,
     val typeCode: String,
@@ -82,6 +96,9 @@ class SkyModel(
     val asteroids: List<PlanetEnu>,
     /** Each entry is a flattened ENU polyline of an asteroid's track over time. */
     val asteroidPaths: List<FloatArray>,
+    val comets: List<CometEnu>,
+    /** Each entry is a flattened ENU polyline of a comet's track over time. */
+    val cometPaths: List<FloatArray>,
     val sun: BodyEnu?,
     val moon: MoonEnu?,
     /** count*3 ENU vectors for visible satellites. */
@@ -114,6 +131,9 @@ object SkyBuilder {
         includeAsteroids: Boolean,
         asteroidElements: List<Asteroids.Element>,
         includeAsteroidPaths: Boolean,
+        includeComets: Boolean,
+        cometElements: List<Comets.Element>,
+        includeCometPaths: Boolean,
         satellites: List<NamedSat>,
         aircraft: List<AircraftTrack>,
         showBelowHorizon: Boolean,
@@ -198,6 +218,35 @@ object SkyBuilder {
                 var k = -PATH_SAMPLES
                 while (k <= PATH_SAMPLES) {
                     val rd = Asteroids.raDec(el, jd + k * PATH_STEP_DAYS)
+                    val v = AstroMath.equatorialToVec(rd[0], rd[1])
+                    pts[idx] = AstroMath.dot(v, basis.east).toFloat()
+                    pts[idx + 1] = AstroMath.dot(v, basis.north).toFloat()
+                    pts[idx + 2] = AstroMath.dot(v, basis.up).toFloat()
+                    idx += 3
+                    k++
+                }
+                pts
+            }
+        } else {
+            emptyList()
+        }
+
+        val comets = if (includeComets) {
+            Comets.positions(cometElements, jd).map { c ->
+                val v = AstroMath.equatorialToVec(c.raDeg, c.decDeg)
+                val enu = toEnu(v, basis)
+                CometEnu(c.name, enu, antiSolarTangent(enu, sun.enu), c.sizeDp, c.magnitude.toFloat())
+            }
+        } else {
+            emptyList()
+        }
+        val cometPaths = if (includeComets && includeCometPaths) {
+            cometElements.map { el ->
+                val pts = FloatArray((PATH_SAMPLES * 2 + 1) * 3)
+                var idx = 0
+                var k = -PATH_SAMPLES
+                while (k <= PATH_SAMPLES) {
+                    val rd = Comets.raDec(el, jd + k * PATH_STEP_DAYS)
                     val v = AstroMath.equatorialToVec(rd[0], rd[1])
                     pts[idx] = AstroMath.dot(v, basis.east).toFloat()
                     pts[idx + 1] = AstroMath.dot(v, basis.north).toFloat()
@@ -296,7 +345,7 @@ object SkyBuilder {
                 }
                 aircraftRenders.add(
                     AircraftRender(
-                        unit, ac.callsign, ac.isHelicopter, ac.typeCode,
+                        unit, ac.icaoHex, ac.callsign, ac.isHelicopter, ac.typeCode,
                         ac.altitudeMeters, ac.groundSpeedKts, ac.trackDeg, range,
                         ac.registration, ac.verticalRateFpm, ac.squawk, ac.isEmergency, ac.emergencyText,
                         trail,
@@ -315,9 +364,27 @@ object SkyBuilder {
         return SkyModel(
             n, starEnu, catalog.mag, catalog.ci, catalog.labels,
             cons, eclipticLine, equatorLine, gridLines, planets, radiants, messierEnu, asteroids,
-            asteroidPaths, sun, moon, satEnu, satNames, satIsIss,
+            asteroidPaths, comets, cometPaths, sun, moon, satEnu, satNames, satIsIss,
             aircraftRenders, declination, fix, timeMillis,
         )
+    }
+
+    /**
+     * Unit ENU vector tangent to the sky at the comet's position [c], pointing
+     * directly away from the Sun [s] — the screen direction along which to draw
+     * the tail. Falls back to the head direction if the comet is near the Sun or
+     * anti-Sun point (no well-defined tangent).
+     */
+    private fun antiSolarTangent(c: FloatArray, s: FloatArray): FloatArray {
+        val ax = -s[0]; val ay = -s[1]; val az = -s[2]
+        val dotp = ax * c[0] + ay * c[1] + az * c[2]
+        var tx = ax - dotp * c[0]
+        var ty = ay - dotp * c[1]
+        var tz = az - dotp * c[2]
+        val len = sqrt(tx * tx + ty * ty + tz * tz)
+        if (len < 1e-4f) return c.copyOf()
+        tx /= len; ty /= len; tz /= len
+        return floatArrayOf(tx, ty, tz)
     }
 
     private const val PATH_SAMPLES = 15      // each side of "now"

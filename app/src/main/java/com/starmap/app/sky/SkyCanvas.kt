@@ -335,6 +335,71 @@ fun SkyCanvas(viewModel: SkyViewModel, settings: Settings, modifier: Modifier = 
             }
         }
 
+        // --- Comet orbital-track paths ---
+        if (m.cometPaths.isNotEmpty()) {
+            val pathColor = if (night) Color(0x55AA7755) else Color(0x6685D6E6)
+            for (seg in m.cometPaths) {
+                var hasPrev = false; var px = 0f; var py = 0f
+                var i = 0
+                while (i < seg.size) {
+                    val vx = seg[i]; val vy = seg[i + 1]; val vz = seg[i + 2]
+                    val depth = vx * look[0] + vy * look[1] + vz * look[2]
+                    if (depth >= MIN_DEPTH) {
+                        val sx = cx + ((vx * right[0] + vy * right[1] + vz * right[2]) / depth) * focal
+                        val sy = cy - ((vx * up[0] + vy * up[1] + vz * up[2]) / depth) * focal
+                        if (hasPrev) {
+                            drawLine(pathColor, androidx.compose.ui.geometry.Offset(px, py),
+                                androidx.compose.ui.geometry.Offset(sx, sy), strokeWidth = density)
+                        }
+                        px = sx; py = sy; hasPrev = true
+                    } else {
+                        hasPrev = false
+                    }
+                    i += 3
+                }
+            }
+        }
+
+        // --- Comets (coma + anti-solar tail) ---
+        if (m.comets.isNotEmpty()) {
+            bodyPaint.textSize = 12f * density
+            for (c in m.comets) {
+                if (!settings.showBelowHorizon && c.enu[2] < 0f) continue
+                if (!project(c.enu, p)) continue
+                val hx = p[0]; val hy = p[1]
+                val headColor = if (night) Color(0xFFCC6655) else Color(0xFFCFF2FF)
+                // Tail: a point ~8° anti-sunward, projected, drawn as a fading taper.
+                val cl = cos(0.14); val sl = sin(0.14)
+                val tip = floatArrayOf(
+                    (c.enu[0] * cl + c.tailEnu[0] * sl).toFloat(),
+                    (c.enu[1] * cl + c.tailEnu[1] * sl).toFloat(),
+                    (c.enu[2] * cl + c.tailEnu[2] * sl).toFloat(),
+                )
+                val tn = sqrt(tip[0] * tip[0] + tip[1] * tip[1] + tip[2] * tip[2])
+                if (tn > 0f) { tip[0] /= tn; tip[1] /= tn; tip[2] /= tn }
+                if (project(tip, q)) {
+                    val tx = q[0]; val ty = q[1]
+                    val segs = 6
+                    for (k in 0 until segs) {
+                        val f0 = k / segs.toFloat(); val f1 = (k + 1) / segs.toFloat()
+                        drawLine(
+                            headColor.copy(alpha = (1f - f0) * 0.5f),
+                            androidx.compose.ui.geometry.Offset(hx + (tx - hx) * f0, hy + (ty - hy) * f0),
+                            androidx.compose.ui.geometry.Offset(hx + (tx - hx) * f1, hy + (ty - hy) * f1),
+                            strokeWidth = ((1f - f0) * 3.5f + 0.8f) * density,
+                        )
+                    }
+                }
+                val r = c.sizeDp * density
+                drawCircle(headColor.copy(alpha = 0.22f), r * 2.2f, androidx.compose.ui.geometry.Offset(hx, hy))
+                drawCircle(headColor, r, androidx.compose.ui.geometry.Offset(hx, hy))
+                bodyPaint.color = (if (night) Color(0xAACC6655) else Color(0xCCCFF2FF)).toArgb()
+                drawContext.canvas.nativeCanvas.drawText(
+                    c.name, hx + r + 3f * density, hy + 4f * density, bodyPaint,
+                )
+            }
+        }
+
         // --- Meteor shower radiants (starburst marker) ---
         if (m.radiants.isNotEmpty()) {
             val rc = if (night) Color(0xFFCC6677) else Color(0xFF9CFF8A)

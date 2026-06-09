@@ -2,6 +2,7 @@ package com.starmap.app.catalog
 
 import android.content.Context
 import com.starmap.app.astro.Asteroids
+import com.starmap.app.astro.Comets
 import com.starmap.app.astro.Constellation
 import com.starmap.app.astro.ConstellationCatalog
 import com.starmap.app.astro.Messier
@@ -28,6 +29,10 @@ class CatalogManager(private val context: Context) {
 
     suspend fun loadAsteroids(): List<Asteroids.Element> = withContext(Dispatchers.IO) {
         context.assets.open("asteroids.json").use { Asteroids.parse(it) }
+    }
+
+    suspend fun loadComets(): List<Comets.Element> = withContext(Dispatchers.IO) {
+        context.assets.open("comets.json").use { Comets.parse(it) }
     }
 
     suspend fun loadMessier(): List<Messier.Dso> = withContext(Dispatchers.IO) {

@@ -55,6 +55,7 @@ class SkyViewModel(app: Application) : AndroidViewModel(app) {
     private var catalog: StarCatalog? = null
     private var constellations: List<Constellation> = emptyList()
     private var asteroidElements: List<com.starmap.app.astro.Asteroids.Element> = emptyList()
+    private var cometElements: List<com.starmap.app.astro.Comets.Element> = emptyList()
     private var messierDsos: List<com.starmap.app.astro.Messier.Dso> = emptyList()
     private var issSats: List<NamedSat> = emptyList()
     private var starlinkSats: List<NamedSat> = emptyList()
@@ -77,8 +78,10 @@ class SkyViewModel(app: Application) : AndroidViewModel(app) {
             if (ac.callsign.isNotBlank() && ac.callsign != "?") {
                 viewModelScope.launch { _selectedRoute.value = aircraftManager.fetchRoute(ac.callsign) }
             }
-            if (ac.registration.isNotBlank()) {
-                viewModelScope.launch { _selectedPhoto.value = aircraftManager.fetchPhoto(ac.registration) }
+            if (ac.icaoHex.isNotBlank() || ac.registration.isNotBlank()) {
+                viewModelScope.launch {
+                    _selectedPhoto.value = aircraftManager.fetchPhoto(ac.icaoHex, ac.registration)
+                }
             }
         }
     }
@@ -122,6 +125,7 @@ class SkyViewModel(app: Application) : AndroidViewModel(app) {
             try {
                 constellations = catalogManager.loadConstellations()
                 asteroidElements = catalogManager.loadAsteroids()
+                cometElements = catalogManager.loadComets()
                 messierDsos = catalogManager.loadMessier()
                 catalog = catalogManager.loadStars(settings.value.useExtendedCatalog)
                 buildSearchIndex()
@@ -175,7 +179,7 @@ class SkyViewModel(app: Application) : AndroidViewModel(app) {
                             dq.addLast(doubleArrayOf(ac.latitude, ac.longitude, ac.altitudeMeters))
                             while (dq.size > 30) dq.removeFirst()
                             AircraftTrack(
-                                ac.callsign, ac.isHelicopter, ac.latitude, ac.longitude,
+                                ac.id, ac.callsign, ac.isHelicopter, ac.latitude, ac.longitude,
                                 ac.altitudeMeters, ac.typeCode, ac.groundSpeedKts, ac.trackDeg,
                                 ac.registration, ac.verticalRateFpm, ac.squawk, ac.isEmergency,
                                 ac.emergencyText, dq.dropLast(1).toList(),
@@ -224,6 +228,9 @@ class SkyViewModel(app: Application) : AndroidViewModel(app) {
                             includeAsteroids = s.showAsteroids,
                             asteroidElements = asteroidElements,
                             includeAsteroidPaths = s.showAsteroidPaths,
+                            includeComets = s.showComets,
+                            cometElements = cometElements,
+                            includeCometPaths = s.showCometPaths,
                             satellites = sats,
                             aircraft = aircraftTracks,
                             showBelowHorizon = s.showBelowHorizon,
@@ -355,6 +362,9 @@ class SkyViewModel(app: Application) : AndroidViewModel(app) {
         }
         for (a in asteroidElements) {
             entries.add(SearchEntry(SearchTarget.AsteroidT(a.name), a.name, "Asteroid", FuzzySearch.normalize(a.name)))
+        }
+        for (c in cometElements) {
+            entries.add(SearchEntry(SearchTarget.CometT(c.name), c.name, "Comet", FuzzySearch.normalize(c.name)))
         }
         for (d in messierDsos) {
             val display = if (d.common.isBlank()) d.name else "${d.name} · ${d.common}"

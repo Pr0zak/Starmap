@@ -9,6 +9,7 @@ sealed interface SearchTarget {
     data class StarT(val index: Int, override val label: String) : SearchTarget
     data class PlanetT(override val label: String) : SearchTarget
     data class AsteroidT(override val label: String) : SearchTarget
+    data class CometT(override val label: String) : SearchTarget
     data class MessierT(override val label: String) : SearchTarget
     data class ConstellationT(override val label: String) : SearchTarget
     data class SpecialT(override val label: String) : SearchTarget // Sun, Moon, ISS
@@ -121,6 +122,7 @@ fun resolveTargetEnu(model: SkyModel, target: SearchTarget): FloatArray? = when 
     }
     is SearchTarget.PlanetT -> model.planets.firstOrNull { it.name == target.label }?.enu
     is SearchTarget.AsteroidT -> model.asteroids.firstOrNull { it.name == target.label }?.enu
+    is SearchTarget.CometT -> model.comets.firstOrNull { it.name == target.label }?.enu
     is SearchTarget.MessierT -> model.messier.firstOrNull { it.name == target.label }?.enu
     is SearchTarget.ConstellationT -> model.constellations.firstOrNull { it.name == target.label }?.labelEnu
     is SearchTarget.SpecialT -> when (target.label) {

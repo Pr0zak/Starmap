@@ -32,6 +32,8 @@ data class Settings(
     val showPlanets: Boolean = true,
     val showAsteroids: Boolean = false,
     val showAsteroidPaths: Boolean = false,
+    val showComets: Boolean = false,
+    val showCometPaths: Boolean = false,
     val showIss: Boolean = true,
     val showStarlink: Boolean = false,
     val showAircraft: Boolean = false,
@@ -72,6 +74,8 @@ class SettingsRepository(private val context: Context) {
         val showPlanets = booleanPreferencesKey("show_planets")
         val showAsteroids = booleanPreferencesKey("show_asteroids")
         val showAsteroidPaths = booleanPreferencesKey("show_asteroid_paths")
+        val showComets = booleanPreferencesKey("show_comets")
+        val showCometPaths = booleanPreferencesKey("show_comet_paths")
         val showIss = booleanPreferencesKey("show_iss")
         val showStarlink = booleanPreferencesKey("show_starlink")
         val showAircraft = booleanPreferencesKey("show_aircraft")
@@ -108,6 +112,8 @@ class SettingsRepository(private val context: Context) {
             showPlanets = p[Keys.showPlanets] ?: true,
             showAsteroids = p[Keys.showAsteroids] ?: false,
             showAsteroidPaths = p[Keys.showAsteroidPaths] ?: false,
+            showComets = p[Keys.showComets] ?: false,
+            showCometPaths = p[Keys.showCometPaths] ?: false,
             showIss = p[Keys.showIss] ?: true,
             showStarlink = p[Keys.showStarlink] ?: false,
             showAircraft = p[Keys.showAircraft] ?: false,
@@ -164,6 +170,8 @@ class SettingsRepository(private val context: Context) {
         Planets(Keys.showPlanets),
         Asteroids(Keys.showAsteroids),
         AsteroidPaths(Keys.showAsteroidPaths),
+        Comets(Keys.showComets),
+        CometPaths(Keys.showCometPaths),
         Iss(Keys.showIss),
         Starlink(Keys.showStarlink),
         Aircraft(Keys.showAircraft),

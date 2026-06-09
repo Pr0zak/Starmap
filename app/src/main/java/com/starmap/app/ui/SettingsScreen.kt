@@ -88,6 +88,14 @@ fun SettingsScreen(viewModel: SkyViewModel, settings: Settings, onBack: () -> Un
                 checked = settings.showAsteroidPaths, enabled = settings.showAsteroids) {
                 viewModel.setBool(BoolSetting.AsteroidPaths, it)
             }
+            SettingSwitch("Comets", "Famous & current comets (Halley, Hale-Bopp, Pons-Brooks…)",
+                checked = settings.showComets) {
+                viewModel.setBool(BoolSetting.Comets, it)
+            }
+            SettingSwitch("Comet paths", "Trace each one's track over ±60 days",
+                checked = settings.showCometPaths, enabled = settings.showComets) {
+                viewModel.setBool(BoolSetting.CometPaths, it)
+            }
             SettingSwitch("Sun", checked = settings.showSun) {
                 viewModel.setBool(BoolSetting.Sun, it)
             }

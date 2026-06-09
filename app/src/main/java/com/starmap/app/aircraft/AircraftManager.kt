@@ -27,6 +27,7 @@ class Aircraft(
 
 /** An aircraft plus its recent geodetic trail ([lat, lon, altMeters] points, oldest→newest). */
 class AircraftTrack(
+    val icaoHex: String,
     val callsign: String,
     val isHelicopter: Boolean,
     val latitude: Double,
@@ -144,24 +145,33 @@ class AircraftManager {
     /** A photo of the aircraft (thumbnail URL + credit), from planespotters.net. */
     data class Photo(val thumbnailUrl: String, val link: String, val photographer: String)
 
-    suspend fun fetchPhoto(registration: String): Photo? = withContext(Dispatchers.IO) {
-        val reg = registration.trim()
-        if (reg.isEmpty()) return@withContext null
-        try {
-            val conn = (URL("https://api.planespotters.net/pub/photos/reg/$reg").openConnection() as HttpURLConnection).apply {
+    /**
+     * Looks up a photo from planespotters.net. Tries the ICAO hex first (it is
+     * always present in ADS-B) and falls back to the registration — many feeds
+     * omit the registration, so the hex lookup is what makes photos reliable.
+     */
+    suspend fun fetchPhoto(icaoHex: String, registration: String): Photo? = withContext(Dispatchers.IO) {
+        photoFrom("hex", icaoHex.trim()) ?: photoFrom("reg", registration.trim())
+    }
+
+    private fun photoFrom(kind: String, key: String): Photo? {
+        if (key.isEmpty() || key == "?") return null
+        return try {
+            val conn = (URL("https://api.planespotters.net/pub/photos/$kind/$key").openConnection() as HttpURLConnection).apply {
                 requestMethod = "GET"
-                setRequestProperty("User-Agent", "Starmap-Android")
+                setRequestProperty("User-Agent", "Starmap/1.0 (Android; +https://github.com/pr0zak/starmap)")
+                setRequestProperty("Accept", "application/json")
                 connectTimeout = 10_000
                 readTimeout = 10_000
             }
-            if (conn.responseCode !in 200..299) return@withContext null
+            if (conn.responseCode !in 200..299) return null
             val resp = JSONObject(conn.inputStream.bufferedReader().use { it.readText() })
-            val photos = resp.optJSONArray("photos") ?: return@withContext null
-            if (photos.length() == 0) return@withContext null
+            val photos = resp.optJSONArray("photos") ?: return null
+            if (photos.length() == 0) return null
             val ph = photos.getJSONObject(0)
             val thumb = ph.optJSONObject("thumbnail_large") ?: ph.optJSONObject("thumbnail")
             val url = thumb?.optString("src").orEmpty()
-            if (url.isBlank()) return@withContext null
+            if (url.isBlank()) return null
             Photo(url, ph.optString("link"), ph.optString("photographer"))
         } catch (e: Exception) {
             null
