@@ -28,6 +28,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import com.starmap.app.settings.Settings
 import com.starmap.app.settings.SettingsRepository.BoolSetting
 import com.starmap.app.settings.SettingsRepository.FloatSetting
+import com.starmap.app.sky.OfflineSync
 import com.starmap.app.sky.SkyViewModel
 
 @Composable
@@ -199,6 +200,9 @@ fun SettingsScreen(viewModel: SkyViewModel, settings: Settings, onBack: () -> Un
                 viewModel.setBool(BoolSetting.ExtendedCatalog, it)
             }
 
+            SectionHeader("Offline data")
+            OfflineDataSection(viewModel)
+
             SectionHeader("Updates")
             SettingSwitch("Check for updates on launch", checked = settings.autoCheckUpdates) {
                 viewModel.setBool(BoolSetting.AutoCheckUpdates, it)
@@ -258,6 +262,48 @@ private fun ManualLocationSection(viewModel: SkyViewModel, settings: Settings) {
             modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
         ) { Text("Apply location") }
     }
+}
+
+@Composable
+private fun OfflineDataSection(viewModel: SkyViewModel) {
+    val sync by viewModel.offlineSync
+    val bytes by viewModel.offlineBytes
+    androidx.compose.runtime.LaunchedEffect(Unit) { viewModel.refreshOfflineSize() }
+    Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp)) {
+        Text("Object info", fontSize = 16.sp)
+        Text(
+            "Photos and descriptions for objects, cached so they work offline.",
+            fontSize = 12.sp,
+            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+        )
+        val status = when (val s = sync) {
+            is OfflineSync.Running -> "Syncing ${s.done} / ${s.total}…"
+            is OfflineSync.Done -> "Synced ${s.count} objects · ${formatBytes(bytes)} used"
+            else -> "${formatBytes(bytes)} used"
+        }
+        Text(status, fontSize = 13.sp, modifier = Modifier.padding(top = 8.dp))
+        Row(modifier = Modifier.padding(top = 8.dp)) {
+            Button(
+                onClick = { viewModel.syncOfflineData() },
+                enabled = sync !is OfflineSync.Running,
+                modifier = Modifier.padding(end = 8.dp),
+            ) {
+                Text(if (sync is OfflineSync.Running) "Syncing…" else "Sync offline data")
+            }
+            OutlinedButton(
+                onClick = { viewModel.clearOfflineData() },
+                enabled = sync !is OfflineSync.Running && bytes > 0L,
+            ) {
+                Text("Clear")
+            }
+        }
+    }
+}
+
+private fun formatBytes(b: Long): String = when {
+    b >= 1_000_000 -> "%.1f MB".format(b / 1_000_000.0)
+    b >= 1_000 -> "%.0f KB".format(b / 1_000.0)
+    else -> "$b B"
 }
 
 @Composable

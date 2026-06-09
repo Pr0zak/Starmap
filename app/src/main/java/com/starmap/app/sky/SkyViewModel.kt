@@ -12,6 +12,7 @@ import com.starmap.app.astro.StarCatalog
 import com.starmap.app.aircraft.AircraftManager
 import com.starmap.app.aircraft.AircraftTrack
 import com.starmap.app.catalog.CatalogManager
+import com.starmap.app.info.ObjectInfoStore
 import com.starmap.app.info.WikiManager
 import com.starmap.app.satellite.NamedSat
 import com.starmap.app.satellite.SatelliteManager
@@ -40,6 +41,13 @@ data class IdentifiedObject(
     /** Re-resolvable handle so the object can be followed as it moves. */
     val target: SearchTarget? = null,
 )
+
+/** Progress of pre-downloading object info for offline use. */
+sealed interface OfflineSync {
+    object Idle : OfflineSync
+    data class Running(val done: Int, val total: Int) : OfflineSync
+    data class Done(val count: Int) : OfflineSync
+}
 
 /** Encyclopedic detail panel state for an identified object. */
 sealed interface ObjectDetail {
@@ -101,16 +109,21 @@ class SkyViewModel(app: Application) : AndroidViewModel(app) {
     val centerObject: State<IdentifiedObject?> = _centerObject
     fun setCenterObject(obj: IdentifiedObject?) { _centerObject.value = obj }
 
-    private val wikiManager = WikiManager()
+    private val objectInfoStore = ObjectInfoStore(app)
     private val _objectDetail = mutableStateOf<ObjectDetail?>(null)
     val objectDetail: State<ObjectDetail?> = _objectDetail
+
+    private val _offlineSync = mutableStateOf<OfflineSync>(OfflineSync.Idle)
+    val offlineSync: State<OfflineSync> = _offlineSync
+    private val _offlineBytes = mutableStateOf(0L)
+    val offlineBytes: State<Long> = _offlineBytes
 
     /** Open the encyclopedic detail panel for [obj] and load its Wikipedia summary. */
     fun openObjectDetail(obj: IdentifiedObject) {
         _objectDetail.value = ObjectDetail.Loading(obj.name)
         val query = wikiQueryFor(obj)
         viewModelScope.launch {
-            _objectDetail.value = when (val r = wikiManager.fetch(query)) {
+            _objectDetail.value = when (val r = objectInfoStore.get(query)) {
                 is WikiManager.Result.Ok -> ObjectDetail.Loaded(obj.name, r.info)
                 WikiManager.Result.None -> ObjectDetail.Empty(obj.name)
                 is WikiManager.Result.Error -> ObjectDetail.Failed(obj.name, r.message)
@@ -119,6 +132,64 @@ class SkyViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun closeObjectDetail() { _objectDetail.value = null }
+
+    /** Recompute how much disk the offline object info (text + images) uses. */
+    fun refreshOfflineSize() = viewModelScope.launch {
+        _offlineBytes.value = objectInfoStore.usedBytes()
+    }
+
+    fun clearOfflineData() = viewModelScope.launch {
+        objectInfoStore.clear()
+        _offlineBytes.value = objectInfoStore.usedBytes()
+        _offlineSync.value = OfflineSync.Idle
+    }
+
+    /** Pre-download Wikipedia text + images for every catalogued object, for offline use. */
+    fun syncOfflineData() {
+        if (_offlineSync.value is OfflineSync.Running) return
+        viewModelScope.launch {
+            val objs = offlineSyncObjects()
+            _offlineSync.value = OfflineSync.Running(0, objs.size)
+            var cached = 0
+            objs.forEachIndexed { i, obj ->
+                when (val r = objectInfoStore.get(wikiQueryFor(obj))) {
+                    is WikiManager.Result.Ok -> {
+                        cached++
+                        r.info.imageUrl?.let { objectInfoStore.prewarmImage(it) }
+                    }
+                    else -> {}
+                }
+                _offlineSync.value = OfflineSync.Running(i + 1, objs.size)
+                kotlinx.coroutines.delay(120) // be polite to Wikipedia
+            }
+            _offlineBytes.value = objectInfoStore.usedBytes()
+            _offlineSync.value = OfflineSync.Done(cached)
+        }
+    }
+
+    private fun offlineSyncObjects(): List<IdentifiedObject> {
+        val list = ArrayList<IdentifiedObject>()
+        for (p in listOf("Mercury", "Venus", "Mars", "Jupiter", "Saturn", "Uranus", "Neptune")) {
+            list.add(IdentifiedObject(p, "Planet", ""))
+        }
+        list.add(IdentifiedObject("Sun", "Star", ""))
+        list.add(IdentifiedObject("Moon", "Moon", ""))
+        list.add(IdentifiedObject("ISS", "Satellite", ""))
+        for (c in cometElements) list.add(IdentifiedObject(c.name, "Comet", ""))
+        for (a in asteroidElements) list.add(IdentifiedObject(a.name, "Asteroid", ""))
+        for (d in messierDsos) {
+            val label = if (d.common.isBlank()) d.name else "${d.name} · ${d.common}"
+            list.add(IdentifiedObject(label, d.type, ""))
+        }
+        catalog?.let { cat ->
+            for ((idx, name) in cat.labels) {
+                if (idx in 0 until cat.count && idx < cat.mag.size && cat.mag[idx] <= 3.0f) {
+                    list.add(IdentifiedObject(name, "Star", ""))
+                }
+            }
+        }
+        return list
+    }
 
     private fun wikiQueryFor(obj: IdentifiedObject): String {
         val n = obj.name
