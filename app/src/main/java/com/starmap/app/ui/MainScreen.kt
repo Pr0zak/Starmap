@@ -26,6 +26,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CameraAlt
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Download
+import androidx.compose.material.icons.filled.Flight
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.LocationOff
 import androidx.compose.material.icons.filled.MoreVert
@@ -67,6 +68,8 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.viewmodel.compose.viewModel
 import coil.compose.AsyncImage
+import coil.compose.AsyncImagePainter
+import coil.request.ImageRequest
 import com.starmap.app.aircraft.AircraftManager
 import com.starmap.app.settings.SettingsRepository.BoolSetting
 import com.starmap.app.sky.AircraftRender
@@ -270,8 +273,9 @@ private fun SkyScreen(
             val selAc by viewModel.selectedAircraft
             val selRoute by viewModel.selectedRoute
             val selPhoto by viewModel.selectedPhoto
+            val selPhotoStatus by viewModel.photoStatus
             selAc?.let { ac ->
-                AircraftInfoCard(ac, selRoute, selPhoto) { viewModel.selectAircraft(null) }
+                AircraftInfoCard(ac, selRoute, selPhoto, selPhotoStatus) { viewModel.selectAircraft(null) }
                 Spacer(Modifier.height(8.dp))
             }
             val selObj by viewModel.selectedObject
@@ -515,10 +519,20 @@ private fun describeDirection(enu: FloatArray): String {
 }
 
 @Composable
+@Composable
+private fun PhotoNote(text: String) {
+    Text(
+        text, color = Color(0x80FFFFFF), fontSize = 11.sp,
+        modifier = Modifier.padding(top = 8.dp, bottom = 2.dp, end = 8.dp),
+    )
+}
+
+@Composable
 private fun AircraftInfoCard(
     ac: AircraftRender,
     route: AircraftManager.Route?,
     photo: AircraftManager.Photo?,
+    photoStatus: String?,
     onClose: () -> Unit,
 ) {
     Surface(
@@ -528,6 +542,11 @@ private fun AircraftInfoCard(
     ) {
         Column(modifier = Modifier.padding(start = 16.dp, top = 8.dp, bottom = 12.dp, end = 8.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(
+                    Icons.Filled.Flight, contentDescription = null,
+                    tint = if (ac.isHelicopter) Color(0xFF7FD8C6) else Color(0xFFFFC061),
+                    modifier = Modifier.padding(end = 10.dp).size(22.dp),
+                )
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
                         ac.callsign.ifBlank { "Aircraft" },
@@ -553,20 +572,35 @@ private fun AircraftInfoCard(
                 )
             }
 
-            photo?.let {
-                AsyncImage(
-                    model = it.thumbnailUrl,
-                    contentDescription = "Photo of ${ac.registration}",
-                    contentScale = ContentScale.Crop,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(150.dp)
-                        .padding(top = 8.dp, end = 8.dp)
-                        .clip(RoundedCornerShape(10.dp)),
-                )
-                if (it.photographer.isNotBlank()) {
-                    Text("📷 ${it.photographer} / planespotters.net", color = Color(0x66FFFFFF), fontSize = 10.sp)
+            if (photo != null) {
+                var imgFailed by remember(photo.thumbnailUrl) { mutableStateOf(false) }
+                if (imgFailed) {
+                    PhotoNote("Photo failed to load")
+                } else {
+                    AsyncImage(
+                        model = ImageRequest.Builder(LocalContext.current)
+                            .data(photo.thumbnailUrl)
+                            .setHeader("Referer", "https://www.planespotters.net/")
+                            .crossfade(true)
+                            .build(),
+                        contentDescription = "Photo of ${ac.registration}",
+                        contentScale = ContentScale.Crop,
+                        onState = { st -> if (st is AsyncImagePainter.State.Error) imgFailed = true },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(150.dp)
+                            .padding(top = 8.dp, end = 8.dp)
+                            .clip(RoundedCornerShape(10.dp)),
+                    )
+                    if (photo.photographer.isNotBlank()) {
+                        Text(
+                            "📷 ${photo.photographer} / planespotters.net",
+                            color = Color(0x66FFFFFF), fontSize = 10.sp,
+                        )
+                    }
                 }
+            } else if (photoStatus != null) {
+                PhotoNote(photoStatus)
             }
 
             val kind = when {

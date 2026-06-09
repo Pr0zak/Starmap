@@ -145,17 +145,32 @@ class AircraftManager {
     /** A photo of the aircraft (thumbnail URL + credit), from planespotters.net. */
     data class Photo(val thumbnailUrl: String, val link: String, val photographer: String)
 
+    /** Outcome of a photo lookup, so the UI can explain a missing photo. */
+    sealed interface PhotoResult {
+        data class Ok(val photo: Photo) : PhotoResult
+        object None : PhotoResult
+        data class Error(val message: String) : PhotoResult
+    }
+
     /**
      * Looks up a photo from planespotters.net. Tries the ICAO hex first (it is
      * always present in ADS-B) and falls back to the registration — many feeds
      * omit the registration, so the hex lookup is what makes photos reliable.
      */
-    suspend fun fetchPhoto(icaoHex: String, registration: String): Photo? = withContext(Dispatchers.IO) {
-        photoFrom("hex", icaoHex.trim()) ?: photoFrom("reg", registration.trim())
+    suspend fun fetchPhoto(icaoHex: String, registration: String): PhotoResult = withContext(Dispatchers.IO) {
+        val byHex = photoFrom("hex", icaoHex.trim())
+        if (byHex is PhotoResult.Ok) return@withContext byHex
+        val byReg = photoFrom("reg", registration.trim())
+        when {
+            byReg is PhotoResult.Ok -> byReg
+            byReg is PhotoResult.Error -> byReg
+            byHex is PhotoResult.Error -> byHex
+            else -> PhotoResult.None
+        }
     }
 
-    private fun photoFrom(kind: String, key: String): Photo? {
-        if (key.isEmpty() || key == "?") return null
+    private fun photoFrom(kind: String, key: String): PhotoResult {
+        if (key.isEmpty() || key == "?") return PhotoResult.None
         return try {
             val conn = (URL("https://api.planespotters.net/pub/photos/$kind/$key").openConnection() as HttpURLConnection).apply {
                 requestMethod = "GET"
@@ -164,17 +179,19 @@ class AircraftManager {
                 connectTimeout = 10_000
                 readTimeout = 10_000
             }
-            if (conn.responseCode !in 200..299) return null
+            val code = conn.responseCode
+            if (code !in 200..299) return PhotoResult.Error("HTTP $code")
             val resp = JSONObject(conn.inputStream.bufferedReader().use { it.readText() })
-            val photos = resp.optJSONArray("photos") ?: return null
-            if (photos.length() == 0) return null
+            val photos = resp.optJSONArray("photos") ?: return PhotoResult.None
+            if (photos.length() == 0) return PhotoResult.None
             val ph = photos.getJSONObject(0)
             val thumb = ph.optJSONObject("thumbnail_large") ?: ph.optJSONObject("thumbnail")
-            val url = thumb?.optString("src").orEmpty()
-            if (url.isBlank()) return null
-            Photo(url, ph.optString("link"), ph.optString("photographer"))
+            var url = thumb?.optString("src").orEmpty()
+            if (url.startsWith("http://")) url = "https://" + url.removePrefix("http://")
+            if (url.isBlank()) return PhotoResult.None
+            PhotoResult.Ok(Photo(url, ph.optString("link"), ph.optString("photographer")))
         } catch (e: Exception) {
-            null
+            PhotoResult.Error(e.message ?: "network error")
         }
     }
 

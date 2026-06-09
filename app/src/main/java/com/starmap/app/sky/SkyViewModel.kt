@@ -73,6 +73,9 @@ class SkyViewModel(app: Application) : AndroidViewModel(app) {
     val selectedRoute: State<AircraftManager.Route?> = _selectedRoute
     private val _selectedPhoto = mutableStateOf<AircraftManager.Photo?>(null)
     val selectedPhoto: State<AircraftManager.Photo?> = _selectedPhoto
+    /** Human-readable note shown when no aircraft photo is available (or while loading). */
+    private val _photoStatus = mutableStateOf<String?>(null)
+    val photoStatus: State<String?> = _photoStatus
 
     private val _selectedObject = mutableStateOf<IdentifiedObject?>(null)
     val selectedObject: State<IdentifiedObject?> = _selectedObject
@@ -87,15 +90,28 @@ class SkyViewModel(app: Application) : AndroidViewModel(app) {
         _selectedAircraft.value = ac
         _selectedRoute.value = null
         _selectedPhoto.value = null
+        _photoStatus.value = null
         if (ac != null) _selectedObject.value = null
         if (ac != null) {
             if (ac.callsign.isNotBlank() && ac.callsign != "?") {
                 viewModelScope.launch { _selectedRoute.value = aircraftManager.fetchRoute(ac.callsign) }
             }
             if (ac.icaoHex.isNotBlank() || ac.registration.isNotBlank()) {
+                _photoStatus.value = "Finding a photo…"
                 viewModelScope.launch {
-                    _selectedPhoto.value = aircraftManager.fetchPhoto(ac.icaoHex, ac.registration)
+                    when (val r = aircraftManager.fetchPhoto(ac.icaoHex, ac.registration)) {
+                        is AircraftManager.PhotoResult.Ok -> {
+                            _selectedPhoto.value = r.photo
+                            _photoStatus.value = null
+                        }
+                        AircraftManager.PhotoResult.None ->
+                            _photoStatus.value = "No photo on planespotters"
+                        is AircraftManager.PhotoResult.Error ->
+                            _photoStatus.value = "Photo unavailable · ${r.message}"
+                    }
                 }
+            } else {
+                _photoStatus.value = "No registration to find a photo"
             }
         }
     }
