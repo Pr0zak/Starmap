@@ -49,6 +49,24 @@ object SkyRender {
     }
 
     /**
+     * Build the [look, right, up] true-north ENU basis for a virtual camera aimed
+     * at the given azimuth/altitude (used by manual drag-to-look mode).
+     */
+    fun lookBasis(azDeg: Float, altDeg: Float): Array<FloatArray> {
+        val az = Math.toRadians(azDeg.toDouble())
+        val alt = Math.toRadians(altDeg.toDouble())
+        val ca = cos(alt); val sa = sin(alt); val sz = sin(az); val cz = cos(az)
+        val look = floatArrayOf((ca * sz).toFloat(), (ca * cz).toFloat(), sa.toFloat())
+        val up = floatArrayOf((-sa * sz).toFloat(), (-sa * cz).toFloat(), ca.toFloat())
+        val right = floatArrayOf(
+            look[1] * up[2] - look[2] * up[1],
+            look[2] * up[0] - look[0] * up[2],
+            look[0] * up[1] - look[1] * up[0],
+        )
+        return arrayOf(look, right, up)
+    }
+
+    /**
      * Rotate a magnetic-frame ENU vector about the Up(Z) axis by [declinationDeg]
      * so its azimuth becomes true-north referenced. Returns a new array.
      */

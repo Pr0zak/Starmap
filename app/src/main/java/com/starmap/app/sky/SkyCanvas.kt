@@ -24,6 +24,8 @@ import com.starmap.app.settings.SettingsRepository
 import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.android.awaitFrame
 import kotlinx.coroutines.flow.debounce
+import kotlin.math.asin
+import kotlin.math.atan2
 import kotlin.math.cos
 import kotlin.math.hypot
 import kotlin.math.min
@@ -41,6 +43,20 @@ fun SkyCanvas(viewModel: SkyViewModel, settings: Settings, modifier: Modifier = 
     var fov by remember { mutableFloatStateOf(settings.fovDeg) }
     LaunchedEffectKeyed(settings.fovDeg) { fov = settings.fovDeg }
     LaunchedPersistFov(viewModel, fovProvider = { fov })
+
+    // Manual drag-to-look: a virtual camera the user pans instead of the sensors.
+    val manualMode by viewModel.manualMode
+    var manualAz by remember { mutableFloatStateOf(0f) }
+    var manualAlt by remember { mutableFloatStateOf(0f) }
+    androidx.compose.runtime.LaunchedEffect(manualMode) {
+        if (manualMode) {
+            // Start the virtual camera wherever the phone is currently pointing.
+            val decl = model?.declinationDeg ?: 0f
+            val lt = SkyRender.toTrueNorth(viewModel.orientation.basis.look, decl)
+            manualAlt = Math.toDegrees(asin(lt[2].coerceIn(-1f, 1f).toDouble())).toFloat()
+            manualAz = (((Math.toDegrees(atan2(lt[0].toDouble(), lt[1].toDouble())) + 360) % 360)).toFloat()
+        }
+    }
 
     // Drive ~60fps redraws.
     var frame by remember { mutableLongStateOf(0L) }
@@ -63,8 +79,13 @@ fun SkyCanvas(viewModel: SkyViewModel, settings: Settings, modifier: Modifier = 
 
     Canvas(
         modifier = modifier.pointerInput(Unit) {
-            detectTransformGestures { _, _, zoom, _ ->
-                fov = (fov / zoom).coerceIn(12f, 90f)
+            detectTransformGestures { _, pan, zoom, _ ->
+                if (zoom != 1f) fov = (fov / zoom).coerceIn(12f, 90f)
+                if (viewModel.manualMode.value) {
+                    val degPerPx = fov / size.height
+                    manualAz = (((manualAz - pan.x * degPerPx) % 360f) + 360f) % 360f
+                    manualAlt = (manualAlt + pan.y * degPerPx).coerceIn(-89f, 89f)
+                }
             }
         },
     ) {
@@ -73,10 +94,18 @@ fun SkyCanvas(viewModel: SkyViewModel, settings: Settings, modifier: Modifier = 
         drawRect(if (night) Color.Black else Color(0xFF05070D))
 
         val m = model ?: return@Canvas
-        val b = viewModel.orientation.basis
-        val look = SkyRender.toTrueNorth(b.look, m.declinationDeg)
-        val right = SkyRender.toTrueNorth(b.right, m.declinationDeg)
-        val up = SkyRender.toTrueNorth(b.up, m.declinationDeg)
+        val look: FloatArray
+        val right: FloatArray
+        val up: FloatArray
+        if (manualMode) {
+            val basis = SkyRender.lookBasis(manualAz, manualAlt)
+            look = basis[0]; right = basis[1]; up = basis[2]
+        } else {
+            val b = viewModel.orientation.basis
+            look = SkyRender.toTrueNorth(b.look, m.declinationDeg)
+            right = SkyRender.toTrueNorth(b.right, m.declinationDeg)
+            up = SkyRender.toTrueNorth(b.up, m.declinationDeg)
+        }
 
         val cx = size.width / 2f
         val cy = size.height / 2f

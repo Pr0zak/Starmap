@@ -23,6 +23,7 @@ import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.LocationOff
 import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.PanTool
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.DropdownMenu
@@ -145,6 +146,7 @@ private fun SkyScreen(
 ) {
     val location by viewModel.effectiveLocation.collectAsState()
     val model by viewModel.model
+    val manualMode by viewModel.manualMode
 
     // Live heading read for the HUD.
     var heading by remember { mutableFloatStateOf(0f) }
@@ -173,11 +175,19 @@ private fun SkyScreen(
                         fontSize = 22.sp,
                         fontWeight = FontWeight.SemiBold,
                     )
-                    if (!viewModel.hasOrientationSensor) {
-                        Text("No orientation sensor on this device", color = Color(0xFFFFB4A0), fontSize = 12.sp)
+                    if (manualMode) {
+                        Text("Manual — drag to look around", color = Color(0xFFFFD54F), fontSize = 12.sp)
+                    } else if (!viewModel.hasOrientationSensor) {
+                        Text("No sensor — switch to manual look", color = Color(0xFFFFB4A0), fontSize = 12.sp)
                     } else if (accuracy in 0..1) {
                         Text("Wave the phone in a figure-8 to calibrate", color = Color(0xFFFFD089), fontSize = 12.sp)
                     }
+                }
+                IconButton(onClick = { viewModel.toggleManualMode() }) {
+                    Icon(
+                        Icons.Filled.PanTool, contentDescription = "Manual look",
+                        tint = if (manualMode) Color(0xFFFFD54F) else Color(0xFFD8E0F0),
+                    )
                 }
                 IconButton(onClick = { onOpen(Screen.Search) }) {
                     Icon(Icons.Filled.Search, contentDescription = "Search", tint = Color(0xFFD8E0F0))

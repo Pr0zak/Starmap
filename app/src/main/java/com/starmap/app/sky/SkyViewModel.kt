@@ -83,6 +83,11 @@ class SkyViewModel(app: Application) : AndroidViewModel(app) {
     private val _searchTarget = mutableStateOf<SearchTarget?>(null)
     val searchTarget: State<SearchTarget?> = _searchTarget
 
+    /** When true the view is controlled by dragging instead of the phone's sensors. */
+    private val _manualMode = mutableStateOf(false)
+    val manualMode: State<Boolean> = _manualMode
+    fun toggleManualMode() { _manualMode.value = !_manualMode.value }
+
     init {
         Log.i(TAG, "SkyViewModel init")
         viewModelScope.launch {
