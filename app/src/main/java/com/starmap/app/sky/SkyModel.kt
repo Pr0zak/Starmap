@@ -8,6 +8,7 @@ import com.starmap.app.astro.Comets
 import com.starmap.app.astro.Constellation
 import com.starmap.app.astro.Messier
 import com.starmap.app.astro.MeteorShowers
+import com.starmap.app.astro.MilkyWay
 import com.starmap.app.astro.Planets
 import com.starmap.app.astro.ReferenceLines
 import com.starmap.app.astro.Satellites
@@ -86,6 +87,9 @@ class SkyModel(
     val starMag: FloatArray,
     val starCi: FloatArray,
     val labels: Map<Int, String>,
+    /** count*3 ENU vectors and matching 1..5 brightness levels for Milky Way dots. */
+    val milkyWayEnu: FloatArray,
+    val milkyWayLevel: ByteArray,
     val constellations: List<ConstellationEnu>,
     val eclipticLine: FloatArray,
     val equatorLine: FloatArray,
@@ -134,6 +138,8 @@ object SkyBuilder {
         includeComets: Boolean,
         cometElements: List<Comets.Element>,
         includeCometPaths: Boolean,
+        includeMilkyWay: Boolean,
+        milkyWay: MilkyWay?,
         satellites: List<NamedSat>,
         aircraft: List<AircraftTrack>,
         showBelowHorizon: Boolean,
@@ -152,6 +158,25 @@ object SkyBuilder {
             starEnu[i * 3] = AstroMath.dot(tmp, basis.east).toFloat()
             starEnu[i * 3 + 1] = AstroMath.dot(tmp, basis.north).toFloat()
             starEnu[i * 3 + 2] = AstroMath.dot(tmp, basis.up).toFloat()
+        }
+
+        // Milky Way dot cloud: rotate each equatorial vector into the local frame.
+        val mwLevel: ByteArray
+        val mwEnu: FloatArray
+        if (includeMilkyWay && milkyWay != null) {
+            mwEnu = FloatArray(milkyWay.count * 3)
+            for (i in 0 until milkyWay.count) {
+                tmp[0] = milkyWay.eqVec[i * 3].toDouble()
+                tmp[1] = milkyWay.eqVec[i * 3 + 1].toDouble()
+                tmp[2] = milkyWay.eqVec[i * 3 + 2].toDouble()
+                mwEnu[i * 3] = AstroMath.dot(tmp, basis.east).toFloat()
+                mwEnu[i * 3 + 1] = AstroMath.dot(tmp, basis.north).toFloat()
+                mwEnu[i * 3 + 2] = AstroMath.dot(tmp, basis.up).toFloat()
+            }
+            mwLevel = milkyWay.level
+        } else {
+            mwEnu = FloatArray(0)
+            mwLevel = ByteArray(0)
         }
 
         val sunEq = SunMoon.sun(jd)
@@ -362,7 +387,7 @@ object SkyBuilder {
         ).declination
 
         return SkyModel(
-            n, starEnu, catalog.mag, catalog.ci, catalog.labels,
+            n, starEnu, catalog.mag, catalog.ci, catalog.labels, mwEnu, mwLevel,
             cons, eclipticLine, equatorLine, gridLines, planets, radiants, messierEnu, asteroids,
             asteroidPaths, comets, cometPaths, sun, moon, satEnu, satNames, satIsIss,
             aircraftRenders, declination, fix, timeMillis,

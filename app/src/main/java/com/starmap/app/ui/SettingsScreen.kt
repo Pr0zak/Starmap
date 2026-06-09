@@ -77,6 +77,10 @@ fun SettingsScreen(viewModel: SkyViewModel, settings: Settings, onBack: () -> Un
                 checked = settings.showMessier) {
                 viewModel.setBool(BoolSetting.Messier, it)
             }
+            SettingSwitch("Milky Way", "Soft galactic glow along the band",
+                checked = settings.showMilkyWay) {
+                viewModel.setBool(BoolSetting.MilkyWay, it)
+            }
             SettingSwitch("Planets", "Mercury through Neptune", checked = settings.showPlanets) {
                 viewModel.setBool(BoolSetting.Planets, it)
             }

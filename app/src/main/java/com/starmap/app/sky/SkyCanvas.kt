@@ -167,6 +167,33 @@ fun SkyCanvas(viewModel: SkyViewModel, settings: Settings, modifier: Modifier = 
             }
         }
 
+        // --- Milky Way (soft galactic glow, underneath everything) ---
+        if (m.milkyWayEnu.isNotEmpty()) {
+            val mwN = m.milkyWayLevel.size
+            var i = 0
+            while (i < mwN) {
+                val b = i * 3
+                val vx = m.milkyWayEnu[b]; val vy = m.milkyWayEnu[b + 1]; val vz = m.milkyWayEnu[b + 2]
+                if ((settings.showBelowHorizon || vz >= 0f)) {
+                    val depth = vx * look[0] + vy * look[1] + vz * look[2]
+                    if (depth >= MIN_DEPTH) {
+                        val sx = cx + ((vx * right[0] + vy * right[1] + vz * right[2]) / depth) * focal
+                        val sy = cy - ((vx * up[0] + vy * up[1] + vz * up[2]) / depth) * focal
+                        if (sx >= -margin && sx <= size.width + margin &&
+                            sy >= -margin && sy <= size.height + margin
+                        ) {
+                            val lv = m.milkyWayLevel[i].toInt()
+                            val a = 0.06f + lv * 0.03f
+                            val rad = (2.0f + lv * 0.6f) * density
+                            val col = if (night) Color(0.5f, 0.12f, 0.10f, a) else Color(0.80f, 0.84f, 0.96f, a)
+                            drawCircle(col, rad, androidx.compose.ui.geometry.Offset(sx, sy))
+                        }
+                    }
+                }
+                i++
+            }
+        }
+
         // --- Reference lines (grid under, then equator + ecliptic) ---
         val gridColor = if (night) Color(0x33AA4444) else Color(0x332E5C8A)
         for (gl in m.gridLines) drawEnuPolyline(gl, gridColor, density)

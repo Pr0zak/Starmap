@@ -57,6 +57,7 @@ class SkyViewModel(app: Application) : AndroidViewModel(app) {
     private var asteroidElements: List<com.starmap.app.astro.Asteroids.Element> = emptyList()
     private var cometElements: List<com.starmap.app.astro.Comets.Element> = emptyList()
     private var messierDsos: List<com.starmap.app.astro.Messier.Dso> = emptyList()
+    private var milkyWay: com.starmap.app.astro.MilkyWay? = null
     private var issSats: List<NamedSat> = emptyList()
     private var starlinkSats: List<NamedSat> = emptyList()
     private val aircraftManager = AircraftManager()
@@ -127,6 +128,7 @@ class SkyViewModel(app: Application) : AndroidViewModel(app) {
                 asteroidElements = catalogManager.loadAsteroids()
                 cometElements = catalogManager.loadComets()
                 messierDsos = catalogManager.loadMessier()
+                milkyWay = catalogManager.loadMilkyWay()
                 catalog = catalogManager.loadStars(settings.value.useExtendedCatalog)
                 buildSearchIndex()
                 Log.i(TAG, "Catalog loaded: ${catalog?.count ?: 0} stars, ${constellations.size} constellations")
@@ -231,6 +233,8 @@ class SkyViewModel(app: Application) : AndroidViewModel(app) {
                             includeComets = s.showComets,
                             cometElements = cometElements,
                             includeCometPaths = s.showCometPaths,
+                            includeMilkyWay = s.showMilkyWay,
+                            milkyWay = milkyWay,
                             satellites = sats,
                             aircraft = aircraftTracks,
                             showBelowHorizon = s.showBelowHorizon,

@@ -6,6 +6,7 @@ import com.starmap.app.astro.Comets
 import com.starmap.app.astro.Constellation
 import com.starmap.app.astro.ConstellationCatalog
 import com.starmap.app.astro.Messier
+import com.starmap.app.astro.MilkyWay
 import com.starmap.app.astro.StarCatalog
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -37,5 +38,9 @@ class CatalogManager(private val context: Context) {
 
     suspend fun loadMessier(): List<Messier.Dso> = withContext(Dispatchers.IO) {
         context.assets.open("messier.json").use { Messier.parse(it) }
+    }
+
+    suspend fun loadMilkyWay(): MilkyWay = withContext(Dispatchers.IO) {
+        context.assets.open("milkyway.json").use { MilkyWay.parse(it) }
     }
 }

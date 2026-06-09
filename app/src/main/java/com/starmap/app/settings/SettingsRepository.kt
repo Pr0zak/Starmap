@@ -22,6 +22,7 @@ data class Settings(
     val showConstellationNames: Boolean = true,
     val showMeteorShowers: Boolean = false,
     val showMessier: Boolean = false,
+    val showMilkyWay: Boolean = false,
     val showHorizon: Boolean = true,
     val showCardinals: Boolean = true,
     val showEcliptic: Boolean = false,
@@ -64,6 +65,7 @@ class SettingsRepository(private val context: Context) {
         val showConstellationNames = booleanPreferencesKey("show_constellation_names")
         val showMeteorShowers = booleanPreferencesKey("show_meteor_showers")
         val showMessier = booleanPreferencesKey("show_messier")
+        val showMilkyWay = booleanPreferencesKey("show_milky_way")
         val showHorizon = booleanPreferencesKey("show_horizon")
         val showCardinals = booleanPreferencesKey("show_cardinals")
         val showEcliptic = booleanPreferencesKey("show_ecliptic")
@@ -102,6 +104,7 @@ class SettingsRepository(private val context: Context) {
             showConstellationNames = p[Keys.showConstellationNames] ?: true,
             showMeteorShowers = p[Keys.showMeteorShowers] ?: false,
             showMessier = p[Keys.showMessier] ?: false,
+            showMilkyWay = p[Keys.showMilkyWay] ?: false,
             showHorizon = p[Keys.showHorizon] ?: true,
             showCardinals = p[Keys.showCardinals] ?: true,
             showEcliptic = p[Keys.showEcliptic] ?: false,
@@ -160,6 +163,7 @@ class SettingsRepository(private val context: Context) {
         ConstellationNames(Keys.showConstellationNames),
         MeteorShowers(Keys.showMeteorShowers),
         Messier(Keys.showMessier),
+        MilkyWay(Keys.showMilkyWay),
         Horizon(Keys.showHorizon),
         Cardinals(Keys.showCardinals),
         Ecliptic(Keys.showEcliptic),
