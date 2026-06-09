@@ -30,6 +30,9 @@ data class Settings(
     val showIss: Boolean = true,
     val showStarlink: Boolean = false,
     val showAircraft: Boolean = false,
+    val showAircraftTrails: Boolean = true,
+    val showAircraftLabels: Boolean = true,
+    val aircraftRangeNm: Float = 120f,
     val showBelowHorizon: Boolean = false,
     val nightMode: Boolean = false,
     /** 0 = follow system auto-rotate, 1 = portrait, 2 = landscape. */
@@ -62,6 +65,9 @@ class SettingsRepository(private val context: Context) {
         val showIss = booleanPreferencesKey("show_iss")
         val showStarlink = booleanPreferencesKey("show_starlink")
         val showAircraft = booleanPreferencesKey("show_aircraft")
+        val showAircraftTrails = booleanPreferencesKey("show_aircraft_trails")
+        val showAircraftLabels = booleanPreferencesKey("show_aircraft_labels")
+        val aircraftRangeNm = floatPreferencesKey("aircraft_range_nm")
         val showBelowHorizon = booleanPreferencesKey("show_below_horizon")
         val nightMode = booleanPreferencesKey("night_mode")
         val orientationMode = intPreferencesKey("orientation_mode")
@@ -90,6 +96,9 @@ class SettingsRepository(private val context: Context) {
             showIss = p[Keys.showIss] ?: true,
             showStarlink = p[Keys.showStarlink] ?: false,
             showAircraft = p[Keys.showAircraft] ?: false,
+            showAircraftTrails = p[Keys.showAircraftTrails] ?: true,
+            showAircraftLabels = p[Keys.showAircraftLabels] ?: true,
+            aircraftRangeNm = p[Keys.aircraftRangeNm] ?: 120f,
             showBelowHorizon = p[Keys.showBelowHorizon] ?: false,
             nightMode = p[Keys.nightMode] ?: false,
             orientationMode = p[Keys.orientationMode] ?: 0,
@@ -121,6 +130,7 @@ class SettingsRepository(private val context: Context) {
         MagnitudeLimit(Keys.magnitudeLimit),
         LabelMagnitudeLimit(Keys.labelMagnitudeLimit),
         Fov(Keys.fovDeg),
+        AircraftRange(Keys.aircraftRangeNm),
     }
 
     enum class BoolSetting(val key: Preferences.Key<Boolean>) {
@@ -137,6 +147,8 @@ class SettingsRepository(private val context: Context) {
         Iss(Keys.showIss),
         Starlink(Keys.showStarlink),
         Aircraft(Keys.showAircraft),
+        AircraftTrails(Keys.showAircraftTrails),
+        AircraftLabels(Keys.showAircraftLabels),
         BelowHorizon(Keys.showBelowHorizon),
         NightMode(Keys.nightMode),
         ExtendedCatalog(Keys.useExtendedCatalog),

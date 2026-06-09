@@ -9,10 +9,28 @@ import java.util.Locale
 
 /** A live aircraft position from ADS-B. */
 class Aircraft(
+    val id: String,
     val callsign: String,
     val latitude: Double,
     val longitude: Double,
     val altitudeMeters: Double,
+    val isHelicopter: Boolean,
+    val typeCode: String,
+    val groundSpeedKts: Double,
+    val trackDeg: Double,
+)
+
+/** An aircraft plus its recent geodetic trail ([lat, lon, altMeters] points, oldest→newest). */
+class AircraftTrack(
+    val callsign: String,
+    val isHelicopter: Boolean,
+    val latitude: Double,
+    val longitude: Double,
+    val altitudeMeters: Double,
+    val typeCode: String,
+    val groundSpeedKts: Double,
+    val trackDeg: Double,
+    val trail: List<DoubleArray>,
 )
 
 /**
@@ -31,7 +49,7 @@ class AircraftManager {
             try {
                 val url = URL(
                     "https://api.adsb.lol/v2/lat/%.4f/lon/%.4f/dist/%d"
-                        .format(Locale.US, latitude, longitude, distanceNm),
+                        .format(Locale.US, latitude, longitude, distanceNm.coerceIn(1, 250)),
                 )
                 val conn = (url.openConnection() as HttpURLConnection).apply {
                     requestMethod = "GET"
@@ -57,7 +75,15 @@ class AircraftManager {
                         if (altFt <= 0) continue // on the ground or invalid
                         val callsign = o.optString("flight").trim()
                             .ifBlank { o.optString("hex", "?") }
-                        out.add(Aircraft(callsign, lat, lon, altFt * 0.3048))
+                        // ADS-B emitter category A7 = rotorcraft; fall back to type code.
+                        val category = o.optString("category", "")
+                        val typeCode = o.optString("t", "").uppercase()
+                        val isHeli = category.equals("A7", ignoreCase = true) ||
+                            HELI_TYPES.contains(typeCode)
+                        val id = o.optString("hex", callsign)
+                        val gs = numberOrNull(o.opt("gs")) ?: 0.0
+                        val track = numberOrNull(o.opt("track")) ?: numberOrNull(o.opt("true_heading")) ?: 0.0
+                        out.add(Aircraft(id, callsign, lat, lon, altFt * 0.3048, isHeli, typeCode, gs, track))
                     }
                 }
                 Result.Ok(out)
@@ -66,5 +92,43 @@ class AircraftManager {
             }
         }
 
+    /** Flight route (origin → destination) for a callsign, from adsbdb. */
+    data class Route(val origin: String, val destination: String)
+
+    suspend fun fetchRoute(callsign: String): Route? = withContext(Dispatchers.IO) {
+        val cs = callsign.trim()
+        if (cs.isEmpty() || cs == "?") return@withContext null
+        try {
+            val conn = (URL("https://api.adsbdb.com/v0/callsign/$cs").openConnection() as HttpURLConnection).apply {
+                requestMethod = "GET"
+                setRequestProperty("User-Agent", "Starmap-Android")
+                connectTimeout = 10_000
+                readTimeout = 10_000
+            }
+            if (conn.responseCode !in 200..299) return@withContext null
+            val resp = JSONObject(conn.inputStream.bufferedReader().use { it.readText() })
+            val fr = resp.optJSONObject("response")?.optJSONObject("flightroute") ?: return@withContext null
+            fun airport(key: String): String {
+                val a = fr.optJSONObject(key) ?: return "?"
+                return a.optString("iata_code").ifBlank { a.optString("icao_code") }
+                    .ifBlank { "?" }
+            }
+            Route(airport("origin"), airport("destination"))
+        } catch (e: Exception) {
+            null
+        }
+    }
+
     private fun numberOrNull(v: Any?): Double? = (v as? Number)?.toDouble()
+
+    private companion object {
+        // Common ICAO helicopter type codes, for feeds that omit the emitter category.
+        val HELI_TYPES = setOf(
+            "EC35", "EC45", "EC30", "EC20", "EC55", "EC75", "H135", "H145", "H125", "H155",
+            "H160", "H175", "AS50", "AS55", "AS65", "A109", "A119", "A139", "A169", "A189",
+            "R22", "R44", "R66", "B06", "B06T", "B407", "B412", "B429", "B430", "B505", "B47G",
+            "S76", "S92", "S61", "UH1", "H60", "H64", "EH10", "AW09", "AW39", "AW89", "GAZL",
+            "EXPL", "EXEC", "EN28", "EN48", "K126", "MD52", "MD60", "MI8", "PUMA", "LYNX",
+        )
+    }
 }

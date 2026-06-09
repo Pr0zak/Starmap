@@ -1,6 +1,7 @@
 package com.starmap.app.sky
 
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -67,6 +68,9 @@ fun SkyCanvas(viewModel: SkyViewModel, settings: Settings, modifier: Modifier = 
         }
     }
 
+    // Tappable aircraft hit-boxes, refreshed each frame by the draw pass.
+    val aircraftHits = remember { mutableListOf<AircraftHit>() }
+
     // Reusable text paints.
     val starPaint = remember { android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG) }
     val conPaint = remember { android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG) }
@@ -78,16 +82,27 @@ fun SkyCanvas(viewModel: SkyViewModel, settings: Settings, modifier: Modifier = 
     }
 
     Canvas(
-        modifier = modifier.pointerInput(Unit) {
-            detectTransformGestures { _, pan, zoom, _ ->
-                if (zoom != 1f) fov = (fov / zoom).coerceIn(12f, 90f)
-                if (viewModel.manualMode.value) {
-                    val degPerPx = fov / size.height
-                    manualAz = (((manualAz - pan.x * degPerPx) % 360f) + 360f) % 360f
-                    manualAlt = (manualAlt + pan.y * degPerPx).coerceIn(-89f, 89f)
+        modifier = modifier
+            .pointerInput(Unit) {
+                detectTransformGestures { _, pan, zoom, _ ->
+                    if (zoom != 1f) fov = (fov / zoom).coerceIn(12f, 90f)
+                    if (viewModel.manualMode.value) {
+                        val degPerPx = fov / size.height
+                        manualAz = (((manualAz - pan.x * degPerPx) % 360f) + 360f) % 360f
+                        manualAlt = (manualAlt + pan.y * degPerPx).coerceIn(-89f, 89f)
+                    }
                 }
             }
-        },
+            .pointerInput(Unit) {
+                detectTapGestures { offset ->
+                    val hit = aircraftHits.minByOrNull {
+                        val dx = it.x - offset.x; val dy = it.y - offset.y
+                        dx * dx + dy * dy
+                    }
+                    val near = hit != null && hypot(hit.x - offset.x, hit.y - offset.y) < 40f * density
+                    viewModel.selectAircraft(if (near) hit!!.render else null)
+                }
+            },
     ) {
         frame // subscribe to the frame clock
         val night = settings.nightMode
@@ -311,28 +326,61 @@ fun SkyCanvas(viewModel: SkyViewModel, settings: Settings, modifier: Modifier = 
             }
         }
 
-        // --- Aircraft (live ADS-B) ---
-        if (m.aircraftCount > 0) {
-            val acColor = if (night) Color(0xFFCC8844) else Color(0xFFFFB060)
+        // --- Aircraft (live ADS-B): planes amber, helicopters teal, fading trails ---
+        aircraftHits.clear()
+        if (m.aircraft.isNotEmpty()) {
+            val planeColor = if (night) Color(0xFFCC8844) else Color(0xFFFFB060)
+            val heliColor = if (night) Color(0xFFAA6699) else Color(0xFF55E0D0)
             bodyPaint.textSize = 11f * density
-            bodyPaint.color = acColor.toArgb()
-            for (i in 0 until m.aircraftCount) {
-                val base = i * 3
-                val vx = m.aircraftEnu[base]; val vy = m.aircraftEnu[base + 1]; val vz = m.aircraftEnu[base + 2]
-                val depth = vx * look[0] + vy * look[1] + vz * look[2]
+            for (ac in m.aircraft) {
+                val v = ac.enu
+                val depth = v[0] * look[0] + v[1] * look[1] + v[2] * look[2]
                 if (depth < MIN_DEPTH) continue
-                val sx = cx + ((vx * right[0] + vy * right[1] + vz * right[2]) / depth) * focal
+                val sx = cx + ((v[0] * right[0] + v[1] * right[1] + v[2] * right[2]) / depth) * focal
                 if (sx < -margin || sx > size.width + margin) continue
-                val sy = cy - ((vx * up[0] + vy * up[1] + vz * up[2]) / depth) * focal
+                val sy = cy - ((v[0] * up[0] + v[1] * up[1] + v[2] * up[2]) / depth) * focal
                 if (sy < -margin || sy > size.height + margin) continue
-                val s = 4f * density
-                val marker = Path().apply {
-                    moveTo(sx, sy - s); lineTo(sx + s, sy); lineTo(sx, sy + s); lineTo(sx - s, sy); close()
+                val heli = ac.isHelicopter
+                val color = if (heli) heliColor else planeColor
+
+                if (settings.showAircraftTrails) {
+                    val trail = ac.trail
+                    val n = trail.size / 3
+                    var k = 0
+                    while (k < n) {
+                        val b = k * 3
+                        val tx = trail[b]; val ty = trail[b + 1]; val tz = trail[b + 2]
+                        val td = tx * look[0] + ty * look[1] + tz * look[2]
+                        if (td >= MIN_DEPTH) {
+                            val px = cx + ((tx * right[0] + ty * right[1] + tz * right[2]) / td) * focal
+                            val py = cy - ((tx * up[0] + ty * up[1] + tz * up[2]) / td) * focal
+                            val a = 0.06f + 0.4f * (k.toFloat() / n) // older = fainter
+                            drawCircle(color.copy(alpha = a), 1.7f * density,
+                                androidx.compose.ui.geometry.Offset(px, py))
+                        }
+                        k++
+                    }
                 }
-                drawPath(marker, acColor)
-                val label = m.aircraftLabels[i]
-                if (label.isNotBlank()) {
-                    drawContext.canvas.nativeCanvas.drawText(label, sx + 6f * density, sy + 4f * density, bodyPaint)
+
+                val s = 4f * density
+                if (heli) {
+                    drawCircle(color, 3f * density, androidx.compose.ui.geometry.Offset(sx, sy))
+                    drawLine(color, androidx.compose.ui.geometry.Offset(sx - s, sy - s),
+                        androidx.compose.ui.geometry.Offset(sx + s, sy - s), strokeWidth = 1.6f * density)
+                } else {
+                    val marker = Path().apply {
+                        moveTo(sx, sy - s); lineTo(sx + s, sy); lineTo(sx, sy + s); lineTo(sx - s, sy); close()
+                    }
+                    drawPath(marker, color)
+                }
+                aircraftHits.add(AircraftHit(sx, sy, ac))
+
+                if (settings.showAircraftLabels && ac.callsign.isNotBlank()) {
+                    bodyPaint.color = color.toArgb()
+                    val ft = (ac.altitudeMeters / 0.3048).toInt()
+                    drawContext.canvas.nativeCanvas.drawText(
+                        "${ac.callsign}  ${ft}ft", sx + 6f * density, sy + 4f * density, bodyPaint,
+                    )
                 }
             }
         }
@@ -491,3 +539,6 @@ private fun LaunchedPersistFov(viewModel: SkyViewModel, fovProvider: () -> Float
             .collect { viewModel.setFloat(SettingsRepository.FloatSetting.Fov, it) }
     }
 }
+
+/** A tappable aircraft position recorded during the draw pass. */
+private class AircraftHit(val x: Float, val y: Float, val render: AircraftRender)

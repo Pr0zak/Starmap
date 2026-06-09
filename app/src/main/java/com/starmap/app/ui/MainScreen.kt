@@ -13,6 +13,8 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
@@ -55,6 +57,8 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.starmap.app.aircraft.AircraftManager
+import com.starmap.app.sky.AircraftRender
 import com.starmap.app.sky.SkyCanvas
 import com.starmap.app.sky.SkyModel
 import com.starmap.app.sky.SkyViewModel
@@ -205,6 +209,12 @@ private fun SkyScreen(
                 .padding(16.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
+            val selAc by viewModel.selectedAircraft
+            val selRoute by viewModel.selectedRoute
+            selAc?.let { ac ->
+                AircraftInfoCard(ac, selRoute) { viewModel.selectAircraft(null) }
+                Spacer(Modifier.height(8.dp))
+            }
             if (location == null) {
                 StatusCard {
                     Row(verticalAlignment = Alignment.CenterVertically) {
@@ -331,6 +341,51 @@ private fun describeDirection(enu: FloatArray): String {
     val az = (((Math.toDegrees(atan2(enu[0].toDouble(), enu[1].toDouble())) + 360) % 360)).roundToInt()
     val updown = if (alt >= 0) "$alt° up" else "${-alt}° below horizon"
     return "$az° ${compassLabel(az.toFloat())} · $updown"
+}
+
+@Composable
+private fun AircraftInfoCard(ac: AircraftRender, route: AircraftManager.Route?, onClose: () -> Unit) {
+    Surface(
+        color = Color(0xF21B2030),
+        shape = RoundedCornerShape(14.dp),
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Column(modifier = Modifier.padding(start = 16.dp, top = 8.dp, bottom = 12.dp, end = 8.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    ac.callsign.ifBlank { "Aircraft" },
+                    color = Color(0xFFFFE9A8), fontSize = 18.sp, fontWeight = FontWeight.SemiBold,
+                    modifier = Modifier.weight(1f),
+                )
+                IconButton(onClick = onClose) {
+                    Icon(Icons.Filled.Close, contentDescription = "Close", tint = Color(0xFFD8E0F0))
+                }
+            }
+            val kind = when {
+                ac.isHelicopter && ac.typeCode.isNotBlank() -> "Helicopter · ${ac.typeCode}"
+                ac.isHelicopter -> "Helicopter"
+                ac.typeCode.isNotBlank() -> ac.typeCode
+                else -> "Aircraft"
+            }
+            Text(kind, color = Color(0xCCFFFFFF), fontSize = 13.sp)
+            val ft = (ac.altitudeMeters / 0.3048).toInt()
+            Text(
+                "Alt ${"%,d".format(ft)} ft · ${ac.groundSpeedKts.toInt()} kt · heading ${ac.trackDeg.toInt()}°",
+                color = Color(0xCCFFFFFF), fontSize = 13.sp,
+            )
+            Text(
+                "%.0f km (%.0f mi) away".format(ac.rangeKm, ac.rangeKm * 0.621371),
+                color = Color(0x99FFFFFF), fontSize = 12.sp,
+            )
+            route?.let {
+                Text(
+                    "${it.origin}  →  ${it.destination}",
+                    color = Color(0xFF9FE0C0), fontSize = 15.sp,
+                    modifier = Modifier.padding(top = 4.dp),
+                )
+            }
+        }
+    }
 }
 
 private fun Context.findActivity(): Activity? {

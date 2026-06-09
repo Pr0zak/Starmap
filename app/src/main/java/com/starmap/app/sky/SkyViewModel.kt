@@ -9,8 +9,8 @@ import androidx.lifecycle.viewModelScope
 import com.starmap.app.BuildConfig
 import com.starmap.app.astro.Constellation
 import com.starmap.app.astro.StarCatalog
-import com.starmap.app.aircraft.Aircraft
 import com.starmap.app.aircraft.AircraftManager
+import com.starmap.app.aircraft.AircraftTrack
 import com.starmap.app.catalog.CatalogManager
 import com.starmap.app.satellite.NamedSat
 import com.starmap.app.satellite.SatelliteManager
@@ -58,7 +58,21 @@ class SkyViewModel(app: Application) : AndroidViewModel(app) {
     private var issSats: List<NamedSat> = emptyList()
     private var starlinkSats: List<NamedSat> = emptyList()
     private val aircraftManager = AircraftManager()
-    private var aircraftStates: List<Aircraft> = emptyList()
+    private var aircraftTracks: List<AircraftTrack> = emptyList()
+    private val aircraftHistory = HashMap<String, ArrayDeque<DoubleArray>>()
+
+    private val _selectedAircraft = mutableStateOf<AircraftRender?>(null)
+    val selectedAircraft: State<AircraftRender?> = _selectedAircraft
+    private val _selectedRoute = mutableStateOf<AircraftManager.Route?>(null)
+    val selectedRoute: State<AircraftManager.Route?> = _selectedRoute
+
+    fun selectAircraft(ac: AircraftRender?) {
+        _selectedAircraft.value = ac
+        _selectedRoute.value = null
+        if (ac != null && ac.callsign.isNotBlank() && ac.callsign != "?") {
+            viewModelScope.launch { _selectedRoute.value = aircraftManager.fetchRoute(ac.callsign) }
+        }
+    }
 
     private val _model = mutableStateOf<SkyModel?>(null)
     val model: State<SkyModel?> = _model
@@ -142,13 +156,30 @@ class SkyViewModel(app: Application) : AndroidViewModel(app) {
             val s = settings.value
             val fix = effectiveLocation.value
             if (s.showAircraft && fix != null) {
-                when (val r = aircraftManager.fetch(fix.latitude, fix.longitude)) {
-                    is AircraftManager.Result.Ok -> aircraftStates = r.aircraft
+                when (val r = aircraftManager.fetch(fix.latitude, fix.longitude, s.aircraftRangeNm.toInt())) {
+                    is AircraftManager.Result.Ok -> {
+                        val seen = HashSet<String>()
+                        aircraftTracks = r.aircraft.map { ac ->
+                            seen.add(ac.id)
+                            val dq = aircraftHistory.getOrPut(ac.id) { ArrayDeque() }
+                            dq.addLast(doubleArrayOf(ac.latitude, ac.longitude, ac.altitudeMeters))
+                            while (dq.size > 18) dq.removeFirst()
+                            AircraftTrack(
+                                ac.callsign, ac.isHelicopter, ac.latitude, ac.longitude,
+                                ac.altitudeMeters, ac.typeCode, ac.groundSpeedKts, ac.trackDeg,
+                                dq.dropLast(1).toList(),
+                            )
+                        }
+                        aircraftHistory.keys.retainAll(seen)
+                    }
                     is AircraftManager.Result.Failed -> Log.w(TAG, "Aircraft fetch: ${r.message}")
                 }
                 kotlinx.coroutines.delay(12_000)
             } else {
-                if (aircraftStates.isNotEmpty()) aircraftStates = emptyList()
+                if (aircraftTracks.isNotEmpty()) {
+                    aircraftTracks = emptyList()
+                    aircraftHistory.clear()
+                }
                 kotlinx.coroutines.delay(2_000)
             }
         }
@@ -177,7 +208,7 @@ class SkyViewModel(app: Application) : AndroidViewModel(app) {
                             asteroidElements = asteroidElements,
                             includeAsteroidPaths = s.showAsteroidPaths,
                             satellites = sats,
-                            aircraft = aircraftStates,
+                            aircraft = aircraftTracks,
                             showBelowHorizon = s.showBelowHorizon,
                         )
                     }

@@ -1,7 +1,7 @@
 package com.starmap.app.sky
 
 import android.hardware.GeomagneticField
-import com.starmap.app.aircraft.Aircraft
+import com.starmap.app.aircraft.AircraftTrack
 import com.starmap.app.astro.Asteroids
 import com.starmap.app.astro.AstroMath
 import com.starmap.app.astro.Constellation
@@ -19,6 +19,20 @@ class BodyEnu(val enu: FloatArray, val label: String)
 class MoonEnu(val enu: FloatArray, val illuminatedFraction: Float, val waxing: Boolean, val label: String)
 
 class PlanetEnu(val name: String, val enu: FloatArray, val colorArgb: Long, val sizeDp: Float)
+
+/** A rendered aircraft: its direction, a fading trail, and details for the info card. */
+class AircraftRender(
+    val enu: FloatArray,
+    val callsign: String,
+    val isHelicopter: Boolean,
+    val typeCode: String,
+    val altitudeMeters: Double,
+    val groundSpeedKts: Double,
+    val trackDeg: Double,
+    val rangeKm: Double,
+    /** Flattened ENU trail polyline x,y,z,… (oldest→newest). */
+    val trail: FloatArray,
+)
 
 class ConstellationEnu(
     val name: String,
@@ -48,14 +62,12 @@ class SkyModel(
     val satEnu: FloatArray,
     val satNames: List<String>,
     val satIsIss: BooleanArray,
-    val aircraftEnu: FloatArray,
-    val aircraftLabels: List<String>,
+    val aircraft: List<AircraftRender>,
     val declinationDeg: Float,
     val location: LocationProvider.Fix,
     val timeMillis: Long,
 ) {
     val satCount: Int get() = satNames.size
-    val aircraftCount: Int get() = aircraftLabels.size
 }
 
 object SkyBuilder {
@@ -71,7 +83,7 @@ object SkyBuilder {
         asteroidElements: List<Asteroids.Element>,
         includeAsteroidPaths: Boolean,
         satellites: List<NamedSat>,
-        aircraft: List<Aircraft>,
+        aircraft: List<AircraftTrack>,
         showBelowHorizon: Boolean,
     ): SkyModel {
         val jd = AstroMath.julianDay(timeMillis)
@@ -198,25 +210,40 @@ object SkyBuilder {
         val satEnu = FloatArray(satCoords.size) { satCoords[it] }
         val satIsIss = BooleanArray(satIss.size) { satIss[it] }
 
-        // Aircraft: convert each ADS-B position to a local ENU direction.
-        val acCoords = ArrayList<Float>()
-        val acLabels = ArrayList<String>()
+        // Aircraft: convert each ADS-B position (and its trail) to local ENU.
+        val aircraftRenders = ArrayList<AircraftRender>()
         if (aircraft.isNotEmpty()) {
             val obsEcef = Satellites.observerEcef(fix.latitude, fix.longitude, fix.altitude)
             for (ac in aircraft) {
                 val acEcef = Satellites.observerEcef(ac.latitude, ac.longitude, ac.altitudeMeters)
                 val enu = Satellites.enuFromEcef(acEcef, obsEcef, fix.latitude, fix.longitude)
-                val e = enu[0]; val north = enu[1]; val up = enu[2]
-                if (!showBelowHorizon && up < 0.0) continue
-                val range = sqrt(e * e + north * north + up * up)
+                val range = sqrt(enu[0] * enu[0] + enu[1] * enu[1] + enu[2] * enu[2])
                 if (range <= 0.0) continue
-                acCoords.add((e / range).toFloat())
-                acCoords.add((north / range).toFloat())
-                acCoords.add((up / range).toFloat())
-                acLabels.add(ac.callsign)
+                if (!showBelowHorizon && enu[2] < 0.0) continue
+                val unit = floatArrayOf(
+                    (enu[0] / range).toFloat(), (enu[1] / range).toFloat(), (enu[2] / range).toFloat(),
+                )
+                val trail = FloatArray(ac.trail.size * 3)
+                var ti = 0
+                for (p in ac.trail) {
+                    val pe = Satellites.observerEcef(p[0], p[1], p[2])
+                    val penu = Satellites.enuFromEcef(pe, obsEcef, fix.latitude, fix.longitude)
+                    val pr = sqrt(penu[0] * penu[0] + penu[1] * penu[1] + penu[2] * penu[2])
+                    if (pr > 0.0) {
+                        trail[ti] = (penu[0] / pr).toFloat()
+                        trail[ti + 1] = (penu[1] / pr).toFloat()
+                        trail[ti + 2] = (penu[2] / pr).toFloat()
+                    }
+                    ti += 3
+                }
+                aircraftRenders.add(
+                    AircraftRender(
+                        unit, ac.callsign, ac.isHelicopter, ac.typeCode,
+                        ac.altitudeMeters, ac.groundSpeedKts, ac.trackDeg, range, trail,
+                    ),
+                )
             }
         }
-        val aircraftEnu = FloatArray(acCoords.size) { acCoords[it] }
 
         val declination = GeomagneticField(
             fix.latitude.toFloat(),
@@ -228,7 +255,7 @@ object SkyBuilder {
         return SkyModel(
             n, starEnu, catalog.mag, catalog.ci, catalog.labels,
             cons, planets, asteroids, asteroidPaths, sun, moon, satEnu, satNames, satIsIss,
-            aircraftEnu, acLabels, declination, fix, timeMillis,
+            aircraftRenders, declination, fix, timeMillis,
         )
     }
 

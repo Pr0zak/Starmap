@@ -114,11 +114,27 @@ fun SettingsScreen(viewModel: SkyViewModel, settings: Settings, onBack: () -> Un
                 checked = settings.showStarlink,
                 enabled = starlinkReady,
             ) { viewModel.setBool(BoolSetting.Starlink, it) }
+            SectionHeader("Aircraft")
             SettingSwitch(
-                "Aircraft (live)",
-                "Nearby planes from ADS-B — needs internet",
+                "Show aircraft",
+                "Live nearby planes & helicopters (ADS-B) — needs internet. Tap one for details.",
                 checked = settings.showAircraft,
             ) { viewModel.setBool(BoolSetting.Aircraft, it) }
+            SettingSlider(
+                label = "Range",
+                value = settings.aircraftRangeNm,
+                valueText = "${settings.aircraftRangeNm.toInt()} nm",
+                range = 10f..250f,
+                onChange = { viewModel.setFloat(FloatSetting.AircraftRange, it) },
+            )
+            SettingSwitch(
+                "Fading trails", "Dotted trail showing where each one has been",
+                checked = settings.showAircraftTrails, enabled = settings.showAircraft,
+            ) { viewModel.setBool(BoolSetting.AircraftTrails, it) }
+            SettingSwitch(
+                "Labels", "Callsign and altitude",
+                checked = settings.showAircraftLabels, enabled = settings.showAircraft,
+            ) { viewModel.setBool(BoolSetting.AircraftLabels, it) }
 
             SectionHeader("Display")
             SettingSwitch("Night mode (red)", "Preserves dark adaptation",
