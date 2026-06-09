@@ -314,9 +314,25 @@ private fun SkyScreen(
             }
             val selObj by viewModel.selectedObject
             val centerObj by viewModel.centerObject
+            val followingState by viewModel.followActive
             if (selAc == null) {
                 (selObj ?: centerObj)?.let { obj ->
-                    ObjectInfoCard(obj, onClose = selObj?.let { { viewModel.selectObject(null) } })
+                    val onFollow: (() -> Unit)? = obj.target?.let { tgt ->
+                        {
+                            if (followingState) {
+                                viewModel.setFollow(false)
+                            } else {
+                                viewModel.selectSearchTarget(tgt)
+                                viewModel.setFollow(true)
+                            }
+                        }
+                    }
+                    ObjectInfoCard(
+                        obj,
+                        following = followingState,
+                        onFollow = onFollow,
+                        onClose = selObj?.let { { viewModel.selectObject(null) } },
+                    )
                     Spacer(Modifier.height(8.dp))
                 }
             }
@@ -383,7 +399,12 @@ private fun OverflowMenu(onOpen: (Screen) -> Unit) {
 }
 
 @Composable
-private fun ObjectInfoCard(obj: IdentifiedObject, onClose: (() -> Unit)? = null) {
+private fun ObjectInfoCard(
+    obj: IdentifiedObject,
+    following: Boolean = false,
+    onFollow: (() -> Unit)? = null,
+    onClose: (() -> Unit)? = null,
+) {
     val (icon, accent) = objectVisual(obj)
     Surface(
         color = Color(0xF21B2030),
@@ -413,6 +434,14 @@ private fun ObjectInfoCard(obj: IdentifiedObject, onClose: (() -> Unit)? = null)
                     obj.detail, color = Color(0xB3FFFFFF), fontSize = 13.sp,
                     modifier = Modifier.padding(top = 3.dp),
                 )
+            }
+            if (onFollow != null) {
+                IconButton(onClick = onFollow) {
+                    Icon(
+                        Icons.Filled.MyLocation, contentDescription = "Follow",
+                        tint = if (following) Color(0xFFFFD54F) else Color(0xFFD8E0F0),
+                    )
+                }
             }
             if (onClose != null) {
                 IconButton(onClick = onClose) {

@@ -32,7 +32,13 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 /** A sky object the user tapped to identify. */
-data class IdentifiedObject(val name: String, val kind: String, val detail: String)
+data class IdentifiedObject(
+    val name: String,
+    val kind: String,
+    val detail: String,
+    /** Re-resolvable handle so the object can be followed as it moves. */
+    val target: SearchTarget? = null,
+)
 
 class SkyViewModel(app: Application) : AndroidViewModel(app) {
 

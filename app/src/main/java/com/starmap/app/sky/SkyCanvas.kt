@@ -922,7 +922,7 @@ private fun nearestObject(
     val out = FloatArray(2)
     var bestD2 = thresh * thresh
     var best: IdentifiedObject? = null
-    fun consider(arr: FloatArray, base: Int, name: String, kind: String, mag: Float?) {
+    fun consider(arr: FloatArray, base: Int, name: String, kind: String, mag: Float?, target: SearchTarget?) {
         if (arr[base + 2] < 0f) return
         if (!ps.projectAt(arr, base, out)) return
         val dx = out[0] - ox
@@ -930,32 +930,39 @@ private fun nearestObject(
         val d2 = dx * dx + dy * dy
         if (d2 < bestD2) {
             bestD2 = d2
-            best = identify(arr, base, name, kind, mag)
+            best = identify(arr, base, name, kind, mag, target)
         }
     }
-    m.sun?.let { consider(it.enu, 0, "Sun", "Star", null) }
-    m.moon?.let { consider(it.enu, 0, "Moon", "Moon", null) }
-    for (pl in m.planets) consider(pl.enu, 0, pl.name, "Planet", null)
-    for (c in m.comets) consider(c.enu, 0, c.name, "Comet", c.magnitude)
-    for (a in m.asteroids) consider(a.enu, 0, a.name, "Asteroid", null)
+    m.sun?.let { consider(it.enu, 0, "Sun", "Star", null, SearchTarget.SpecialT("Sun")) }
+    m.moon?.let { consider(it.enu, 0, "Moon", "Moon", null, SearchTarget.SpecialT("Moon")) }
+    for (pl in m.planets) consider(pl.enu, 0, pl.name, "Planet", null, SearchTarget.PlanetT(pl.name))
+    for (c in m.comets) consider(c.enu, 0, c.name, "Comet", c.magnitude, SearchTarget.CometT(c.name))
+    for (a in m.asteroids) consider(a.enu, 0, a.name, "Asteroid", null, SearchTarget.AsteroidT(a.name))
     for (d in m.messier) {
         val label = if (d.common.isBlank()) d.name else "${d.name} · ${d.common}"
-        consider(d.enu, 0, label, d.type, d.mag)
+        consider(d.enu, 0, label, d.type, d.mag, SearchTarget.MessierT(d.name))
     }
     var s = 0
     while (s < m.satCount) {
-        consider(m.satEnu, s * 3, m.satNames[s], "Satellite", null)
+        consider(m.satEnu, s * 3, m.satNames[s], "Satellite", null, SearchTarget.SpecialT(m.satNames[s]))
         s++
     }
     for ((idx, name) in m.labels) {
         if (idx < 0 || idx >= m.count) continue
         val mag = if (idx < m.starMag.size) m.starMag[idx] else null
-        consider(m.starEnu, idx * 3, name, "Star", mag)
+        consider(m.starEnu, idx * 3, name, "Star", mag, SearchTarget.StarT(idx, name))
     }
     return best
 }
 
-private fun identify(arr: FloatArray, base: Int, name: String, kind: String, mag: Float?): IdentifiedObject {
+private fun identify(
+    arr: FloatArray,
+    base: Int,
+    name: String,
+    kind: String,
+    mag: Float?,
+    target: SearchTarget?,
+): IdentifiedObject {
     val alt = Math.toDegrees(asin(arr[base + 2].coerceIn(-1f, 1f).toDouble()))
     val az = (Math.toDegrees(atan2(arr[base].toDouble(), arr[base + 1].toDouble())) + 360.0) % 360.0
     val dirs = arrayOf("N", "NE", "E", "SE", "S", "SW", "W", "NW")
@@ -966,5 +973,5 @@ private fun identify(arr: FloatArray, base: Int, name: String, kind: String, mag
         ""
     }
     val detail = "Alt %.0f° · Az %.0f° %s%s".format(alt, az, compass, magStr)
-    return IdentifiedObject(name, kind, detail)
+    return IdentifiedObject(name, kind, detail, target)
 }
