@@ -1,39 +1,52 @@
-# Starmap
+<p align="center">
+  <img src="docs/starmap-logo.svg" width="120" alt="Starmap logo">
+</p>
 
-Starmap turns your phone into a window on the night sky. Hold it up and point it
-in any direction — Starmap shows the stars, constellations, planets, the Sun and
-the Moon exactly where they are in front of you, labelled in real time. As you
-move the phone, the sky moves with it.
+<h1 align="center">Starmap</h1>
+
+<p align="center">
+  A point-and-identify star map for Android. Hold your phone up to the sky and
+  Starmap shows what's there — labelled in real time — and moves with the phone.
+</p>
 
 ## How it works
 
 Starmap uses your phone's location and motion sensors (compass, accelerometer and
 gyroscope) to work out which patch of sky the back of your phone is pointing at,
-then draws everything that's there:
+then draws everything in that direction:
 
-- **Stars** — thousands of stars, sized by brightness and shown in their true
-  colours, with the brighter ones labelled.
-- **Constellations** — the classic star-figure lines and their names.
-- **Planets** — Mercury through Neptune, along the path of the ecliptic.
+- **Stars** — thousands of stars (up to ~41,000), sized by brightness, in their
+  true colours, with the brighter ones labelled.
+- **Constellations** — the classic star-figure lines and names.
+- **Planets** — Mercury through Neptune, along the ecliptic.
+- **Asteroids** — the brightest minor planets (Vesta, Ceres, Pallas…), optionally
+  with their track across the stars.
 - **Sun & Moon** — including the Moon's current phase.
-- **Satellites** — optionally the International Space Station and Starlink, once
-  their tracking data has been downloaded.
-- **Horizon & compass** — a horizon line and N/E/S/W markers so you always know
-  which way you're facing.
+- **Meteor showers** — the radiant of any shower active tonight, with its peak.
+- **Deep-sky objects** — all 110 Messier galaxies, nebulae and clusters.
+- **Satellites** — the International Space Station and the Starlink fleet.
+- **Aircraft** — live nearby planes and helicopters from ADS-B; tap one for its
+  type, altitude, speed, heading, distance and route (origin → destination).
+- **Reference lines** — the ecliptic, celestial equator and an RA/Dec grid.
+- **Horizon & compass** — a horizon line and N/E/S/W markers.
 
 Everything is worked out on the device from the current time and your location, so
 it stays accurate through the night and wherever you travel.
 
 ## Using it
 
-- Point the phone where you want to look — the labels follow.
-- If the compass seems off, wave the phone in a figure-8 to recalibrate it.
-- Pinch to zoom in and out.
-- Open **Settings** to choose what to show: stars and labels, constellation
-  lines, planets, the Sun and Moon, satellites, the horizon and compass markers,
-  a night-vision red mode, and whether to include objects below the horizon.
+- **Point** the phone where you want to look — the labels follow.
+- **Search** (magnifier icon) for any star, planet, constellation, deep-sky object
+  or the ISS by name — even nicknames like "Big Dipper". The sky then guides you to
+  it with a marker, or an arrow pointing the way.
+- **Tap an aircraft** for its details.
+- **Pinch** to zoom; switch to **manual mode** (hand icon) to drag around the sky
+  without moving the phone.
+- Rotate to **landscape** any time.
+- Open **Settings** to choose exactly what to show, pick a **range** for aircraft,
+  turn on a **night-vision red mode**, set your location by hand, and more.
 
-The core sky works fully offline — the star and constellation data is built into
-the app. Location is used only to line the sky up with where you are (you can also
-set your location by hand), and the motion sensors are used only to follow where
-the phone is pointing.
+The core sky works fully **offline** — the star, constellation, asteroid and
+deep-sky data is built into the app. Location is used only to line the sky up with
+where you are; the motion sensors only to follow where the phone is pointing.
+Satellites and live aircraft need an internet connection.

@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 108 108" width="108" height="108" role="img" aria-label="Starmap logo">
+  <defs>
+    <radialGradient id="bg" cx="38%" cy="30%" r="85%">
+      <stop offset="0%" stop-color="#1A2A57"/>
+      <stop offset="55%" stop-color="#0E1733"/>
+      <stop offset="100%" stop-color="#070B1C"/>
+    </radialGradient>
+  </defs>
+  <rect width="108" height="108" rx="24" fill="url(#bg)"/>
+  <path fill="#CFE0FF" d="M54,24 L61.05,44.29 L82.53,44.73 L65.41,57.71 L71.63,78.27 L54,66 L36.37,78.27 L42.59,57.71 L25.47,44.73 L46.95,44.29 Z"/>
+  <path fill="#8FB7FF" d="M33,33 L35,37 L39,39 L35,41 L33,45 L31,41 L27,39 L31,37 Z"/>
+  <path fill="#8FB7FF" d="M77,68 L78.5,71 L81.5,72.5 L78.5,74 L77,77 L75.5,74 L72.5,72.5 L75.5,71 Z"/>
+  <circle cx="86" cy="30" r="1.4" fill="#B7C6E8"/>
+  <circle cx="22" cy="74" r="1.2" fill="#B7C6E8"/>
+  <circle cx="64" cy="86" r="1.1" fill="#8FB7FF"/>
+</svg>
