@@ -52,6 +52,7 @@ class SkyViewModel(app: Application) : AndroidViewModel(app) {
 
     private var catalog: StarCatalog? = null
     private var constellations: List<Constellation> = emptyList()
+    private var asteroidElements: List<com.starmap.app.astro.Asteroids.Element> = emptyList()
     private var issSats: List<NamedSat> = emptyList()
     private var starlinkSats: List<NamedSat> = emptyList()
 
@@ -93,6 +94,7 @@ class SkyViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch {
             try {
                 constellations = catalogManager.loadConstellations()
+                asteroidElements = catalogManager.loadAsteroids()
                 catalog = catalogManager.loadStars(settings.value.useExtendedCatalog)
                 buildSearchIndex()
                 Log.i(TAG, "Catalog loaded: ${catalog?.count ?: 0} stars, ${constellations.size} constellations")
@@ -149,6 +151,9 @@ class SkyViewModel(app: Application) : AndroidViewModel(app) {
                             timeMillis = System.currentTimeMillis(),
                             includeConstellations = s.showConstellations,
                             includePlanets = s.showPlanets,
+                            includeAsteroids = s.showAsteroids,
+                            asteroidElements = asteroidElements,
+                            includeAsteroidPaths = s.showAsteroidPaths,
                             satellites = sats,
                             showBelowHorizon = s.showBelowHorizon,
                         )
@@ -276,6 +281,9 @@ class SkyViewModel(app: Application) : AndroidViewModel(app) {
         }
         for (p in listOf("Mercury", "Venus", "Mars", "Jupiter", "Saturn", "Uranus", "Neptune")) {
             entries.add(SearchEntry(SearchTarget.PlanetT(p), p, "Planet", FuzzySearch.normalize(p)))
+        }
+        for (a in asteroidElements) {
+            entries.add(SearchEntry(SearchTarget.AsteroidT(a.name), a.name, "Asteroid", FuzzySearch.normalize(a.name)))
         }
         entries.add(SearchEntry(SearchTarget.SpecialT("Sun"), "Sun", "Solar System", "sun"))
         entries.add(SearchEntry(SearchTarget.SpecialT("Moon"), "Moon", "Solar System", "moon"))

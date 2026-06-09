@@ -72,6 +72,14 @@ fun SettingsScreen(viewModel: SkyViewModel, settings: Settings, onBack: () -> Un
             SettingSwitch("Planets", "Mercury through Neptune", checked = settings.showPlanets) {
                 viewModel.setBool(BoolSetting.Planets, it)
             }
+            SettingSwitch("Asteroids", "Bright minor planets (Vesta, Ceres, Pallas…)",
+                checked = settings.showAsteroids) {
+                viewModel.setBool(BoolSetting.Asteroids, it)
+            }
+            SettingSwitch("Asteroid paths", "Trace each one's track over ±60 days",
+                checked = settings.showAsteroidPaths, enabled = settings.showAsteroids) {
+                viewModel.setBool(BoolSetting.AsteroidPaths, it)
+            }
             SettingSwitch("Sun", checked = settings.showSun) {
                 viewModel.setBool(BoolSetting.Sun, it)
             }

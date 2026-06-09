@@ -1,6 +1,7 @@
 package com.starmap.app.sky
 
 import android.hardware.GeomagneticField
+import com.starmap.app.astro.Asteroids
 import com.starmap.app.astro.AstroMath
 import com.starmap.app.astro.Constellation
 import com.starmap.app.astro.Planets
@@ -37,6 +38,9 @@ class SkyModel(
     val labels: Map<Int, String>,
     val constellations: List<ConstellationEnu>,
     val planets: List<PlanetEnu>,
+    val asteroids: List<PlanetEnu>,
+    /** Each entry is a flattened ENU polyline of an asteroid's track over time. */
+    val asteroidPaths: List<FloatArray>,
     val sun: BodyEnu?,
     val moon: MoonEnu?,
     /** count*3 ENU vectors for visible satellites. */
@@ -59,6 +63,9 @@ object SkyBuilder {
         timeMillis: Long,
         includeConstellations: Boolean,
         includePlanets: Boolean,
+        includeAsteroids: Boolean,
+        asteroidElements: List<Asteroids.Element>,
+        includeAsteroidPaths: Boolean,
         satellites: List<NamedSat>,
         showBelowHorizon: Boolean,
     ): SkyModel {
@@ -96,6 +103,34 @@ object SkyBuilder {
             Planets.positions(jd).map { p ->
                 val v = AstroMath.equatorialToVec(p.raDeg, p.decDeg)
                 PlanetEnu(p.name, toEnu(v, basis), p.colorArgb, p.sizeDp)
+            }
+        } else {
+            emptyList()
+        }
+
+        val asteroids = if (includeAsteroids) {
+            Asteroids.positions(asteroidElements, jd).map { a ->
+                val v = AstroMath.equatorialToVec(a.raDeg, a.decDeg)
+                PlanetEnu(a.name, toEnu(v, basis), 0xFFC8C0A0, a.sizeDp)
+            }
+        } else {
+            emptyList()
+        }
+        val asteroidPaths = if (includeAsteroids && includeAsteroidPaths) {
+            asteroidElements.map { el ->
+                val pts = FloatArray((PATH_SAMPLES * 2 + 1) * 3)
+                var idx = 0
+                var k = -PATH_SAMPLES
+                while (k <= PATH_SAMPLES) {
+                    val rd = Asteroids.raDec(el, jd + k * PATH_STEP_DAYS)
+                    val v = AstroMath.equatorialToVec(rd[0], rd[1])
+                    pts[idx] = AstroMath.dot(v, basis.east).toFloat()
+                    pts[idx + 1] = AstroMath.dot(v, basis.north).toFloat()
+                    pts[idx + 2] = AstroMath.dot(v, basis.up).toFloat()
+                    idx += 3
+                    k++
+                }
+                pts
             }
         } else {
             emptyList()
@@ -167,10 +202,13 @@ object SkyBuilder {
 
         return SkyModel(
             n, starEnu, catalog.mag, catalog.ci, catalog.labels,
-            cons, planets, sun, moon, satEnu, satNames, satIsIss,
+            cons, planets, asteroids, asteroidPaths, sun, moon, satEnu, satNames, satIsIss,
             declination, fix, timeMillis,
         )
     }
+
+    private const val PATH_SAMPLES = 15      // each side of "now"
+    private const val PATH_STEP_DAYS = 4.0   // ⇒ ±60 days of track
 
     private fun toEnu(vecEq: DoubleArray, basis: AstroMath.EnuBasis): FloatArray = floatArrayOf(
         AstroMath.dot(vecEq, basis.east).toFloat(),

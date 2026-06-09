@@ -25,6 +25,8 @@ data class Settings(
     val showSun: Boolean = true,
     val showMoon: Boolean = true,
     val showPlanets: Boolean = true,
+    val showAsteroids: Boolean = false,
+    val showAsteroidPaths: Boolean = false,
     val showIss: Boolean = true,
     val showStarlink: Boolean = false,
     val showBelowHorizon: Boolean = false,
@@ -54,6 +56,8 @@ class SettingsRepository(private val context: Context) {
         val showSun = booleanPreferencesKey("show_sun")
         val showMoon = booleanPreferencesKey("show_moon")
         val showPlanets = booleanPreferencesKey("show_planets")
+        val showAsteroids = booleanPreferencesKey("show_asteroids")
+        val showAsteroidPaths = booleanPreferencesKey("show_asteroid_paths")
         val showIss = booleanPreferencesKey("show_iss")
         val showStarlink = booleanPreferencesKey("show_starlink")
         val showBelowHorizon = booleanPreferencesKey("show_below_horizon")
@@ -79,6 +83,8 @@ class SettingsRepository(private val context: Context) {
             showSun = p[Keys.showSun] ?: true,
             showMoon = p[Keys.showMoon] ?: true,
             showPlanets = p[Keys.showPlanets] ?: true,
+            showAsteroids = p[Keys.showAsteroids] ?: false,
+            showAsteroidPaths = p[Keys.showAsteroidPaths] ?: false,
             showIss = p[Keys.showIss] ?: true,
             showStarlink = p[Keys.showStarlink] ?: false,
             showBelowHorizon = p[Keys.showBelowHorizon] ?: false,
@@ -123,6 +129,8 @@ class SettingsRepository(private val context: Context) {
         Sun(Keys.showSun),
         Moon(Keys.showMoon),
         Planets(Keys.showPlanets),
+        Asteroids(Keys.showAsteroids),
+        AsteroidPaths(Keys.showAsteroidPaths),
         Iss(Keys.showIss),
         Starlink(Keys.showStarlink),
         BelowHorizon(Keys.showBelowHorizon),

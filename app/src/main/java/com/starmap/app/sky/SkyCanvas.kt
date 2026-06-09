@@ -215,6 +215,48 @@ fun SkyCanvas(viewModel: SkyViewModel, settings: Settings, modifier: Modifier = 
             }
         }
 
+        // --- Asteroid orbital-track paths ---
+        if (m.asteroidPaths.isNotEmpty()) {
+            val pathColor = if (night) Color(0x55AA6644) else Color(0x66C8C0A0)
+            for (seg in m.asteroidPaths) {
+                var hasPrev = false; var px = 0f; var py = 0f
+                var i = 0
+                while (i < seg.size) {
+                    val vx = seg[i]; val vy = seg[i + 1]; val vz = seg[i + 2]
+                    val depth = vx * look[0] + vy * look[1] + vz * look[2]
+                    if (depth >= MIN_DEPTH) {
+                        val sx = cx + ((vx * right[0] + vy * right[1] + vz * right[2]) / depth) * focal
+                        val sy = cy - ((vx * up[0] + vy * up[1] + vz * up[2]) / depth) * focal
+                        if (hasPrev) {
+                            drawLine(pathColor, androidx.compose.ui.geometry.Offset(px, py),
+                                androidx.compose.ui.geometry.Offset(sx, sy), strokeWidth = density)
+                        }
+                        px = sx; py = sy; hasPrev = true
+                    } else {
+                        hasPrev = false
+                    }
+                    i += 3
+                }
+            }
+        }
+
+        // --- Asteroids ---
+        if (m.asteroids.isNotEmpty()) {
+            bodyPaint.textSize = 12f * density
+            for (a in m.asteroids) {
+                if (!settings.showBelowHorizon && a.enu[2] < 0f) continue
+                if (project(a.enu, p)) {
+                    val color = if (night) Color(1f, 0.3f, 0.25f) else Color(a.colorArgb)
+                    val r = a.sizeDp * density
+                    drawCircle(color, r, androidx.compose.ui.geometry.Offset(p[0], p[1]))
+                    bodyPaint.color = (if (night) Color(0xAAAA5544) else Color(0xCCD0C8B0)).toArgb()
+                    drawContext.canvas.nativeCanvas.drawText(
+                        a.name, p[0] + r + 3f * density, p[1] + 4f * density, bodyPaint,
+                    )
+                }
+            }
+        }
+
         // --- Sun ---
         if (settings.showSun) m.sun?.let { sun ->
             if (!(!settings.showBelowHorizon && sun.enu[2] < 0f) && project(sun.enu, p)) {
