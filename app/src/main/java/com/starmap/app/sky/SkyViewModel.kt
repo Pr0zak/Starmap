@@ -120,6 +120,40 @@ class SkyViewModel(app: Application) : AndroidViewModel(app) {
     val manualMode: State<Boolean> = _manualMode
     fun toggleManualMode() { _manualMode.value = !_manualMode.value }
 
+    // --- Time machine -------------------------------------------------------
+    /** When live, the sky tracks the real clock; otherwise it shows [_simTimeMillis]. */
+    private val _liveTime = mutableStateOf(true)
+    val liveTime: State<Boolean> = _liveTime
+    private val _simTimeMillis = mutableStateOf(System.currentTimeMillis())
+    /** Simulated time-lapse rate: simulated millis advanced per real second (0 = paused). */
+    private val _timeFlowRate = mutableStateOf(0L)
+    val timeFlowRate: State<Long> = _timeFlowRate
+
+    /** The instant the sky is currently drawn for. */
+    fun currentSkyTimeMillis(): Long =
+        if (_liveTime.value) System.currentTimeMillis() else _simTimeMillis.value
+
+    /** Jump the simulated time by [deltaMillis] (leaves live mode). */
+    fun jumpTime(deltaMillis: Long) {
+        _simTimeMillis.value = currentSkyTimeMillis() + deltaMillis
+        _liveTime.value = false
+    }
+
+    /** Snap back to the real clock. */
+    fun goLiveTime() {
+        _liveTime.value = true
+        _timeFlowRate.value = 0L
+    }
+
+    /** Animate time at [rate] simulated-millis per real second (0 pauses). */
+    fun setTimeFlowRate(rate: Long) {
+        if (_liveTime.value) {
+            _simTimeMillis.value = System.currentTimeMillis()
+            _liveTime.value = false
+        }
+        _timeFlowRate.value = rate
+    }
+
     init {
         Log.i(TAG, "SkyViewModel init")
         viewModelScope.launch {
@@ -165,6 +199,21 @@ class SkyViewModel(app: Application) : AndroidViewModel(app) {
         }
         startRebuildLoop()
         startAircraftLoop()
+        startTimeFlow()
+    }
+
+    /** Advances simulated time while a time-lapse rate is set. */
+    private fun startTimeFlow() = viewModelScope.launch {
+        var last = System.currentTimeMillis()
+        while (isActive) {
+            kotlinx.coroutines.delay(100)
+            val now = System.currentTimeMillis()
+            val rate = _timeFlowRate.value
+            if (!_liveTime.value && rate != 0L) {
+                _simTimeMillis.value += rate * (now - last) / 1000
+            }
+            last = now
+        }
     }
 
     private fun startAircraftLoop() = viewModelScope.launch {
@@ -218,7 +267,7 @@ class SkyViewModel(app: Application) : AndroidViewModel(app) {
                             catalog = cat,
                             constellations = constellations,
                             fix = fix,
-                            timeMillis = System.currentTimeMillis(),
+                            timeMillis = currentSkyTimeMillis(),
                             includeConstellations = s.showConstellations,
                             includeEcliptic = s.showEcliptic,
                             includeEquator = s.showEquator,
@@ -245,7 +294,8 @@ class SkyViewModel(app: Application) : AndroidViewModel(app) {
                     Log.e(TAG, "Sky build failed", t)
                 }
             }
-            kotlinx.coroutines.delay(1000)
+            // Refresh faster while time-travelling so the time-lapse looks smooth.
+            kotlinx.coroutines.delay(if (!_liveTime.value && _timeFlowRate.value != 0L) 120 else 1000)
         }
     }
 

@@ -8,6 +8,9 @@ import android.content.pm.ActivityInfo
 import android.content.pm.PackageManager
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -26,6 +29,7 @@ import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.LocationOff
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.PanTool
+import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.DropdownMenu
@@ -43,6 +47,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -155,6 +160,8 @@ private fun SkyScreen(
     val location by viewModel.effectiveLocation.collectAsState()
     val model by viewModel.model
     val manualMode by viewModel.manualMode
+    val liveTime by viewModel.liveTime
+    var showTimePanel by remember { mutableStateOf(false) }
 
     // Live heading read for the HUD.
     var heading by remember { mutableFloatStateOf(0f) }
@@ -197,6 +204,12 @@ private fun SkyScreen(
                         tint = if (manualMode) Color(0xFFFFD54F) else Color(0xFFD8E0F0),
                     )
                 }
+                IconButton(onClick = { showTimePanel = !showTimePanel }) {
+                    Icon(
+                        Icons.Filled.Schedule, contentDescription = "Time machine",
+                        tint = if (!liveTime) Color(0xFFFFD54F) else Color(0xFFD8E0F0),
+                    )
+                }
                 IconButton(onClick = { onOpen(Screen.Search) }) {
                     Icon(Icons.Filled.Search, contentDescription = "Search", tint = Color(0xFFD8E0F0))
                 }
@@ -213,6 +226,10 @@ private fun SkyScreen(
                 .padding(16.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
+            if (showTimePanel) {
+                TimeBar(viewModel, model)
+                Spacer(Modifier.height(8.dp))
+            }
             val selAc by viewModel.selectedAircraft
             val selRoute by viewModel.selectedRoute
             val selPhoto by viewModel.selectedPhoto
@@ -279,6 +296,74 @@ private fun OverflowMenu(onOpen: (Screen) -> Unit) {
                 onClick = { expanded = false; onOpen(Screen.About) },
             )
         }
+    }
+}
+
+@Composable
+private fun TimeBar(viewModel: SkyViewModel, model: SkyModel?) {
+    val live by viewModel.liveTime
+    val rate by viewModel.timeFlowRate
+    val millis = model?.timeMillis ?: System.currentTimeMillis()
+    val fmt = remember {
+        java.text.SimpleDateFormat("EEE d MMM yyyy · HH:mm", java.util.Locale.getDefault())
+    }
+    Surface(
+        color = Color(0xE61B2030),
+        shape = RoundedCornerShape(14.dp),
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Column(modifier = Modifier.padding(12.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    fmt.format(java.util.Date(millis)),
+                    color = Color(0xFFE8ECF6), fontSize = 15.sp, fontWeight = FontWeight.SemiBold,
+                    modifier = Modifier.weight(1f),
+                )
+                Text(
+                    if (live) "● LIVE" else "TIME TRAVEL",
+                    color = if (live) Color(0xFF7FE3A0) else Color(0xFFFFD54F),
+                    fontSize = 12.sp, fontWeight = FontWeight.SemiBold,
+                )
+            }
+            Spacer(Modifier.height(8.dp))
+            Row(
+                modifier = Modifier.horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                TimeChip("-1d") { viewModel.jumpTime(-86_400_000L) }
+                TimeChip("-1h") { viewModel.jumpTime(-3_600_000L) }
+                TimeChip("-5m") { viewModel.jumpTime(-300_000L) }
+                TimeChip("Now", highlight = live) { viewModel.goLiveTime() }
+                TimeChip("+5m") { viewModel.jumpTime(300_000L) }
+                TimeChip("+1h") { viewModel.jumpTime(3_600_000L) }
+                TimeChip("+1d") { viewModel.jumpTime(86_400_000L) }
+            }
+            Spacer(Modifier.height(6.dp))
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text("Speed", color = Color(0x99FFFFFF), fontSize = 12.sp)
+                TimeChip("Pause", highlight = !live && rate == 0L) { viewModel.setTimeFlowRate(0L) }
+                TimeChip("1m/s", highlight = rate == 60_000L) { viewModel.setTimeFlowRate(60_000L) }
+                TimeChip("1h/s", highlight = rate == 3_600_000L) { viewModel.setTimeFlowRate(3_600_000L) }
+                TimeChip("1d/s", highlight = rate == 86_400_000L) { viewModel.setTimeFlowRate(86_400_000L) }
+            }
+        }
+    }
+}
+
+@Composable
+private fun TimeChip(label: String, highlight: Boolean = false, onClick: () -> Unit) {
+    Surface(
+        color = if (highlight) Color(0xFF2E5C8A) else Color(0x33FFFFFF),
+        shape = RoundedCornerShape(8.dp),
+        modifier = Modifier.clickable(onClick = onClick),
+    ) {
+        Text(
+            label, color = Color(0xFFE8ECF6), fontSize = 13.sp,
+            modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+        )
     }
 }
 
