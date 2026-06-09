@@ -338,6 +338,7 @@ class SkyViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun setOrientation(mode: Int) = viewModelScope.launch { settingsRepo.setOrientation(mode) }
+    fun setFovCircles(mode: Int) = viewModelScope.launch { settingsRepo.setFovCircles(mode) }
 
     // --- Updates ---
     fun checkForUpdates() {

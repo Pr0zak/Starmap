@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
@@ -180,6 +181,7 @@ fun SettingsScreen(viewModel: SkyViewModel, settings: Settings, onBack: () -> Un
                 viewModel.setBool(BoolSetting.NightMode, it)
             }
             OrientationRow(settings.orientationMode) { viewModel.setOrientation(it) }
+            FovCirclesRow(settings.fovCirclesMode) { viewModel.setFovCircles(it) }
 
             SectionHeader("Catalog")
             SettingSwitch(
@@ -257,6 +259,31 @@ private fun OrientationRow(mode: Int, onSelect: (Int) -> Unit) {
         Text("Screen orientation", fontSize = 16.sp)
         Row(modifier = Modifier.padding(top = 8.dp)) {
             listOf("Auto", "Portrait", "Landscape").forEachIndexed { i, label ->
+                if (mode == i) {
+                    Button(onClick = { onSelect(i) }, modifier = Modifier.padding(end = 8.dp)) {
+                        Text(label)
+                    }
+                } else {
+                    OutlinedButton(onClick = { onSelect(i) }, modifier = Modifier.padding(end = 8.dp)) {
+                        Text(label)
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun FovCirclesRow(mode: Int, onSelect: (Int) -> Unit) {
+    Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp)) {
+        Text("Field-of-view rings", fontSize = 16.sp)
+        Text(
+            "Angular guides at screen centre",
+            fontSize = 12.sp,
+            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+        )
+        Row(modifier = Modifier.padding(top = 8.dp).horizontalScroll(rememberScrollState())) {
+            listOf("Off", "Telrad", "Binoculars", "1° eyepiece").forEachIndexed { i, label ->
                 if (mode == i) {
                     Button(onClick = { onSelect(i) }, modifier = Modifier.padding(end = 8.dp)) {
                         Text(label)

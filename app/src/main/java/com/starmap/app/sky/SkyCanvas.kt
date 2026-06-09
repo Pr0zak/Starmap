@@ -694,6 +694,22 @@ fun SkyCanvas(viewModel: SkyViewModel, settings: Settings, modifier: Modifier = 
             }
         }
 
+        // --- Field-of-view guide rings, centred on the aim point ---
+        if (settings.fovCirclesMode > 0) {
+            val ringColor = if (night) Color(0x99CC4040) else Color(0x88E8A030)
+            val center = androidx.compose.ui.geometry.Offset(cx, cy)
+            val radiiDeg = when (settings.fovCirclesMode) {
+                1 -> floatArrayOf(0.25f, 1.0f, 2.0f) // Telrad: 0.5°, 2°, 4° fields
+                2 -> floatArrayOf(3.25f)             // 6.5° binocular field
+                else -> floatArrayOf(0.5f)           // 1° eyepiece field
+            }
+            for (rd in radiiDeg) {
+                val rPx = (focal * tan(Math.toRadians(rd.toDouble()))).toFloat()
+                drawCircle(ringColor, rPx, center, style = Stroke(1.4f * density))
+            }
+            drawCircle(ringColor, 1.5f * density, center)
+        }
+
         // --- Search target: reticle when on screen, edge arrow when not ---
         viewModel.searchTarget.value?.let { target ->
             val tenu = resolveTargetEnu(m, target)

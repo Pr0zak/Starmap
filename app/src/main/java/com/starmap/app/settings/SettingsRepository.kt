@@ -47,6 +47,8 @@ data class Settings(
     val nightMode: Boolean = false,
     /** 0 = follow system auto-rotate, 1 = portrait, 2 = landscape. */
     val orientationMode: Int = 0,
+    /** Field-of-view guide rings: 0 = off, 1 = Telrad, 2 = binoculars, 3 = 1° eyepiece. */
+    val fovCirclesMode: Int = 0,
     val useExtendedCatalog: Boolean = true,
     val autoCheckUpdates: Boolean = true,
     val manualLocation: Boolean = false,
@@ -91,6 +93,7 @@ class SettingsRepository(private val context: Context) {
         val applyRefraction = booleanPreferencesKey("apply_refraction")
         val nightMode = booleanPreferencesKey("night_mode")
         val orientationMode = intPreferencesKey("orientation_mode")
+        val fovCirclesMode = intPreferencesKey("fov_circles_mode")
         val useExtendedCatalog = booleanPreferencesKey("use_extended_catalog")
         val autoCheckUpdates = booleanPreferencesKey("auto_check_updates")
         val manualLocation = booleanPreferencesKey("manual_location")
@@ -132,6 +135,7 @@ class SettingsRepository(private val context: Context) {
             applyRefraction = p[Keys.applyRefraction] ?: true,
             nightMode = p[Keys.nightMode] ?: false,
             orientationMode = p[Keys.orientationMode] ?: 0,
+            fovCirclesMode = p[Keys.fovCirclesMode] ?: 0,
             useExtendedCatalog = p[Keys.useExtendedCatalog] ?: true,
             autoCheckUpdates = p[Keys.autoCheckUpdates] ?: true,
             manualLocation = p[Keys.manualLocation] ?: false,
@@ -155,6 +159,9 @@ class SettingsRepository(private val context: Context) {
 
     suspend fun setOrientation(mode: Int) =
         context.dataStore.edit { it[Keys.orientationMode] = mode }
+
+    suspend fun setFovCircles(mode: Int) =
+        context.dataStore.edit { it[Keys.fovCirclesMode] = mode }
 
     enum class FloatSetting(val key: Preferences.Key<Float>) {
         MagnitudeLimit(Keys.magnitudeLimit),
