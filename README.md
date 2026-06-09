@@ -21,12 +21,15 @@ then draws everything in that direction:
 - **Planets** — Mercury through Neptune, along the ecliptic.
 - **Asteroids** — the brightest minor planets (Vesta, Ceres, Pallas…), optionally
   with their track across the stars.
+- **Comets** — famous and current comets (Halley, Hale-Bopp, Pons-Brooks…), drawn
+  with a tail and an optional track.
 - **Sun & Moon** — including the Moon's current phase.
 - **Meteor showers** — the radiant of any shower active tonight, with its peak.
 - **Deep-sky objects** — all 110 Messier galaxies, nebulae and clusters.
+- **Milky Way** — the soft galactic glow along the band.
 - **Satellites** — the International Space Station and the Starlink fleet.
 - **Aircraft** — live nearby planes and helicopters from ADS-B; tap one for its
-  type, altitude, speed, heading, distance and route (origin → destination).
+  type, altitude, speed, heading, distance, route (origin → destination) and a photo.
 - **Reference lines** — the ecliptic, celestial equator and an RA/Dec grid.
 - **Horizon & compass** — a horizon line and N/E/S/W markers.
 
@@ -36,8 +39,8 @@ it stays accurate through the night and wherever you travel.
 ## Using it
 
 - **Point** the phone where you want to look — the labels follow.
-- **Search** (magnifier icon) for any star, planet, constellation, deep-sky object
-  or the ISS by name — even nicknames like "Big Dipper". The sky then guides you to
+- **Search** (magnifier icon) for any star, planet, asteroid, comet, constellation,
+  deep-sky object or the ISS by name — even nicknames like "Big Dipper". The sky then guides you to
   it with a marker, or an arrow pointing the way.
 - **Tap an aircraft** for its details.
 - **Pinch** to zoom; switch to **manual mode** (hand icon) to drag around the sky
@@ -46,7 +49,7 @@ it stays accurate through the night and wherever you travel.
 - Open **Settings** to choose exactly what to show, pick a **range** for aircraft,
   turn on a **night-vision red mode**, set your location by hand, and more.
 
-The core sky works fully **offline** — the star, constellation, asteroid and
-deep-sky data is built into the app. Location is used only to line the sky up with
+The core sky works fully **offline** — the star, constellation, asteroid, comet,
+Milky Way and deep-sky data is built into the app. Location is used only to line the sky up with
 where you are; the motion sensors only to follow where the phone is pointing.
 Satellites and live aircraft need an internet connection.
