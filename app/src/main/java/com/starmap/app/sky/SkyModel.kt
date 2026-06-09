@@ -7,6 +7,7 @@ import com.starmap.app.astro.AstroMath
 import com.starmap.app.astro.Constellation
 import com.starmap.app.astro.MeteorShowers
 import com.starmap.app.astro.Planets
+import com.starmap.app.astro.ReferenceLines
 import com.starmap.app.astro.Satellites
 import com.starmap.app.astro.StarCatalog
 import com.starmap.app.astro.SunMoon
@@ -56,6 +57,9 @@ class SkyModel(
     val starCi: FloatArray,
     val labels: Map<Int, String>,
     val constellations: List<ConstellationEnu>,
+    val eclipticLine: FloatArray,
+    val equatorLine: FloatArray,
+    val gridLines: List<FloatArray>,
     val planets: List<PlanetEnu>,
     val radiants: List<RadiantEnu>,
     val asteroids: List<PlanetEnu>,
@@ -83,6 +87,9 @@ object SkyBuilder {
         fix: LocationProvider.Fix,
         timeMillis: Long,
         includeConstellations: Boolean,
+        includeEcliptic: Boolean,
+        includeEquator: Boolean,
+        includeGrid: Boolean,
         includeMeteors: Boolean,
         includePlanets: Boolean,
         includeAsteroids: Boolean,
@@ -121,6 +128,10 @@ object SkyBuilder {
             phase.waxing,
             "Moon",
         )
+
+        val eclipticLine = if (includeEcliptic) eqLineToEnu(ReferenceLines.ecliptic, basis) else FloatArray(0)
+        val equatorLine = if (includeEquator) eqLineToEnu(ReferenceLines.equator, basis) else FloatArray(0)
+        val gridLines = if (includeGrid) ReferenceLines.grid.map { eqLineToEnu(it, basis) } else emptyList()
 
         val planets = if (includePlanets) {
             Planets.positions(jd).map { p ->
@@ -274,7 +285,8 @@ object SkyBuilder {
 
         return SkyModel(
             n, starEnu, catalog.mag, catalog.ci, catalog.labels,
-            cons, planets, radiants, asteroids, asteroidPaths, sun, moon, satEnu, satNames, satIsIss,
+            cons, eclipticLine, equatorLine, gridLines, planets, radiants, asteroids, asteroidPaths,
+            sun, moon, satEnu, satNames, satIsIss,
             aircraftRenders, declination, fix, timeMillis,
         )
     }
@@ -287,4 +299,19 @@ object SkyBuilder {
         AstroMath.dot(vecEq, basis.north).toFloat(),
         AstroMath.dot(vecEq, basis.up).toFloat(),
     )
+
+    /** Rotate a flattened equatorial-vector polyline into the ENU frame. */
+    private fun eqLineToEnu(eq: FloatArray, basis: AstroMath.EnuBasis): FloatArray {
+        val out = FloatArray(eq.size)
+        val tmp = DoubleArray(3)
+        var i = 0
+        while (i < eq.size) {
+            tmp[0] = eq[i].toDouble(); tmp[1] = eq[i + 1].toDouble(); tmp[2] = eq[i + 2].toDouble()
+            out[i] = AstroMath.dot(tmp, basis.east).toFloat()
+            out[i + 1] = AstroMath.dot(tmp, basis.north).toFloat()
+            out[i + 2] = AstroMath.dot(tmp, basis.up).toFloat()
+            i += 3
+        }
+        return out
+    }
 }

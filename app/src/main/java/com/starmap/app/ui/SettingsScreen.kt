@@ -98,6 +98,16 @@ fun SettingsScreen(viewModel: SkyViewModel, settings: Settings, onBack: () -> Un
             SettingSwitch("Compass directions", "N/E/S/W markers", checked = settings.showCardinals) {
                 viewModel.setBool(BoolSetting.Cardinals, it)
             }
+            SettingSwitch("Ecliptic", "The path of the Sun, Moon and planets",
+                checked = settings.showEcliptic) {
+                viewModel.setBool(BoolSetting.Ecliptic, it)
+            }
+            SettingSwitch("Celestial equator", checked = settings.showEquator) {
+                viewModel.setBool(BoolSetting.Equator, it)
+            }
+            SettingSwitch("RA/Dec grid", "Coordinate grid", checked = settings.showGrid) {
+                viewModel.setBool(BoolSetting.Grid, it)
+            }
             SettingSwitch("Show objects below the horizon", "Draw things beneath the ground too",
                 checked = settings.showBelowHorizon) {
                 viewModel.setBool(BoolSetting.BelowHorizon, it)

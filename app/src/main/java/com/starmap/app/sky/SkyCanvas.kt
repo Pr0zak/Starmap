@@ -144,6 +144,37 @@ fun SkyCanvas(viewModel: SkyViewModel, settings: Settings, modifier: Modifier = 
         val p = FloatArray(2)
         val q = FloatArray(2)
 
+        fun drawEnuPolyline(line: FloatArray, color: Color, width: Float) {
+            var hasPrev = false; var px = 0f; var py = 0f
+            var i = 0
+            while (i < line.size) {
+                val vx = line[i]; val vy = line[i + 1]; val vz = line[i + 2]
+                val depth = vx * look[0] + vy * look[1] + vz * look[2]
+                if (depth >= MIN_DEPTH) {
+                    val sx = cx + ((vx * right[0] + vy * right[1] + vz * right[2]) / depth) * focal
+                    val sy = cy - ((vx * up[0] + vy * up[1] + vz * up[2]) / depth) * focal
+                    if (hasPrev) {
+                        drawLine(color, androidx.compose.ui.geometry.Offset(px, py),
+                            androidx.compose.ui.geometry.Offset(sx, sy), strokeWidth = width)
+                    }
+                    px = sx; py = sy; hasPrev = true
+                } else {
+                    hasPrev = false
+                }
+                i += 3
+            }
+        }
+
+        // --- Reference lines (grid under, then equator + ecliptic) ---
+        val gridColor = if (night) Color(0x33AA4444) else Color(0x332E5C8A)
+        for (gl in m.gridLines) drawEnuPolyline(gl, gridColor, density)
+        if (m.equatorLine.isNotEmpty()) {
+            drawEnuPolyline(m.equatorLine, if (night) Color(0x99AA4444) else Color(0x884E9BD0), 1.5f * density)
+        }
+        if (m.eclipticLine.isNotEmpty()) {
+            drawEnuPolyline(m.eclipticLine, if (night) Color(0x99BB6644) else Color(0x99D4AF37), 1.5f * density)
+        }
+
         // --- Constellation stick figures ---
         if (settings.showConstellations) {
             val lineColor = if (night) Color(0x55AA2222) else Color(0x554060A0)

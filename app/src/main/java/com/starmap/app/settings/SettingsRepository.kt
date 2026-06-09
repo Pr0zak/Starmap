@@ -23,6 +23,9 @@ data class Settings(
     val showMeteorShowers: Boolean = false,
     val showHorizon: Boolean = true,
     val showCardinals: Boolean = true,
+    val showEcliptic: Boolean = false,
+    val showEquator: Boolean = false,
+    val showGrid: Boolean = false,
     val showSun: Boolean = true,
     val showMoon: Boolean = true,
     val showPlanets: Boolean = true,
@@ -59,6 +62,9 @@ class SettingsRepository(private val context: Context) {
         val showMeteorShowers = booleanPreferencesKey("show_meteor_showers")
         val showHorizon = booleanPreferencesKey("show_horizon")
         val showCardinals = booleanPreferencesKey("show_cardinals")
+        val showEcliptic = booleanPreferencesKey("show_ecliptic")
+        val showEquator = booleanPreferencesKey("show_equator")
+        val showGrid = booleanPreferencesKey("show_grid")
         val showSun = booleanPreferencesKey("show_sun")
         val showMoon = booleanPreferencesKey("show_moon")
         val showPlanets = booleanPreferencesKey("show_planets")
@@ -91,6 +97,9 @@ class SettingsRepository(private val context: Context) {
             showMeteorShowers = p[Keys.showMeteorShowers] ?: false,
             showHorizon = p[Keys.showHorizon] ?: true,
             showCardinals = p[Keys.showCardinals] ?: true,
+            showEcliptic = p[Keys.showEcliptic] ?: false,
+            showEquator = p[Keys.showEquator] ?: false,
+            showGrid = p[Keys.showGrid] ?: false,
             showSun = p[Keys.showSun] ?: true,
             showMoon = p[Keys.showMoon] ?: true,
             showPlanets = p[Keys.showPlanets] ?: true,
@@ -143,6 +152,9 @@ class SettingsRepository(private val context: Context) {
         MeteorShowers(Keys.showMeteorShowers),
         Horizon(Keys.showHorizon),
         Cardinals(Keys.showCardinals),
+        Ecliptic(Keys.showEcliptic),
+        Equator(Keys.showEquator),
+        Grid(Keys.showGrid),
         Sun(Keys.showSun),
         Moon(Keys.showMoon),
         Planets(Keys.showPlanets),
