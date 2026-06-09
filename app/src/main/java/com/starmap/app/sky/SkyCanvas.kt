@@ -758,9 +758,10 @@ fun SkyCanvas(viewModel: SkyViewModel, settings: Settings, modifier: Modifier = 
                     }
                 }
 
-                // Marker size is a strong depth cue: ~9dp when near/overhead, ~2dp far off.
+                // Big and clearly varying within visual range (~0–24 nm), then clamped
+                // to a small fixed dot beyond — far traffic is just an indicator.
                 val distNm = (ac.rangeKm * 0.539957).toFloat()
-                val s = (9f - distNm * 0.085f).coerceIn(2.2f, 9f) * density
+                val s = (12f - distNm * 0.42f).coerceIn(2f, 12f) * density
                 if (heli) {
                     drawCircle(color, s * 0.7f, androidx.compose.ui.geometry.Offset(sx, sy))
                     drawLine(color, androidx.compose.ui.geometry.Offset(sx - s, sy - s),
