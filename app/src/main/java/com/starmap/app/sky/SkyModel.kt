@@ -5,6 +5,7 @@ import com.starmap.app.aircraft.AircraftTrack
 import com.starmap.app.astro.Asteroids
 import com.starmap.app.astro.AstroMath
 import com.starmap.app.astro.Constellation
+import com.starmap.app.astro.MeteorShowers
 import com.starmap.app.astro.Planets
 import com.starmap.app.astro.Satellites
 import com.starmap.app.astro.StarCatalog
@@ -19,6 +20,9 @@ class BodyEnu(val enu: FloatArray, val label: String)
 class MoonEnu(val enu: FloatArray, val illuminatedFraction: Float, val waxing: Boolean, val label: String)
 
 class PlanetEnu(val name: String, val enu: FloatArray, val colorArgb: Long, val sizeDp: Float)
+
+/** A meteor shower radiant (the point meteors stream from) for the current night. */
+class RadiantEnu(val name: String, val enu: FloatArray, val sublabel: String)
 
 /** A rendered aircraft: its direction, a fading trail, and details for the info card. */
 class AircraftRender(
@@ -53,6 +57,7 @@ class SkyModel(
     val labels: Map<Int, String>,
     val constellations: List<ConstellationEnu>,
     val planets: List<PlanetEnu>,
+    val radiants: List<RadiantEnu>,
     val asteroids: List<PlanetEnu>,
     /** Each entry is a flattened ENU polyline of an asteroid's track over time. */
     val asteroidPaths: List<FloatArray>,
@@ -78,6 +83,7 @@ object SkyBuilder {
         fix: LocationProvider.Fix,
         timeMillis: Long,
         includeConstellations: Boolean,
+        includeMeteors: Boolean,
         includePlanets: Boolean,
         includeAsteroids: Boolean,
         asteroidElements: List<Asteroids.Element>,
@@ -120,6 +126,20 @@ object SkyBuilder {
             Planets.positions(jd).map { p ->
                 val v = AstroMath.equatorialToVec(p.raDeg, p.decDeg)
                 PlanetEnu(p.name, toEnu(v, basis), p.colorArgb, p.sizeDp)
+            }
+        } else {
+            emptyList()
+        }
+
+        val radiants = if (includeMeteors) {
+            MeteorShowers.active(timeMillis).map { sh ->
+                val v = AstroMath.equatorialToVec(sh.raDeg, sh.decDeg)
+                val sub = when {
+                    sh.daysToPeak == 0L -> "peak tonight · ZHR ${sh.zhr}"
+                    sh.daysToPeak in 1L..30L -> "peak in ${sh.daysToPeak}d · ZHR ${sh.zhr}"
+                    else -> "active · ZHR ${sh.zhr}"
+                }
+                RadiantEnu(sh.name, toEnu(v, basis), sub)
             }
         } else {
             emptyList()
@@ -254,7 +274,7 @@ object SkyBuilder {
 
         return SkyModel(
             n, starEnu, catalog.mag, catalog.ci, catalog.labels,
-            cons, planets, asteroids, asteroidPaths, sun, moon, satEnu, satNames, satIsIss,
+            cons, planets, radiants, asteroids, asteroidPaths, sun, moon, satEnu, satNames, satIsIss,
             aircraftRenders, declination, fix, timeMillis,
         )
     }

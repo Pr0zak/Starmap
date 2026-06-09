@@ -69,6 +69,10 @@ fun SettingsScreen(viewModel: SkyViewModel, settings: Settings, onBack: () -> Un
                 enabled = settings.showConstellations) {
                 viewModel.setBool(BoolSetting.ConstellationNames, it)
             }
+            SettingSwitch("Meteor shower radiants", "Showers active tonight, with peak dates",
+                checked = settings.showMeteorShowers) {
+                viewModel.setBool(BoolSetting.MeteorShowers, it)
+            }
             SettingSwitch("Planets", "Mercury through Neptune", checked = settings.showPlanets) {
                 viewModel.setBool(BoolSetting.Planets, it)
             }

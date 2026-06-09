@@ -20,6 +20,7 @@ data class Settings(
     val showStarLabels: Boolean = true,
     val showConstellations: Boolean = true,
     val showConstellationNames: Boolean = true,
+    val showMeteorShowers: Boolean = false,
     val showHorizon: Boolean = true,
     val showCardinals: Boolean = true,
     val showSun: Boolean = true,
@@ -55,6 +56,7 @@ class SettingsRepository(private val context: Context) {
         val showStarLabels = booleanPreferencesKey("show_star_labels")
         val showConstellations = booleanPreferencesKey("show_constellations")
         val showConstellationNames = booleanPreferencesKey("show_constellation_names")
+        val showMeteorShowers = booleanPreferencesKey("show_meteor_showers")
         val showHorizon = booleanPreferencesKey("show_horizon")
         val showCardinals = booleanPreferencesKey("show_cardinals")
         val showSun = booleanPreferencesKey("show_sun")
@@ -86,6 +88,7 @@ class SettingsRepository(private val context: Context) {
             showStarLabels = p[Keys.showStarLabels] ?: true,
             showConstellations = p[Keys.showConstellations] ?: true,
             showConstellationNames = p[Keys.showConstellationNames] ?: true,
+            showMeteorShowers = p[Keys.showMeteorShowers] ?: false,
             showHorizon = p[Keys.showHorizon] ?: true,
             showCardinals = p[Keys.showCardinals] ?: true,
             showSun = p[Keys.showSun] ?: true,
@@ -137,6 +140,7 @@ class SettingsRepository(private val context: Context) {
         StarLabels(Keys.showStarLabels),
         Constellations(Keys.showConstellations),
         ConstellationNames(Keys.showConstellationNames),
+        MeteorShowers(Keys.showMeteorShowers),
         Horizon(Keys.showHorizon),
         Cardinals(Keys.showCardinals),
         Sun(Keys.showSun),

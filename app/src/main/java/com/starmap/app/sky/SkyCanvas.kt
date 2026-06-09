@@ -30,6 +30,7 @@ import kotlin.math.atan2
 import kotlin.math.cos
 import kotlin.math.hypot
 import kotlin.math.min
+import kotlin.math.sin
 import kotlin.math.tan
 
 private const val MIN_DEPTH = 0.15f
@@ -267,6 +268,37 @@ fun SkyCanvas(viewModel: SkyViewModel, settings: Settings, modifier: Modifier = 
                     bodyPaint.color = (if (night) Color(0xAAAA5544) else Color(0xCCD0C8B0)).toArgb()
                     drawContext.canvas.nativeCanvas.drawText(
                         a.name, p[0] + r + 3f * density, p[1] + 4f * density, bodyPaint,
+                    )
+                }
+            }
+        }
+
+        // --- Meteor shower radiants (starburst marker) ---
+        if (m.radiants.isNotEmpty()) {
+            val rc = if (night) Color(0xFFCC6677) else Color(0xFF9CFF8A)
+            for (rad in m.radiants) {
+                if (!settings.showBelowHorizon && rad.enu[2] < 0f) continue
+                if (project(rad.enu, p)) {
+                    val rx = p[0]; val ry = p[1]
+                    val rr = 7f * density
+                    var ang = 0
+                    while (ang < 360) {
+                        val a = Math.toRadians(ang.toDouble())
+                        val dx = cos(a).toFloat(); val dy = sin(a).toFloat()
+                        drawLine(
+                            rc, androidx.compose.ui.geometry.Offset(rx + dx * rr * 0.4f, ry + dy * rr * 0.4f),
+                            androidx.compose.ui.geometry.Offset(rx + dx * rr, ry + dy * rr),
+                            strokeWidth = 1.6f * density,
+                        )
+                        ang += 45
+                    }
+                    bodyPaint.textSize = 12f * density
+                    bodyPaint.color = rc.toArgb()
+                    drawContext.canvas.nativeCanvas.drawText(rad.name, rx + rr + 4f * density, ry, bodyPaint)
+                    bodyPaint.textSize = 10f * density
+                    bodyPaint.color = (if (night) Color(0xAAAA5566) else Color(0xAA88CC77)).toArgb()
+                    drawContext.canvas.nativeCanvas.drawText(
+                        rad.sublabel, rx + rr + 4f * density, ry + 12f * density, bodyPaint,
                     )
                 }
             }

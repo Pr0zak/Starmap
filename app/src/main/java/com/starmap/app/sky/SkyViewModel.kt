@@ -203,6 +203,7 @@ class SkyViewModel(app: Application) : AndroidViewModel(app) {
                             fix = fix,
                             timeMillis = System.currentTimeMillis(),
                             includeConstellations = s.showConstellations,
+                            includeMeteors = s.showMeteorShowers,
                             includePlanets = s.showPlanets,
                             includeAsteroids = s.showAsteroids,
                             asteroidElements = asteroidElements,
