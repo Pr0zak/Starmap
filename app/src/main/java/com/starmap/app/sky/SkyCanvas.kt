@@ -37,6 +37,18 @@ import kotlin.math.tan
 
 private const val MIN_DEPTH = 0.15f
 
+/** Sky-background colour for a given Sun altitude (degrees): night → twilight → day. */
+private fun skyTint(sunAltDeg: Float): Color {
+    val t = ((sunAltDeg + 18f) / 18f).coerceIn(0f, 1f)
+    val s = t * t * (3f - 2f * t)
+    // Warm horizon glow peaking around civil twilight (Sun ≈ −2°).
+    val warm = (1f - kotlin.math.abs(sunAltDeg + 2f) / 8f).coerceIn(0f, 1f)
+    val r = (0.02f + (0.36f - 0.02f) * s + warm * 0.20f).coerceIn(0f, 1f)
+    val g = (0.027f + (0.52f - 0.027f) * s + warm * 0.10f).coerceIn(0f, 1f)
+    val b = (0.051f + (0.72f - 0.051f) * s).coerceIn(0f, 1f)
+    return Color(r, g, b)
+}
+
 @OptIn(FlowPreview::class)
 @Composable
 fun SkyCanvas(viewModel: SkyViewModel, settings: Settings, modifier: Modifier = Modifier) {
@@ -109,9 +121,28 @@ fun SkyCanvas(viewModel: SkyViewModel, settings: Settings, modifier: Modifier = 
     ) {
         frame // subscribe to the frame clock
         val night = settings.nightMode
-        drawRect(if (night) Color.Black else Color(0xFF05070D))
+        val m = model
+        if (m == null) {
+            drawRect(if (night) Color.Black else Color(0xFF05070D))
+            return@Canvas
+        }
 
-        val m = model ?: return@Canvas
+        // Realistic sky tint from the Sun's altitude: night → twilight → day.
+        val sunAltDeg = m.sun?.let { asin(it.enu[2].coerceIn(-1f, 1f)) * 57.29578f } ?: -90f
+        val daylight = !night && settings.showDaylightSky
+        val skyColor = when {
+            daylight -> skyTint(sunAltDeg)
+            night -> Color.Black
+            else -> Color(0xFF05070D)
+        }
+        drawRect(skyColor)
+        // How strongly the bright sky washes out faint stars/lines (0 = night, 1 = day).
+        val dayWash = if (daylight) {
+            val f = ((sunAltDeg + 12f) / 12f).coerceIn(0f, 1f)
+            f * f * (3f - 2f * f)
+        } else {
+            0f
+        }
         val look: FloatArray
         val right: FloatArray
         val up: FloatArray
@@ -301,6 +332,11 @@ fun SkyCanvas(viewModel: SkyViewModel, settings: Settings, modifier: Modifier = 
                 bodyPaint.color = color.toArgb()
                 drawContext.canvas.nativeCanvas.drawText(d.name, dx + r + 4f * density, dy + 4f * density, bodyPaint)
             }
+        }
+
+        // --- Daylight wash: fade the faint sky (stars, lines, Milky Way) by day ---
+        if (dayWash > 0.01f) {
+            drawRect(skyColor.copy(alpha = dayWash))
         }
 
         // --- Planets ---
