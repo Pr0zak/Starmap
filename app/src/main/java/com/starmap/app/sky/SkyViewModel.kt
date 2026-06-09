@@ -79,12 +79,17 @@ class SkyViewModel(app: Application) : AndroidViewModel(app) {
     private val _satMessage = mutableStateOf<String?>(null)
     val satMessage: State<String?> = _satMessage
 
+    private var searchEntries: List<SearchEntry> = emptyList()
+    private val _searchTarget = mutableStateOf<SearchTarget?>(null)
+    val searchTarget: State<SearchTarget?> = _searchTarget
+
     init {
         Log.i(TAG, "SkyViewModel init")
         viewModelScope.launch {
             try {
                 constellations = catalogManager.loadConstellations()
                 catalog = catalogManager.loadStars(settings.value.useExtendedCatalog)
+                buildSearchIndex()
                 Log.i(TAG, "Catalog loaded: ${catalog?.count ?: 0} stars, ${constellations.size} constellations")
             } catch (t: Throwable) {
                 Log.e(TAG, "Failed to load catalog", t)
@@ -97,6 +102,8 @@ class SkyViewModel(app: Application) : AndroidViewModel(app) {
             settingsRepo.settings.map { it.useExtendedCatalog }.distinctUntilChanged()
                 .collect { useExtended ->
                     catalog = catalogManager.loadStars(useExtended)
+                    buildSearchIndex()
+                    _searchTarget.value = null // star indices changed
                 }
         }
         // Load satellite elements lazily, only while their layer is enabled.
@@ -241,6 +248,46 @@ class SkyViewModel(app: Application) : AndroidViewModel(app) {
         satelliteManager.deleteStarlink()
         starlinkSats = emptyList()
         _satMessage.value = null
+    }
+
+    // --- Search ---
+    private fun buildSearchIndex() {
+        val cat = catalog ?: return
+        val cons = constellations
+        val abbrToName = cons.associate { it.abbr.lowercase() to it.name }
+        val entries = ArrayList<SearchEntry>(cat.labels.size + cons.size + 16)
+        for ((idx, label) in cat.labels) {
+            val tokens = label.split(' ')
+            val last = tokens.lastOrNull()?.lowercase()
+            // Bayer labels ("α CMa") get the full constellation name added to the key.
+            val extra = if (tokens.size >= 2 && last != null && abbrToName.containsKey(last)) {
+                " " + abbrToName.getValue(last)
+            } else {
+                ""
+            }
+            entries.add(SearchEntry(SearchTarget.StarT(idx, label), label, "Star", FuzzySearch.normalize(label + extra)))
+        }
+        for (p in listOf("Mercury", "Venus", "Mars", "Jupiter", "Saturn", "Uranus", "Neptune")) {
+            entries.add(SearchEntry(SearchTarget.PlanetT(p), p, "Planet", FuzzySearch.normalize(p)))
+        }
+        entries.add(SearchEntry(SearchTarget.SpecialT("Sun"), "Sun", "Solar System", "sun"))
+        entries.add(SearchEntry(SearchTarget.SpecialT("Moon"), "Moon", "Solar System", "moon"))
+        entries.add(SearchEntry(SearchTarget.SpecialT("ISS"), "ISS (Space Station)", "Satellite", "iss space station"))
+        for (c in cons) {
+            entries.add(
+                SearchEntry(
+                    SearchTarget.ConstellationT(c.name), c.name, "Constellation",
+                    FuzzySearch.normalize("${c.name} ${c.abbr}"),
+                ),
+            )
+        }
+        searchEntries = entries
+    }
+
+    fun search(query: String): List<SearchResult> = FuzzySearch.search(query, searchEntries)
+
+    fun selectSearchTarget(target: SearchTarget?) {
+        _searchTarget.value = target
     }
 
     override fun onCleared() {

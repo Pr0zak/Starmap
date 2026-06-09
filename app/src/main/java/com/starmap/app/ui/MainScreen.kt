@@ -10,17 +10,21 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.LocationOff
 import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -47,11 +51,15 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.starmap.app.sky.SkyCanvas
+import com.starmap.app.sky.SkyModel
 import com.starmap.app.sky.SkyViewModel
+import com.starmap.app.sky.resolveTargetEnu
 import kotlinx.coroutines.android.awaitFrame
+import kotlin.math.asin
+import kotlin.math.atan2
 import kotlin.math.roundToInt
 
-private enum class Screen { Sky, Settings, Downloads, About }
+private enum class Screen { Sky, Search, Settings, Downloads, About }
 
 @Composable
 fun MainScreen(viewModel: SkyViewModel = viewModel()) {
@@ -109,6 +117,7 @@ fun MainScreen(viewModel: SkyViewModel = viewModel()) {
         Screen.Settings -> SettingsScreen(viewModel, settings) { screen = Screen.Sky }
         Screen.Downloads -> DownloadsScreen(viewModel) { screen = Screen.Sky }
         Screen.About -> AboutScreen(viewModel) { screen = Screen.Sky }
+        Screen.Search -> SearchScreen(viewModel) { screen = Screen.Sky }
     }
 }
 
@@ -137,28 +146,31 @@ private fun SkyScreen(
     Box(modifier = Modifier.fillMaxSize()) {
         SkyCanvas(viewModel = viewModel, settings = settings, modifier = Modifier.fillMaxSize())
 
-        // Top HUD bar.
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .statusBarsPadding()
-                .padding(horizontal = 12.dp, vertical = 8.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = "${heading.roundToInt()}° ${compassLabel(heading)}",
-                    color = Color(0xFFD8E0F0),
-                    fontSize = 22.sp,
-                    fontWeight = FontWeight.SemiBold,
-                )
-                if (!viewModel.hasOrientationSensor) {
-                    Text("No orientation sensor on this device", color = Color(0xFFFFB4A0), fontSize = 12.sp)
-                } else if (accuracy in 0..1) {
-                    Text("Wave the phone in a figure-8 to calibrate", color = Color(0xFFFFD089), fontSize = 12.sp)
+        // Top HUD bar + active-search banner.
+        Column(modifier = Modifier.fillMaxWidth().statusBarsPadding()) {
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = "${heading.roundToInt()}° ${compassLabel(heading)}",
+                        color = Color(0xFFD8E0F0),
+                        fontSize = 22.sp,
+                        fontWeight = FontWeight.SemiBold,
+                    )
+                    if (!viewModel.hasOrientationSensor) {
+                        Text("No orientation sensor on this device", color = Color(0xFFFFB4A0), fontSize = 12.sp)
+                    } else if (accuracy in 0..1) {
+                        Text("Wave the phone in a figure-8 to calibrate", color = Color(0xFFFFD089), fontSize = 12.sp)
+                    }
                 }
+                IconButton(onClick = { onOpen(Screen.Search) }) {
+                    Icon(Icons.Filled.Search, contentDescription = "Search", tint = Color(0xFFD8E0F0))
+                }
+                OverflowMenu(onOpen)
             }
-            OverflowMenu(onOpen)
+            SearchBanner(viewModel, model)
         }
 
         // Bottom status / setup prompts.
@@ -256,6 +268,45 @@ private fun DisposableEffectLifecycle(onResume: () -> Unit, onPause: () -> Unit)
         owner.lifecycle.addObserver(observer)
         onDispose { owner.lifecycle.removeObserver(observer) }
     }
+}
+
+@Composable
+private fun SearchBanner(viewModel: SkyViewModel, model: SkyModel?) {
+    val target by viewModel.searchTarget
+    val t = target ?: return
+    Surface(
+        color = Color(0xE61B2030),
+        shape = RoundedCornerShape(12.dp),
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 2.dp),
+    ) {
+        Row(
+            modifier = Modifier.padding(start = 14.dp, top = 8.dp, bottom = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Icon(
+                Icons.Filled.Search, contentDescription = null,
+                tint = Color(0xFFFFD54F), modifier = Modifier.size(18.dp),
+            )
+            Column(modifier = Modifier.weight(1f).padding(start = 10.dp)) {
+                Text(t.label, color = Color(0xFFFFE9A8), fontWeight = FontWeight.SemiBold)
+                val enu = model?.let { resolveTargetEnu(it, t) }
+                Text(
+                    if (enu == null) "Locating…" else describeDirection(enu),
+                    color = Color(0xCCFFFFFF), fontSize = 12.sp,
+                )
+            }
+            IconButton(onClick = { viewModel.selectSearchTarget(null) }) {
+                Icon(Icons.Filled.Close, contentDescription = "Clear", tint = Color(0xFFD8E0F0))
+            }
+        }
+    }
+}
+
+private fun describeDirection(enu: FloatArray): String {
+    val alt = Math.toDegrees(asin(enu[2].coerceIn(-1f, 1f).toDouble())).roundToInt()
+    val az = (((Math.toDegrees(atan2(enu[0].toDouble(), enu[1].toDouble())) + 360) % 360)).roundToInt()
+    val updown = if (alt >= 0) "$alt° up" else "${-alt}° below horizon"
+    return "$az° ${compassLabel(az.toFloat())} · $updown — point your phone here"
 }
 
 private fun compassLabel(deg: Float): String {

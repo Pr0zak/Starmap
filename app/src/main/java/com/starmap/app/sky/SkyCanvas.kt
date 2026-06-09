@@ -12,6 +12,7 @@ import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.clipPath
 import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.graphics.toArgb
@@ -25,6 +26,7 @@ import kotlinx.coroutines.android.awaitFrame
 import kotlinx.coroutines.flow.debounce
 import kotlin.math.cos
 import kotlin.math.hypot
+import kotlin.math.min
 import kotlin.math.tan
 
 private const val MIN_DEPTH = 0.15f
@@ -279,6 +281,64 @@ fun SkyCanvas(viewModel: SkyViewModel, settings: Settings, modifier: Modifier = 
             for ((label, v) in dirs) {
                 if (project(v, p)) {
                     drawContext.canvas.nativeCanvas.drawText(label, p[0], p[1], cardinalPaint)
+                }
+            }
+        }
+
+        // --- Search target: reticle when on screen, edge arrow when not ---
+        viewModel.searchTarget.value?.let { target ->
+            val tenu = resolveTargetEnu(m, target)
+            if (tenu != null) {
+                val hi = if (night) Color(0xFFFF6B6B) else Color(0xFFFFD54F)
+                val depth = tenu[0] * look[0] + tenu[1] * look[1] + tenu[2] * look[2]
+                val xcam = tenu[0] * right[0] + tenu[1] * right[1] + tenu[2] * right[2]
+                val ycam = tenu[0] * up[0] + tenu[1] * up[1] + tenu[2] * up[2]
+                val sx = cx + (xcam / depth) * focal
+                val sy = cy - (ycam / depth) * focal
+                val onScreen = depth > MIN_DEPTH && sx in 0f..size.width && sy in 0f..size.height
+                if (onScreen) {
+                    val r = 22f * density
+                    val o = androidx.compose.ui.geometry.Offset(sx, sy)
+                    drawCircle(hi, r, o, style = Stroke(width = 2.5f * density))
+                    fun tick(x0: Float, y0: Float, x1: Float, y1: Float) = drawLine(
+                        hi, androidx.compose.ui.geometry.Offset(x0, y0),
+                        androidx.compose.ui.geometry.Offset(x1, y1), strokeWidth = 2.5f * density,
+                    )
+                    tick(sx, sy - r - 7f * density, sx, sy - r + 3f * density)
+                    tick(sx, sy + r - 3f * density, sx, sy + r + 7f * density)
+                    tick(sx - r - 7f * density, sy, sx - r + 3f * density, sy)
+                    tick(sx + r - 3f * density, sy, sx + r + 7f * density, sy)
+                    bodyPaint.textSize = 15f * density
+                    bodyPaint.color = hi.toArgb()
+                    drawContext.canvas.nativeCanvas.drawText(
+                        target.label, sx + r + 8f * density, sy + 5f * density, bodyPaint,
+                    )
+                } else {
+                    val dx = xcam; val dy = -ycam
+                    val len = hypot(dx, dy)
+                    if (len > 1e-4f) {
+                        val ux = dx / len; val uy = dy / len
+                        val rad = min(cx, cy) - 36f * density
+                        val ax = cx + ux * rad; val ay = cy + uy * rad
+                        val s = 16f * density
+                        val bx = ax - ux * s; val by = ay - uy * s
+                        val px = -uy; val py = ux
+                        val path = Path().apply {
+                            moveTo(ax, ay)
+                            lineTo(bx + px * s * 0.6f, by + py * s * 0.6f)
+                            lineTo(bx - px * s * 0.6f, by - py * s * 0.6f)
+                            close()
+                        }
+                        drawPath(path, hi)
+                        cardinalPaint.textSize = 14f * density
+                        cardinalPaint.color = hi.toArgb()
+                        drawContext.canvas.nativeCanvas.drawText(
+                            target.label,
+                            ax - ux * 24f * density,
+                            ay - uy * 24f * density + 5f * density,
+                            cardinalPaint,
+                        )
+                    }
                 }
             }
         }
