@@ -9,6 +9,8 @@ import androidx.lifecycle.viewModelScope
 import com.starmap.app.BuildConfig
 import com.starmap.app.astro.Constellation
 import com.starmap.app.astro.StarCatalog
+import com.starmap.app.aircraft.Aircraft
+import com.starmap.app.aircraft.AircraftManager
 import com.starmap.app.catalog.CatalogManager
 import com.starmap.app.satellite.NamedSat
 import com.starmap.app.satellite.SatelliteManager
@@ -55,6 +57,8 @@ class SkyViewModel(app: Application) : AndroidViewModel(app) {
     private var asteroidElements: List<com.starmap.app.astro.Asteroids.Element> = emptyList()
     private var issSats: List<NamedSat> = emptyList()
     private var starlinkSats: List<NamedSat> = emptyList()
+    private val aircraftManager = AircraftManager()
+    private var aircraftStates: List<Aircraft> = emptyList()
 
     private val _model = mutableStateOf<SkyModel?>(null)
     val model: State<SkyModel?> = _model
@@ -130,6 +134,24 @@ class SkyViewModel(app: Application) : AndroidViewModel(app) {
             if (settings.value.autoCheckUpdates) checkForUpdates()
         }
         startRebuildLoop()
+        startAircraftLoop()
+    }
+
+    private fun startAircraftLoop() = viewModelScope.launch {
+        while (isActive) {
+            val s = settings.value
+            val fix = effectiveLocation.value
+            if (s.showAircraft && fix != null) {
+                when (val r = aircraftManager.fetch(fix.latitude, fix.longitude)) {
+                    is AircraftManager.Result.Ok -> aircraftStates = r.aircraft
+                    is AircraftManager.Result.Failed -> Log.w(TAG, "Aircraft fetch: ${r.message}")
+                }
+                kotlinx.coroutines.delay(12_000)
+            } else {
+                if (aircraftStates.isNotEmpty()) aircraftStates = emptyList()
+                kotlinx.coroutines.delay(2_000)
+            }
+        }
     }
 
     private fun startRebuildLoop() = viewModelScope.launch {
@@ -155,6 +177,7 @@ class SkyViewModel(app: Application) : AndroidViewModel(app) {
                             asteroidElements = asteroidElements,
                             includeAsteroidPaths = s.showAsteroidPaths,
                             satellites = sats,
+                            aircraft = aircraftStates,
                             showBelowHorizon = s.showBelowHorizon,
                         )
                     }

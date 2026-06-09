@@ -42,17 +42,27 @@ object Satellites {
         val xe = ce * satTeme[0] + se * satTeme[1]
         val ye = -se * satTeme[0] + ce * satTeme[1]
         val ze = satTeme[2]
-        val rx = xe - obsEcef[0]
-        val ry = ye - obsEcef[1]
-        val rz = ze - obsEcef[2]
+        return enuFromEcef(doubleArrayOf(xe, ye, ze), obsEcef, latDeg, lonDeg)
+    }
 
+    /** East/North/Up (km) from observer to a target, both already in ECEF. */
+    fun enuFromEcef(
+        targetEcef: DoubleArray,
+        obsEcef: DoubleArray,
+        latDeg: Double,
+        lonDeg: Double,
+    ): DoubleArray {
+        val rx = targetEcef[0] - obsEcef[0]
+        val ry = targetEcef[1] - obsEcef[1]
+        val rz = targetEcef[2] - obsEcef[2]
         val lat = Math.toRadians(latDeg)
         val lon = Math.toRadians(lonDeg)
         val sLat = sin(lat); val cLat = cos(lat)
         val sLon = sin(lon); val cLon = cos(lon)
-        val e = -sLon * rx + cLon * ry
-        val n = -sLat * cLon * rx - sLat * sLon * ry + cLat * rz
-        val u = cLat * cLon * rx + cLat * sLon * ry + sLat * rz
-        return doubleArrayOf(e, n, u)
+        return doubleArrayOf(
+            -sLon * rx + cLon * ry,
+            -sLat * cLon * rx - sLat * sLon * ry + cLat * rz,
+            cLat * cLon * rx + cLat * sLon * ry + sLat * rz,
+        )
     }
 }

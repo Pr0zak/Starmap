@@ -114,6 +114,11 @@ fun SettingsScreen(viewModel: SkyViewModel, settings: Settings, onBack: () -> Un
                 checked = settings.showStarlink,
                 enabled = starlinkReady,
             ) { viewModel.setBool(BoolSetting.Starlink, it) }
+            SettingSwitch(
+                "Aircraft (live)",
+                "Nearby planes from ADS-B — needs internet",
+                checked = settings.showAircraft,
+            ) { viewModel.setBool(BoolSetting.Aircraft, it) }
 
             SectionHeader("Display")
             SettingSwitch("Night mode (red)", "Preserves dark adaptation",

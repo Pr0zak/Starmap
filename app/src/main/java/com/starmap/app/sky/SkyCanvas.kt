@@ -311,6 +311,32 @@ fun SkyCanvas(viewModel: SkyViewModel, settings: Settings, modifier: Modifier = 
             }
         }
 
+        // --- Aircraft (live ADS-B) ---
+        if (m.aircraftCount > 0) {
+            val acColor = if (night) Color(0xFFCC8844) else Color(0xFFFFB060)
+            bodyPaint.textSize = 11f * density
+            bodyPaint.color = acColor.toArgb()
+            for (i in 0 until m.aircraftCount) {
+                val base = i * 3
+                val vx = m.aircraftEnu[base]; val vy = m.aircraftEnu[base + 1]; val vz = m.aircraftEnu[base + 2]
+                val depth = vx * look[0] + vy * look[1] + vz * look[2]
+                if (depth < MIN_DEPTH) continue
+                val sx = cx + ((vx * right[0] + vy * right[1] + vz * right[2]) / depth) * focal
+                if (sx < -margin || sx > size.width + margin) continue
+                val sy = cy - ((vx * up[0] + vy * up[1] + vz * up[2]) / depth) * focal
+                if (sy < -margin || sy > size.height + margin) continue
+                val s = 4f * density
+                val marker = Path().apply {
+                    moveTo(sx, sy - s); lineTo(sx + s, sy); lineTo(sx, sy + s); lineTo(sx - s, sy); close()
+                }
+                drawPath(marker, acColor)
+                val label = m.aircraftLabels[i]
+                if (label.isNotBlank()) {
+                    drawContext.canvas.nativeCanvas.drawText(label, sx + 6f * density, sy + 4f * density, bodyPaint)
+                }
+            }
+        }
+
         // --- Horizon line ---
         if (settings.showHorizon) {
             val horizonColor = if (night) Color(0xAA662222) else Color(0xAA2E7D4F)

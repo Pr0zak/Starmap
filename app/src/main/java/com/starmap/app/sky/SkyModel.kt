@@ -1,6 +1,7 @@
 package com.starmap.app.sky
 
 import android.hardware.GeomagneticField
+import com.starmap.app.aircraft.Aircraft
 import com.starmap.app.astro.Asteroids
 import com.starmap.app.astro.AstroMath
 import com.starmap.app.astro.Constellation
@@ -47,11 +48,14 @@ class SkyModel(
     val satEnu: FloatArray,
     val satNames: List<String>,
     val satIsIss: BooleanArray,
+    val aircraftEnu: FloatArray,
+    val aircraftLabels: List<String>,
     val declinationDeg: Float,
     val location: LocationProvider.Fix,
     val timeMillis: Long,
 ) {
     val satCount: Int get() = satNames.size
+    val aircraftCount: Int get() = aircraftLabels.size
 }
 
 object SkyBuilder {
@@ -67,6 +71,7 @@ object SkyBuilder {
         asteroidElements: List<Asteroids.Element>,
         includeAsteroidPaths: Boolean,
         satellites: List<NamedSat>,
+        aircraft: List<Aircraft>,
         showBelowHorizon: Boolean,
     ): SkyModel {
         val jd = AstroMath.julianDay(timeMillis)
@@ -193,6 +198,26 @@ object SkyBuilder {
         val satEnu = FloatArray(satCoords.size) { satCoords[it] }
         val satIsIss = BooleanArray(satIss.size) { satIss[it] }
 
+        // Aircraft: convert each ADS-B position to a local ENU direction.
+        val acCoords = ArrayList<Float>()
+        val acLabels = ArrayList<String>()
+        if (aircraft.isNotEmpty()) {
+            val obsEcef = Satellites.observerEcef(fix.latitude, fix.longitude, fix.altitude)
+            for (ac in aircraft) {
+                val acEcef = Satellites.observerEcef(ac.latitude, ac.longitude, ac.altitudeMeters)
+                val enu = Satellites.enuFromEcef(acEcef, obsEcef, fix.latitude, fix.longitude)
+                val e = enu[0]; val north = enu[1]; val up = enu[2]
+                if (!showBelowHorizon && up < 0.0) continue
+                val range = sqrt(e * e + north * north + up * up)
+                if (range <= 0.0) continue
+                acCoords.add((e / range).toFloat())
+                acCoords.add((north / range).toFloat())
+                acCoords.add((up / range).toFloat())
+                acLabels.add(ac.callsign)
+            }
+        }
+        val aircraftEnu = FloatArray(acCoords.size) { acCoords[it] }
+
         val declination = GeomagneticField(
             fix.latitude.toFloat(),
             fix.longitude.toFloat(),
@@ -203,7 +228,7 @@ object SkyBuilder {
         return SkyModel(
             n, starEnu, catalog.mag, catalog.ci, catalog.labels,
             cons, planets, asteroids, asteroidPaths, sun, moon, satEnu, satNames, satIsIss,
-            declination, fix, timeMillis,
+            aircraftEnu, acLabels, declination, fix, timeMillis,
         )
     }
 

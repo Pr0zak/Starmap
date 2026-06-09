@@ -29,6 +29,7 @@ data class Settings(
     val showAsteroidPaths: Boolean = false,
     val showIss: Boolean = true,
     val showStarlink: Boolean = false,
+    val showAircraft: Boolean = false,
     val showBelowHorizon: Boolean = false,
     val nightMode: Boolean = false,
     /** 0 = follow system auto-rotate, 1 = portrait, 2 = landscape. */
@@ -60,6 +61,7 @@ class SettingsRepository(private val context: Context) {
         val showAsteroidPaths = booleanPreferencesKey("show_asteroid_paths")
         val showIss = booleanPreferencesKey("show_iss")
         val showStarlink = booleanPreferencesKey("show_starlink")
+        val showAircraft = booleanPreferencesKey("show_aircraft")
         val showBelowHorizon = booleanPreferencesKey("show_below_horizon")
         val nightMode = booleanPreferencesKey("night_mode")
         val orientationMode = intPreferencesKey("orientation_mode")
@@ -87,6 +89,7 @@ class SettingsRepository(private val context: Context) {
             showAsteroidPaths = p[Keys.showAsteroidPaths] ?: false,
             showIss = p[Keys.showIss] ?: true,
             showStarlink = p[Keys.showStarlink] ?: false,
+            showAircraft = p[Keys.showAircraft] ?: false,
             showBelowHorizon = p[Keys.showBelowHorizon] ?: false,
             nightMode = p[Keys.nightMode] ?: false,
             orientationMode = p[Keys.orientationMode] ?: 0,
@@ -133,6 +136,7 @@ class SettingsRepository(private val context: Context) {
         AsteroidPaths(Keys.showAsteroidPaths),
         Iss(Keys.showIss),
         Starlink(Keys.showStarlink),
+        Aircraft(Keys.showAircraft),
         BelowHorizon(Keys.showBelowHorizon),
         NightMode(Keys.nightMode),
         ExtendedCatalog(Keys.useExtendedCatalog),
