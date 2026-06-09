@@ -39,6 +39,7 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.DarkMode
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Flight
+import androidx.compose.material.icons.filled.Hub
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.LocationOff
 import androidx.compose.material.icons.filled.MoreVert
@@ -492,6 +493,7 @@ private fun objectVisual(obj: IdentifiedObject): Pair<ImageVector, Color> {
         k == "Comet" -> Icons.Filled.AutoAwesome to Color(0xFFB3E5FC)
         k == "Asteroid" -> Icons.Filled.Brightness1 to Color(0xFFD7CCC8)
         k == "Satellite" -> Icons.Filled.SatelliteAlt to Color(0xFF80CBC4)
+        k == "Constellation" -> Icons.Filled.Hub to Color(0xFF90CAF9)
         k == "Star" -> Icons.Filled.Star to Color(0xFFFFE082)
         k.contains("Cluster", ignoreCase = true) -> Icons.Filled.BubbleChart to Color(0xFFCE93D8)
         else -> Icons.Filled.BlurOn to Color(0xFFCE93D8) // galaxies, nebulae & other deep-sky

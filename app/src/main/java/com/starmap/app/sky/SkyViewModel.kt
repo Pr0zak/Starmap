@@ -175,6 +175,7 @@ class SkyViewModel(app: Application) : AndroidViewModel(app) {
         list.add(IdentifiedObject("Sun", "Star", ""))
         list.add(IdentifiedObject("Moon", "Moon", ""))
         list.add(IdentifiedObject("ISS", "Satellite", ""))
+        for (c in constellations) list.add(IdentifiedObject(c.name, "Constellation", ""))
         for (c in cometElements) list.add(IdentifiedObject(c.name, "Comet", ""))
         for (a in asteroidElements) list.add(IdentifiedObject(a.name, "Asteroid", ""))
         for (d in messierDsos) {
@@ -199,6 +200,7 @@ class SkyViewModel(app: Application) : AndroidViewModel(app) {
             "Comet" -> "$n comet"
             "Moon" -> "Moon"
             "Star" -> if (n == "Sun") "Sun" else "$n star"
+            "Constellation" -> "$n constellation"
             "Satellite" ->
                 if (n.contains("ISS", ignoreCase = true)) "International Space Station" else "$n satellite"
             else -> when { // Messier / deep-sky: prefer the common name, else "Messier NN"

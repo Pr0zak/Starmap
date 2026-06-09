@@ -240,6 +240,7 @@ fun SkyCanvas(viewModel: SkyViewModel, settings: Settings, modifier: Modifier = 
         projState.look = look; projState.right = right; projState.up = up
         projState.cx = cx; projState.cy = cy; projState.focal = focal
         projState.width = size.width; projState.height = size.height; projState.margin = margin
+        projState.showBelow = settings.showBelowHorizon
 
         fun drawEnuPolyline(line: FloatArray, color: Color, width: Float) {
             var hasPrev = false; var px = 0f; var py = 0f
@@ -896,6 +897,7 @@ private class ProjState {
     var width = 0f
     var height = 0f
     var margin = 0f
+    var showBelow = false
 
     fun projectAt(arr: FloatArray, base: Int, out: FloatArray): Boolean {
         val lk = look ?: return false
@@ -927,7 +929,7 @@ private fun nearestObject(
     var bestD2 = thresh * thresh
     var best: IdentifiedObject? = null
     fun consider(arr: FloatArray, base: Int, name: String, kind: String, mag: Float?, target: SearchTarget?) {
-        if (arr[base + 2] < 0f) return
+        if (!ps.showBelow && arr[base + 2] < 0f) return
         if (!ps.projectAt(arr, base, out)) return
         val dx = out[0] - ox
         val dy = out[1] - oy
@@ -945,6 +947,9 @@ private fun nearestObject(
     for (d in m.messier) {
         val label = if (d.common.isBlank()) d.name else "${d.name} · ${d.common}"
         consider(d.enu, 0, label, d.type, d.mag, SearchTarget.MessierT(d.name))
+    }
+    for (con in m.constellations) {
+        consider(con.labelEnu, 0, con.name, "Constellation", null, SearchTarget.ConstellationT(con.name))
     }
     var s = 0
     while (s < m.satCount) {
