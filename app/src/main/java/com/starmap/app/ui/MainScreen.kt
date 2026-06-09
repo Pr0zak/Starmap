@@ -4,20 +4,24 @@ import android.Manifest
 import android.app.Activity
 import android.content.Context
 import android.content.ContextWrapper
+import android.content.Intent
 import android.content.pm.ActivityInfo
 import android.content.pm.PackageManager
 import android.content.res.Configuration
+import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -71,6 +75,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -89,6 +94,7 @@ import com.starmap.app.settings.SettingsRepository
 import com.starmap.app.settings.SettingsRepository.BoolSetting
 import com.starmap.app.sky.AircraftRender
 import com.starmap.app.sky.IdentifiedObject
+import com.starmap.app.sky.ObjectDetail
 import com.starmap.app.sky.SkyCanvas
 import com.starmap.app.sky.SkyModel
 import com.starmap.app.sky.SkyViewModel
@@ -330,6 +336,7 @@ private fun SkyScreen(
                     ObjectInfoCard(
                         obj,
                         following = followingState,
+                        onDetails = { viewModel.openObjectDetail(obj) },
                         onFollow = onFollow,
                         onClose = selObj?.let { { viewModel.selectObject(null) } },
                     )
@@ -368,6 +375,17 @@ private fun SkyScreen(
                 )
             }
         }
+
+        val detail by viewModel.objectDetail
+        detail?.let { d ->
+            ObjectDetailDialog(
+                d,
+                onOpenLink = { url ->
+                    runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url))) }
+                },
+                onClose = { viewModel.closeObjectDetail() },
+            )
+        }
     }
 }
 
@@ -402,6 +420,7 @@ private fun OverflowMenu(onOpen: (Screen) -> Unit) {
 private fun ObjectInfoCard(
     obj: IdentifiedObject,
     following: Boolean = false,
+    onDetails: (() -> Unit)? = null,
     onFollow: (() -> Unit)? = null,
     onClose: (() -> Unit)? = null,
 ) {
@@ -435,6 +454,11 @@ private fun ObjectInfoCard(
                     modifier = Modifier.padding(top = 3.dp),
                 )
             }
+            if (onDetails != null) {
+                IconButton(onClick = onDetails) {
+                    Icon(Icons.Filled.Info, contentDescription = "Details", tint = Color(0xFFD8E0F0))
+                }
+            }
             if (onFollow != null) {
                 IconButton(onClick = onFollow) {
                     Icon(
@@ -465,6 +489,77 @@ private fun objectVisual(obj: IdentifiedObject): Pair<ImageVector, Color> {
         k == "Star" -> Icons.Filled.Star to Color(0xFFFFE082)
         k.contains("Cluster", ignoreCase = true) -> Icons.Filled.BubbleChart to Color(0xFFCE93D8)
         else -> Icons.Filled.BlurOn to Color(0xFFCE93D8) // galaxies, nebulae & other deep-sky
+    }
+}
+
+@Composable
+private fun ObjectDetailDialog(
+    detail: ObjectDetail,
+    onOpenLink: (String) -> Unit,
+    onClose: () -> Unit,
+) {
+    Dialog(onDismissRequest = onClose) {
+        Surface(
+            color = Color(0xFF141A28),
+            shape = RoundedCornerShape(18.dp),
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            Column(modifier = Modifier.padding(18.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        detail.title, color = Color(0xFFF1F4FA), fontSize = 20.sp,
+                        fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f),
+                    )
+                    IconButton(onClick = onClose) {
+                        Icon(Icons.Filled.Close, contentDescription = "Close", tint = Color(0xFFD8E0F0))
+                    }
+                }
+                Spacer(Modifier.height(6.dp))
+                when (detail) {
+                    is ObjectDetail.Loading ->
+                        Text("Loading…", color = Color(0x99FFFFFF), fontSize = 14.sp)
+                    is ObjectDetail.Empty ->
+                        Text("No description found.", color = Color(0x99FFFFFF), fontSize = 14.sp)
+                    is ObjectDetail.Failed ->
+                        Text("Couldn't load details · ${detail.message}", color = Color(0x99FFFFFF), fontSize = 14.sp)
+                    is ObjectDetail.Loaded -> {
+                        Column(
+                            modifier = Modifier
+                                .heightIn(max = 460.dp)
+                                .verticalScroll(rememberScrollState()),
+                        ) {
+                            detail.info.imageUrl?.let { url ->
+                                AsyncImage(
+                                    model = url,
+                                    contentDescription = null,
+                                    contentScale = ContentScale.Crop,
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .height(190.dp)
+                                        .clip(RoundedCornerShape(12.dp)),
+                                )
+                                Spacer(Modifier.height(12.dp))
+                            }
+                            Text(
+                                detail.info.extract, color = Color(0xDDFFFFFF),
+                                fontSize = 14.sp, lineHeight = 20.sp,
+                            )
+                            detail.info.pageUrl?.let { page ->
+                                Spacer(Modifier.height(10.dp))
+                                TextButton(onClick = { onOpenLink(page) }) {
+                                    Text("Read more on Wikipedia ↗", color = Color(0xFF8AB4F8))
+                                }
+                            }
+                            Text(
+                                "Text from Wikipedia (CC BY-SA)",
+                                color = Color(0x66FFFFFF), fontSize = 10.sp,
+                                modifier = Modifier.padding(top = 6.dp),
+                            )
+                        }
+                    }
+                }
+            }
+        }
     }
 }
 

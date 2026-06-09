@@ -12,6 +12,7 @@ import com.starmap.app.astro.StarCatalog
 import com.starmap.app.aircraft.AircraftManager
 import com.starmap.app.aircraft.AircraftTrack
 import com.starmap.app.catalog.CatalogManager
+import com.starmap.app.info.WikiManager
 import com.starmap.app.satellite.NamedSat
 import com.starmap.app.satellite.SatelliteManager
 import com.starmap.app.sensors.LocationProvider
@@ -39,6 +40,15 @@ data class IdentifiedObject(
     /** Re-resolvable handle so the object can be followed as it moves. */
     val target: SearchTarget? = null,
 )
+
+/** Encyclopedic detail panel state for an identified object. */
+sealed interface ObjectDetail {
+    val title: String
+    data class Loading(override val title: String) : ObjectDetail
+    data class Loaded(override val title: String, val info: WikiManager.Info) : ObjectDetail
+    data class Empty(override val title: String) : ObjectDetail
+    data class Failed(override val title: String, val message: String) : ObjectDetail
+}
 
 class SkyViewModel(app: Application) : AndroidViewModel(app) {
 
@@ -90,6 +100,43 @@ class SkyViewModel(app: Application) : AndroidViewModel(app) {
     private val _centerObject = mutableStateOf<IdentifiedObject?>(null)
     val centerObject: State<IdentifiedObject?> = _centerObject
     fun setCenterObject(obj: IdentifiedObject?) { _centerObject.value = obj }
+
+    private val wikiManager = WikiManager()
+    private val _objectDetail = mutableStateOf<ObjectDetail?>(null)
+    val objectDetail: State<ObjectDetail?> = _objectDetail
+
+    /** Open the encyclopedic detail panel for [obj] and load its Wikipedia summary. */
+    fun openObjectDetail(obj: IdentifiedObject) {
+        _objectDetail.value = ObjectDetail.Loading(obj.name)
+        val query = wikiQueryFor(obj)
+        viewModelScope.launch {
+            _objectDetail.value = when (val r = wikiManager.fetch(query)) {
+                is WikiManager.Result.Ok -> ObjectDetail.Loaded(obj.name, r.info)
+                WikiManager.Result.None -> ObjectDetail.Empty(obj.name)
+                is WikiManager.Result.Error -> ObjectDetail.Failed(obj.name, r.message)
+            }
+        }
+    }
+
+    fun closeObjectDetail() { _objectDetail.value = null }
+
+    private fun wikiQueryFor(obj: IdentifiedObject): String {
+        val n = obj.name
+        return when (obj.kind) {
+            "Planet" -> "$n planet"
+            "Asteroid" -> "$n asteroid"
+            "Comet" -> "$n comet"
+            "Moon" -> "Moon"
+            "Star" -> if (n == "Sun") "Sun" else "$n star"
+            "Satellite" ->
+                if (n.contains("ISS", ignoreCase = true)) "International Space Station" else "$n satellite"
+            else -> when { // Messier / deep-sky: prefer the common name, else "Messier NN"
+                n.contains(" · ") -> n.substringAfter(" · ")
+                Regex("^M\\d+$").matches(n.trim()) -> "Messier ${n.trim().drop(1)}"
+                else -> n
+            }
+        }
+    }
 
     /** Show the info card for a tapped sky object (clears any selected aircraft). */
     fun selectObject(obj: IdentifiedObject?) {
