@@ -55,6 +55,7 @@ class SkyViewModel(app: Application) : AndroidViewModel(app) {
     private var catalog: StarCatalog? = null
     private var constellations: List<Constellation> = emptyList()
     private var asteroidElements: List<com.starmap.app.astro.Asteroids.Element> = emptyList()
+    private var messierDsos: List<com.starmap.app.astro.Messier.Dso> = emptyList()
     private var issSats: List<NamedSat> = emptyList()
     private var starlinkSats: List<NamedSat> = emptyList()
     private val aircraftManager = AircraftManager()
@@ -113,6 +114,7 @@ class SkyViewModel(app: Application) : AndroidViewModel(app) {
             try {
                 constellations = catalogManager.loadConstellations()
                 asteroidElements = catalogManager.loadAsteroids()
+                messierDsos = catalogManager.loadMessier()
                 catalog = catalogManager.loadStars(settings.value.useExtendedCatalog)
                 buildSearchIndex()
                 Log.i(TAG, "Catalog loaded: ${catalog?.count ?: 0} stars, ${constellations.size} constellations")
@@ -207,6 +209,8 @@ class SkyViewModel(app: Application) : AndroidViewModel(app) {
                             includeEquator = s.showEquator,
                             includeGrid = s.showGrid,
                             includeMeteors = s.showMeteorShowers,
+                            includeMessier = s.showMessier,
+                            messierDsos = messierDsos,
                             includePlanets = s.showPlanets,
                             includeAsteroids = s.showAsteroids,
                             asteroidElements = asteroidElements,
@@ -342,6 +346,15 @@ class SkyViewModel(app: Application) : AndroidViewModel(app) {
         }
         for (a in asteroidElements) {
             entries.add(SearchEntry(SearchTarget.AsteroidT(a.name), a.name, "Asteroid", FuzzySearch.normalize(a.name)))
+        }
+        for (d in messierDsos) {
+            val display = if (d.common.isBlank()) d.name else "${d.name} · ${d.common}"
+            entries.add(
+                SearchEntry(
+                    SearchTarget.MessierT(d.name), display, d.type,
+                    FuzzySearch.normalize("${d.name} ${d.common} ${d.type}"),
+                ),
+            )
         }
         entries.add(SearchEntry(SearchTarget.SpecialT("Sun"), "Sun", "Solar System", "sun"))
         entries.add(SearchEntry(SearchTarget.SpecialT("Moon"), "Moon", "Solar System", "moon"))

@@ -11,6 +11,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.Stroke
@@ -242,6 +243,35 @@ fun SkyCanvas(viewModel: SkyViewModel, settings: Settings, modifier: Modifier = 
                         label, sx + radius + 3f * density, sy + 4f * density, starPaint,
                     )
                 }
+            }
+        }
+
+        // --- Messier deep-sky objects (shape by type) ---
+        if (m.messier.isNotEmpty()) {
+            bodyPaint.textSize = 11f * density
+            for (d in m.messier) {
+                if (!settings.showBelowHorizon && d.enu[2] < 0f) continue
+                if (!project(d.enu, p)) continue
+                val dx = p[0]; val dy = p[1]
+                val color = when (d.category) {
+                    "galaxy" -> if (night) Color(0xFFBB6666) else Color(0xFFE8A0C8)
+                    "cluster" -> if (night) Color(0xFFBBAA66) else Color(0xFFFFE08A)
+                    "nebula" -> if (night) Color(0xFF66AAAA) else Color(0xFF8AE0C0)
+                    else -> if (night) Color(0xFF999999) else Color(0xFFCCCCCC)
+                }
+                val r = 4.5f * density
+                val o = androidx.compose.ui.geometry.Offset(dx, dy)
+                val st = Stroke(1.4f * density)
+                when (d.category) {
+                    "galaxy" -> drawOval(color, androidx.compose.ui.geometry.Offset(dx - r, dy - r * 0.55f),
+                        Size(2 * r, 1.1f * r), style = st)
+                    "cluster" -> drawCircle(color, r, o, style = st)
+                    "nebula" -> drawRect(color, androidx.compose.ui.geometry.Offset(dx - r, dy - r),
+                        Size(2 * r, 2 * r), style = st)
+                    else -> drawCircle(color, 2f * density, o)
+                }
+                bodyPaint.color = color.toArgb()
+                drawContext.canvas.nativeCanvas.drawText(d.name, dx + r + 4f * density, dy + 4f * density, bodyPaint)
             }
         }
 

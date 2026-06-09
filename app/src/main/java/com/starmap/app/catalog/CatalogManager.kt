@@ -4,6 +4,7 @@ import android.content.Context
 import com.starmap.app.astro.Asteroids
 import com.starmap.app.astro.Constellation
 import com.starmap.app.astro.ConstellationCatalog
+import com.starmap.app.astro.Messier
 import com.starmap.app.astro.StarCatalog
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -27,5 +28,9 @@ class CatalogManager(private val context: Context) {
 
     suspend fun loadAsteroids(): List<Asteroids.Element> = withContext(Dispatchers.IO) {
         context.assets.open("asteroids.json").use { Asteroids.parse(it) }
+    }
+
+    suspend fun loadMessier(): List<Messier.Dso> = withContext(Dispatchers.IO) {
+        context.assets.open("messier.json").use { Messier.parse(it) }
     }
 }

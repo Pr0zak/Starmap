@@ -5,6 +5,7 @@ import com.starmap.app.aircraft.AircraftTrack
 import com.starmap.app.astro.Asteroids
 import com.starmap.app.astro.AstroMath
 import com.starmap.app.astro.Constellation
+import com.starmap.app.astro.Messier
 import com.starmap.app.astro.MeteorShowers
 import com.starmap.app.astro.Planets
 import com.starmap.app.astro.ReferenceLines
@@ -24,6 +25,16 @@ class PlanetEnu(val name: String, val enu: FloatArray, val colorArgb: Long, val 
 
 /** A meteor shower radiant (the point meteors stream from) for the current night. */
 class RadiantEnu(val name: String, val enu: FloatArray, val sublabel: String)
+
+/** A Messier deep-sky object placed in the local frame. */
+class DsoEnu(
+    val name: String,
+    val common: String,
+    val type: String,
+    val category: String,
+    val mag: Float,
+    val enu: FloatArray,
+)
 
 /** A rendered aircraft: its direction, a fading trail, and details for the info card. */
 class AircraftRender(
@@ -62,6 +73,7 @@ class SkyModel(
     val gridLines: List<FloatArray>,
     val planets: List<PlanetEnu>,
     val radiants: List<RadiantEnu>,
+    val messier: List<DsoEnu>,
     val asteroids: List<PlanetEnu>,
     /** Each entry is a flattened ENU polyline of an asteroid's track over time. */
     val asteroidPaths: List<FloatArray>,
@@ -91,6 +103,8 @@ object SkyBuilder {
         includeEquator: Boolean,
         includeGrid: Boolean,
         includeMeteors: Boolean,
+        includeMessier: Boolean,
+        messierDsos: List<Messier.Dso>,
         includePlanets: Boolean,
         includeAsteroids: Boolean,
         asteroidElements: List<Asteroids.Element>,
@@ -151,6 +165,14 @@ object SkyBuilder {
                     else -> "active · ZHR ${sh.zhr}"
                 }
                 RadiantEnu(sh.name, toEnu(v, basis), sub)
+            }
+        } else {
+            emptyList()
+        }
+
+        val messierEnu = if (includeMessier) {
+            messierDsos.map { d ->
+                DsoEnu(d.name, d.common, d.type, d.category, d.mag, eqVecToEnu(d.eqVec, basis))
             }
         } else {
             emptyList()
@@ -285,8 +307,8 @@ object SkyBuilder {
 
         return SkyModel(
             n, starEnu, catalog.mag, catalog.ci, catalog.labels,
-            cons, eclipticLine, equatorLine, gridLines, planets, radiants, asteroids, asteroidPaths,
-            sun, moon, satEnu, satNames, satIsIss,
+            cons, eclipticLine, equatorLine, gridLines, planets, radiants, messierEnu, asteroids,
+            asteroidPaths, sun, moon, satEnu, satNames, satIsIss,
             aircraftRenders, declination, fix, timeMillis,
         )
     }
@@ -299,6 +321,16 @@ object SkyBuilder {
         AstroMath.dot(vecEq, basis.north).toFloat(),
         AstroMath.dot(vecEq, basis.up).toFloat(),
     )
+
+    /** Rotate a single equatorial unit vector (Float xyz) into the ENU frame. */
+    private fun eqVecToEnu(v: FloatArray, basis: AstroMath.EnuBasis): FloatArray {
+        val tmp = doubleArrayOf(v[0].toDouble(), v[1].toDouble(), v[2].toDouble())
+        return floatArrayOf(
+            AstroMath.dot(tmp, basis.east).toFloat(),
+            AstroMath.dot(tmp, basis.north).toFloat(),
+            AstroMath.dot(tmp, basis.up).toFloat(),
+        )
+    }
 
     /** Rotate a flattened equatorial-vector polyline into the ENU frame. */
     private fun eqLineToEnu(eq: FloatArray, basis: AstroMath.EnuBasis): FloatArray {
