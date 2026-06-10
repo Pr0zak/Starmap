@@ -30,13 +30,20 @@ class LandmarkManager {
     suspend fun fetch(lat: Double, lon: Double, radiusMeters: Int = RADIUS_M): Result =
         withContext(Dispatchers.IO) {
             val r = radiusMeters
+            // Use a bounding box rather than (around:): Overpass indexes bbox queries
+            // and runs them fast even for ways, whereas way[...](around:) scans and
+            // blows the time budget (the server reported a line-5 timeout on the
+            // aerodrome-way around-query). The client still fades by true distance.
+            val latDelta = r / 111_320.0
+            val lonDelta = r / (111_320.0 * kotlin.math.cos(Math.toRadians(lat)).coerceAtLeast(0.01))
+            val bbox = "${lat - latDelta},${lon - lonDelta},${lat + latDelta},${lon + lonDelta}"
             val query = """
                 [out:json][timeout:25];
                 (
-                  node["place"~"city|town|village|borough"](around:$r,$lat,$lon);
-                  node["aeroway"="aerodrome"]["name"](around:$r,$lat,$lon);
-                  way["aeroway"="aerodrome"]["name"](around:$r,$lat,$lon);
-                  node["man_made"~"tower|mast"]["name"](around:$r,$lat,$lon);
+                  node["place"~"city|town|village|borough"]($bbox);
+                  node["aeroway"="aerodrome"]["name"]($bbox);
+                  way["aeroway"="aerodrome"]["name"]($bbox);
+                  node["man_made"~"tower|mast"]["name"]($bbox);
                 );
                 out center 120;
             """.trimIndent()
