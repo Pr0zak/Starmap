@@ -178,6 +178,13 @@ fun SettingsScreen(viewModel: SkyViewModel, settings: Settings, onBack: () -> Un
                 checked = settings.showAircraftLabels, enabled = settings.showAircraft,
             ) { viewModel.setBool(BoolSetting.AircraftLabels, it) }
 
+            SectionHeader("Landmarks")
+            SettingSwitch(
+                "Show landmarks",
+                "Nearby cities, airports & towers on the horizon (OpenStreetMap) — needs internet.",
+                checked = settings.showLandmarks,
+            ) { viewModel.setBool(BoolSetting.Landmarks, it) }
+
             SectionHeader("Display")
             SettingSwitch("Daylight sky", "Blue sky and twilight colours when the Sun is up",
                 checked = settings.showDaylightSky) {

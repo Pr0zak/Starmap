@@ -41,6 +41,7 @@ data class Settings(
     val showAircraft: Boolean = false,
     val showAircraftTrails: Boolean = true,
     val showAircraftLabels: Boolean = true,
+    val showLandmarks: Boolean = false,
     val aircraftRangeNm: Float = 40f,
     val showBelowHorizon: Boolean = false,
     val showDaylightSky: Boolean = true,
@@ -91,6 +92,7 @@ class SettingsRepository(private val context: Context) {
         val showAircraft = booleanPreferencesKey("show_aircraft")
         val showAircraftTrails = booleanPreferencesKey("show_aircraft_trails")
         val showAircraftLabels = booleanPreferencesKey("show_aircraft_labels")
+        val showLandmarks = booleanPreferencesKey("show_landmarks")
         val aircraftRangeNm = floatPreferencesKey("aircraft_range_nm")
         val showBelowHorizon = booleanPreferencesKey("show_below_horizon")
         val showDaylightSky = booleanPreferencesKey("show_daylight_sky")
@@ -136,6 +138,7 @@ class SettingsRepository(private val context: Context) {
             showAircraft = p[Keys.showAircraft] ?: false,
             showAircraftTrails = p[Keys.showAircraftTrails] ?: true,
             showAircraftLabels = p[Keys.showAircraftLabels] ?: true,
+            showLandmarks = p[Keys.showLandmarks] ?: false,
             aircraftRangeNm = (p[Keys.aircraftRangeNm] ?: 40f).coerceAtMost(80f),
             showBelowHorizon = p[Keys.showBelowHorizon] ?: false,
             showDaylightSky = p[Keys.showDaylightSky] ?: true,
@@ -204,6 +207,7 @@ class SettingsRepository(private val context: Context) {
         Aircraft(Keys.showAircraft),
         AircraftTrails(Keys.showAircraftTrails),
         AircraftLabels(Keys.showAircraftLabels),
+        Landmarks(Keys.showLandmarks),
         BelowHorizon(Keys.showBelowHorizon),
         DaylightSky(Keys.showDaylightSky),
         Refraction(Keys.applyRefraction),

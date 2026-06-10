@@ -2,6 +2,7 @@ package com.starmap.app.sky
 
 import android.hardware.GeomagneticField
 import com.starmap.app.aircraft.AircraftTrack
+import com.starmap.app.landmark.Landmark
 import com.starmap.app.astro.Asteroids
 import com.starmap.app.astro.AstroMath
 import com.starmap.app.astro.Comets
@@ -76,6 +77,9 @@ class AircraftRender(
     val trail: FloatArray,
 )
 
+/** A ground landmark on the horizon: its direction (alt 0) at its bearing, plus distance. */
+class LandmarkEnu(val name: String, val type: String, val enu: FloatArray, val distanceKm: Float)
+
 class ConstellationEnu(
     val name: String,
     val labelEnu: FloatArray,
@@ -127,6 +131,8 @@ class SkyModel(
     val satNames: List<String>,
     val satIsIss: BooleanArray,
     val aircraft: List<AircraftRender>,
+    /** Ground landmarks placed on the horizon at their bearing. */
+    val landmarks: List<LandmarkEnu>,
     val declinationDeg: Float,
     val location: LocationProvider.Fix,
     val timeMillis: Long,
@@ -162,6 +168,8 @@ object SkyBuilder {
         includeRefraction: Boolean,
         satellites: List<NamedSat>,
         aircraft: List<AircraftTrack>,
+        includeLandmarks: Boolean,
+        landmarks: List<Landmark>,
         showBelowHorizon: Boolean,
     ): SkyModel {
         val jd = AstroMath.julianDay(timeMillis)
@@ -438,6 +446,28 @@ object SkyBuilder {
             }
         }
 
+        // Landmarks: place each on the horizon at its great-circle bearing from the observer.
+        val landmarksEnu = if (includeLandmarks && landmarks.isNotEmpty()) {
+            val lat1 = fix.latitude * AstroMath.DEG2RAD
+            landmarks.map { lm ->
+                val lat2 = lm.latitude * AstroMath.DEG2RAD
+                val dLon = (lm.longitude - fix.longitude) * AstroMath.DEG2RAD
+                val dLat = lat2 - lat1
+                val y = kotlin.math.sin(dLon) * kotlin.math.cos(lat2)
+                val x = kotlin.math.cos(lat1) * kotlin.math.sin(lat2) -
+                    kotlin.math.sin(lat1) * kotlin.math.cos(lat2) * kotlin.math.cos(dLon)
+                val bearing = atan2(y, x) // radians, 0 = north, clockwise
+                val a = kotlin.math.sin(dLat / 2).let { it * it } +
+                    kotlin.math.cos(lat1) * kotlin.math.cos(lat2) *
+                    kotlin.math.sin(dLon / 2).let { it * it }
+                val distKm = (2.0 * 6371.0 * asin(sqrt(a).coerceIn(0.0, 1.0))).toFloat()
+                val enu = floatArrayOf(kotlin.math.sin(bearing).toFloat(), kotlin.math.cos(bearing).toFloat(), 0f)
+                LandmarkEnu(lm.name, lm.type, enu, distKm)
+            }
+        } else {
+            emptyList()
+        }
+
         val declination = GeomagneticField(
             fix.latitude.toFloat(),
             fix.longitude.toFloat(),
@@ -449,7 +479,7 @@ object SkyBuilder {
             n, starEnu, catalog.mag, catalog.ci, catalog.labels, mwEnu, mwLevel,
             cons, artEnu, eclipticLine, equatorLine, gridLines, planets, radiants, messierEnu, asteroids,
             asteroidPaths, comets, cometPaths, sun, moon, sunDetail, moonDetail, satEnu, satNames, satIsIss,
-            aircraftRenders, declination, fix, timeMillis,
+            aircraftRenders, landmarksEnu, declination, fix, timeMillis,
         )
     }
 

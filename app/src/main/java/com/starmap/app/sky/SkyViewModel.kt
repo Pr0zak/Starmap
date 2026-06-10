@@ -14,6 +14,8 @@ import com.starmap.app.aircraft.AircraftTrack
 import com.starmap.app.catalog.CatalogManager
 import com.starmap.app.info.ObjectInfoStore
 import com.starmap.app.info.WikiManager
+import com.starmap.app.landmark.Landmark
+import com.starmap.app.landmark.LandmarkManager
 import com.starmap.app.satellite.NamedSat
 import com.starmap.app.satellite.SatelliteManager
 import com.starmap.app.sensors.LocationProvider
@@ -92,6 +94,10 @@ class SkyViewModel(app: Application) : AndroidViewModel(app) {
     private var starlinkSats: List<NamedSat> = emptyList()
     private val aircraftManager = AircraftManager()
     private var aircraftTracks: List<AircraftTrack> = emptyList()
+    private val landmarkManager = LandmarkManager()
+    private var landmarks: List<Landmark> = emptyList()
+    private var landmarkFetchLat = Double.NaN
+    private var landmarkFetchLon = Double.NaN
     private val aircraftHistory = HashMap<String, ArrayDeque<DoubleArray>>()
 
     private val _selectedAircraft = mutableStateOf<AircraftRender?>(null)
@@ -397,7 +403,45 @@ class SkyViewModel(app: Application) : AndroidViewModel(app) {
         }
         startRebuildLoop()
         startAircraftLoop()
+        startLandmarkLoop()
         startTimeFlow()
+    }
+
+    /** Fetches nearby landmarks once enabled, refreshing when the observer moves a few km. */
+    private fun startLandmarkLoop() = viewModelScope.launch {
+        while (isActive) {
+            val s = settings.value
+            val fix = effectiveLocation.value
+            if (s.showLandmarks && fix != null) {
+                val moved = landmarkFetchLat.isNaN() ||
+                    haversineKm(landmarkFetchLat, landmarkFetchLon, fix.latitude, fix.longitude) > 5.0
+                if (moved) {
+                    when (val r = landmarkManager.fetch(fix.latitude, fix.longitude)) {
+                        is LandmarkManager.Result.Ok -> {
+                            landmarks = r.landmarks
+                            landmarkFetchLat = fix.latitude
+                            landmarkFetchLon = fix.longitude
+                        }
+                        is LandmarkManager.Result.Failed -> Log.w(TAG, "Landmarks: ${r.message}")
+                    }
+                }
+                kotlinx.coroutines.delay(60_000)
+            } else {
+                if (landmarks.isNotEmpty()) {
+                    landmarks = emptyList()
+                    landmarkFetchLat = Double.NaN
+                }
+                kotlinx.coroutines.delay(3_000)
+            }
+        }
+    }
+
+    private fun haversineKm(lat1: Double, lon1: Double, lat2: Double, lon2: Double): Double {
+        val sl = kotlin.math.sin(Math.toRadians(lat2 - lat1) / 2)
+        val so = kotlin.math.sin(Math.toRadians(lon2 - lon1) / 2)
+        val a = sl * sl + kotlin.math.cos(Math.toRadians(lat1)) *
+            kotlin.math.cos(Math.toRadians(lat2)) * so * so
+        return 2.0 * 6371.0 * kotlin.math.asin(kotlin.math.sqrt(a).coerceAtMost(1.0))
     }
 
     /** Advances simulated time while a time-lapse rate is set. */
@@ -487,6 +531,8 @@ class SkyViewModel(app: Application) : AndroidViewModel(app) {
                             includeRefraction = s.applyRefraction,
                             satellites = sats,
                             aircraft = aircraftTracks,
+                            includeLandmarks = s.showLandmarks,
+                            landmarks = landmarks,
                             showBelowHorizon = s.showBelowHorizon,
                         )
                     }

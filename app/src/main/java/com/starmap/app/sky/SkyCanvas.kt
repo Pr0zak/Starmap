@@ -829,6 +829,39 @@ fun SkyCanvas(viewModel: SkyViewModel, settings: Settings, modifier: Modifier = 
             }
         }
 
+        // --- Landmarks: city / airport / tower pins on the horizon, fading with distance ---
+        if (settings.showLandmarks && m.landmarks.isNotEmpty()) {
+            bodyPaint.textSize = 12f * density
+            for (lm in m.landmarks) {
+                if (!project(lm.enu, p)) continue
+                val fade = (1.15f - lm.distanceKm / 55f).coerceIn(0.25f, 1f)
+                val base = if (night) {
+                    Color(0xFFCC6655)
+                } else {
+                    when (lm.type) {
+                        "airport" -> Color(0xFF80C8FF)
+                        "tower" -> Color(0xFFFF9E80)
+                        else -> Color(0xFFFFE082)
+                    }
+                }
+                val color = base.copy(alpha = fade)
+                val r = (2f + 3f * fade) * density
+                val top = androidx.compose.ui.geometry.Offset(p[0], p[1] - 7f * density)
+                drawLine(color, androidx.compose.ui.geometry.Offset(p[0], p[1]), top, strokeWidth = 1.5f * density)
+                drawCircle(color, r, top)
+                val sym = when (lm.type) {
+                    "airport" -> "✈ "
+                    "tower" -> "📡 "
+                    else -> ""
+                }
+                bodyPaint.color = color.toArgb()
+                drawContext.canvas.nativeCanvas.drawText(
+                    "$sym${lm.name}  ${(lm.distanceKm * 0.621371f).toInt()} mi",
+                    p[0] + r + 4f * density, p[1] - 5f * density, bodyPaint,
+                )
+            }
+        }
+
         // --- Field-of-view guide rings, centred on the aim point ---
         if (settings.fovCirclesMode > 0) {
             val ringColor = if (night) Color(0x99CC4040) else Color(0x88E8A030)
