@@ -23,6 +23,7 @@ import com.starmap.app.sensors.OrientationProvider
 import com.starmap.app.settings.Settings
 import com.starmap.app.settings.SettingsRepository
 import com.starmap.app.update.ApkUpdater
+import com.starmap.app.update.DiagLog
 import com.starmap.app.update.UpdateChecker
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.SharingStarted
@@ -98,6 +99,7 @@ class SkyViewModel(app: Application) : AndroidViewModel(app) {
     private var landmarks: List<Landmark> = emptyList()
     private var landmarkFetchLat = Double.NaN
     private var landmarkFetchLon = Double.NaN
+    private var landmarkAwaitLogged = false
     private val _landmarkMessage = mutableStateOf<String?>(null)
     val landmarkMessage: State<String?> = _landmarkMessage
     private val aircraftHistory = HashMap<String, ArrayDeque<DoubleArray>>()
@@ -415,9 +417,15 @@ class SkyViewModel(app: Application) : AndroidViewModel(app) {
             val s = settings.value
             val fix = effectiveLocation.value
             if (s.showLandmarks && fix != null) {
+                landmarkAwaitLogged = false
                 val moved = landmarkFetchLat.isNaN() ||
                     haversineKm(landmarkFetchLat, landmarkFetchLon, fix.latitude, fix.longitude) > 5.0
                 if (moved) {
+                    DiagLog.log(
+                        "Landmarks loop: fix=%.4f,%.4f %s — fetching".format(
+                            fix.latitude, fix.longitude, if (fix.fromGps) "gps" else "manual",
+                        ),
+                    )
                     when (val r = landmarkManager.fetch(fix.latitude, fix.longitude)) {
                         is LandmarkManager.Result.Ok -> {
                             landmarks = r.landmarks
@@ -435,6 +443,10 @@ class SkyViewModel(app: Application) : AndroidViewModel(app) {
                 }
                 kotlinx.coroutines.delay(60_000)
             } else {
+                if (s.showLandmarks && fix == null && !landmarkAwaitLogged) {
+                    DiagLog.log("Landmarks loop: enabled but no location fix yet")
+                    landmarkAwaitLogged = true
+                }
                 if (landmarks.isNotEmpty() || _landmarkMessage.value != null) {
                     landmarks = emptyList()
                     landmarkFetchLat = Double.NaN

@@ -38,11 +38,11 @@ import androidx.compose.ui.unit.sp
 import com.starmap.app.BuildConfig
 import com.starmap.app.sky.SkyViewModel
 import com.starmap.app.update.ApkUpdater
+import com.starmap.app.update.DiagLog
 import com.starmap.app.update.DiagPrefs
 import com.starmap.app.update.LogUploader
 import com.starmap.app.update.UpdateChecker
 import kotlinx.coroutines.launch
-import java.io.File
 
 @Composable
 fun AboutScreen(viewModel: SkyViewModel, onBack: () -> Unit) {
@@ -126,14 +126,7 @@ fun AboutScreen(viewModel: SkyViewModel, onBack: () -> Unit) {
                         scope.launch {
                             diagLink = null
                             diagStatus = "Uploading…"
-                            val crash = File(context.filesDir, "last_crash.txt")
-                            val text = if (crash.exists()) {
-                                crash.readText()
-                            } else {
-                                "Starmap diagnostics — no crash on record.\n" +
-                                    "Version ${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})"
-                            }
-                            LogUploader.upload(context, text)
+                            LogUploader.upload(context, DiagLog.report(context))
                                 .onSuccess {
                                     diagLink = it
                                     clipboard.setText(AnnotatedString(it))
@@ -142,6 +135,11 @@ fun AboutScreen(viewModel: SkyViewModel, onBack: () -> Unit) {
                                 .onFailure { diagStatus = "Failed: ${it.message}"; diagLink = null }
                         }
                     }) { Text("Upload diagnostics") }
+                    TextButton(onClick = {
+                        DiagLog.clear(context)
+                        diagStatus = "Log cleared — reproduce the issue, then upload."
+                        diagLink = null
+                    }) { Text("Clear log") }
                     diagStatus?.let {
                         Text(it, fontSize = 12.sp, modifier = Modifier.padding(top = 8.dp))
                     }

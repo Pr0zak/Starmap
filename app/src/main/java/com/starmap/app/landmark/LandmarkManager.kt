@@ -1,5 +1,6 @@
 package com.starmap.app.landmark
 
+import com.starmap.app.update.DiagLog
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
@@ -40,6 +41,7 @@ class LandmarkManager {
                 out center 120;
             """.trimIndent()
             val encoded = URLEncoder.encode(query, "UTF-8")
+            DiagLog.log("Landmarks: fetch lat=%.4f lon=%.4f r=%dm".format(lat, lon, r))
             val errors = ArrayList<String>()
             for (endpoint in ENDPOINTS) {
                 val host = runCatching { URL(endpoint).host }.getOrDefault(endpoint)
@@ -47,24 +49,38 @@ class LandmarkManager {
                     is Attempt.Body -> {
                         val json = runCatching { JSONObject(a.text) }.getOrNull()
                         if (json == null) {
+                            DiagLog.log("Landmarks: $host -> 200 but unreadable (${a.text.length}B)")
                             errors.add("$host: unreadable response")
                         } else {
+                            val raw = json.optJSONArray("elements")?.length() ?: 0
                             val items = parse(json)
-                            if (items.isNotEmpty()) return@withContext Result.Ok(items)
+                            val remark = json.optString("remark")
+                            DiagLog.log(
+                                "Landmarks: $host -> 200, ${a.text.length}B, raw=$raw parsed=${items.size}" +
+                                    if (remark.isNotBlank()) " remark='${hint(remark)}'" else "",
+                            )
+                            if (items.isNotEmpty()) {
+                                DiagLog.log("Landmarks: using ${items.size} from $host")
+                                return@withContext Result.Ok(items)
+                            }
                             // Overpass answers 200 with empty elements + a "remark" when it
                             // times out or runs short of memory. Treat that as a failure so we
                             // try the next mirror instead of claiming there is nothing nearby.
-                            val remark = json.optString("remark")
                             if (remark.isNotBlank()) {
                                 errors.add("$host: ${hint(remark)}")
                             } else {
+                                DiagLog.log("Landmarks: $host reports genuinely empty area")
                                 return@withContext Result.Ok(emptyList())
                             }
                         }
                     }
-                    is Attempt.Error -> errors.add("$host: ${a.reason}")
+                    is Attempt.Error -> {
+                        DiagLog.log("Landmarks: $host -> ${a.reason}")
+                        errors.add("$host: ${a.reason}")
+                    }
                 }
             }
+            DiagLog.log("Landmarks: all endpoints failed (${errors.firstOrNull() ?: "no response"})")
             Result.Failed(errors.firstOrNull() ?: "no response")
         }
 

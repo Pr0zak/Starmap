@@ -40,6 +40,7 @@ object CrashLog {
 class StarmapApp : Application() {
     override fun onCreate() {
         super.onCreate()
+        com.starmap.app.update.DiagLog.init(this)
         val previous = Thread.getDefaultUncaughtExceptionHandler()
         Thread.setDefaultUncaughtExceptionHandler { thread, throwable ->
             try {
