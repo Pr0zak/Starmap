@@ -43,6 +43,7 @@ class LandmarkManager {
             val encoded = URLEncoder.encode(query, "UTF-8")
             DiagLog.log("Landmarks: fetch lat=%.4f lon=%.4f r=%dm".format(lat, lon, r))
             val errors = ArrayList<String>()
+            var sawEmpty = false
             for (endpoint in ENDPOINTS) {
                 val host = runCatching { URL(endpoint).host }.getOrDefault(endpoint)
                 when (val a = attempt(endpoint, encoded)) {
@@ -64,13 +65,14 @@ class LandmarkManager {
                                 return@withContext Result.Ok(items)
                             }
                             // Overpass answers 200 with empty elements + a "remark" when it
-                            // times out or runs short of memory. Treat that as a failure so we
-                            // try the next mirror instead of claiming there is nothing nearby.
+                            // times out or runs short of memory. An empty result with no
+                            // remark can still be a regional mirror that lacks this area, so
+                            // keep trying the others and only trust "empty" if they all agree.
                             if (remark.isNotBlank()) {
                                 errors.add("$host: ${hint(remark)}")
                             } else {
-                                DiagLog.log("Landmarks: $host reports genuinely empty area")
-                                return@withContext Result.Ok(emptyList())
+                                DiagLog.log("Landmarks: $host returned empty — trying other servers")
+                                sawEmpty = true
                             }
                         }
                     }
@@ -79,6 +81,10 @@ class LandmarkManager {
                         errors.add("$host: ${a.reason}")
                     }
                 }
+            }
+            if (sawEmpty) {
+                DiagLog.log("Landmarks: every reachable server reports the area empty")
+                return@withContext Result.Ok(emptyList())
             }
             DiagLog.log("Landmarks: all endpoints failed (${errors.firstOrNull() ?: "no response"})")
             Result.Failed(errors.firstOrNull() ?: "no response")
@@ -107,7 +113,9 @@ class LandmarkManager {
             val conn = (url.openConnection() as HttpURLConnection).apply {
                 requestMethod = method
                 setRequestProperty("User-Agent", USER_AGENT)
-                setRequestProperty("Accept", "application/json")
+                // Deliberately ask for anything: overpass-api.de's Apache returns
+                // 406 Not Acceptable to a narrow Accept like "application/json".
+                setRequestProperty("Accept", "*/*")
                 connectTimeout = 10_000
                 readTimeout = 25_000
                 if (method == "POST") {
@@ -176,12 +184,12 @@ class LandmarkManager {
         // bots. Still names the app so operators can identify the traffic.
         const val USER_AGENT = "Mozilla/5.0 (Android; Mobile) Starmap/1.0"
 
-        // Non-Cloudflare instances first (most likely to answer a plain client),
-        // then the Cloudflare-fronted mirrors as last resorts.
+        // Planet-wide instances only (a regional mirror like overpass.osm.ch covers
+        // just its own country and would wrongly report everywhere else as empty).
+        // Non-Cloudflare first, the Cloudflare-fronted mirrors as last resorts.
         val ENDPOINTS = listOf(
             "https://overpass-api.de/api/interpreter",
             "https://overpass.private.coffee/api/interpreter",
-            "https://overpass.osm.ch/api/interpreter",
             "https://overpass.kumi.systems/api/interpreter",
             "https://maps.mail.ru/osm/tools/overpass/api/interpreter",
         )
