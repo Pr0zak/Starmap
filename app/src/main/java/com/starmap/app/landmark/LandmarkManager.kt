@@ -114,9 +114,11 @@ class LandmarkManager {
             val conn = (url.openConnection() as HttpURLConnection).apply {
                 requestMethod = method
                 setRequestProperty("User-Agent", USER_AGENT)
-                // Deliberately ask for anything: overpass-api.de's Apache returns
-                // 406 Not Acceptable to a narrow Accept like "application/json".
-                setRequestProperty("Accept", "*/*")
+                // Keep the request as plain as a canonical Overpass client's: a fake
+                // browser User-Agent, an explicit Accept, or gzip negotiation all make
+                // overpass-api.de's Apache answer 406 Not Acceptable. So: honest UA, no
+                // Accept header at all, and no compression.
+                setRequestProperty("Accept-Encoding", "identity")
                 connectTimeout = 10_000
                 readTimeout = 25_000
                 if (method == "POST") {
@@ -181,9 +183,9 @@ class LandmarkManager {
         /** Search radius around the observer, in metres. */
         const val RADIUS_M = 60000
 
-        // Browser-style UA: several mirrors front Cloudflare, which 403s obvious
-        // bots. Still names the app so operators can identify the traffic.
-        const val USER_AGENT = "Mozilla/5.0 (Android; Mobile) Starmap/1.0"
+        // Honest, descriptive UA as Overpass asks for. A fake browser UA makes
+        // overpass-api.de answer 406, and naming the app is the documented etiquette.
+        const val USER_AGENT = "Starmap/1.0 (+https://github.com/pr0zak/starmap)"
 
         // Planet-wide instances only (a regional mirror like overpass.osm.ch covers
         // just its own country and would wrongly report everywhere else as empty).
