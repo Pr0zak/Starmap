@@ -96,7 +96,11 @@ class LandmarkManager {
     private fun attempt(host: String, endpoint: String, encoded: String): Attempt {
         val post = request(endpoint, encoded, "POST")
         if (post is Attempt.Body) return post
-        DiagLog.log("Landmarks: $host POST -> ${(post as Attempt.Error).reason}")
+        val reason = (post as Attempt.Error).reason
+        DiagLog.log("Landmarks: $host POST -> $reason")
+        // A timeout means the server is too slow for this query right now, so GET
+        // would just time out too; only retry with GET for a real HTTP rejection.
+        if ("timeout" in reason || "timed out" in reason) return post
         val get = request(endpoint, encoded, "GET")
         if (get is Attempt.Body) return get
         DiagLog.log("Landmarks: $host GET -> ${(get as Attempt.Error).reason}")
@@ -120,7 +124,10 @@ class LandmarkManager {
                 // Accept header at all, and no compression.
                 setRequestProperty("Accept-Encoding", "identity")
                 connectTimeout = 10_000
-                readTimeout = 25_000
+                // Must exceed the server-side [timeout:25] below (plus queue/transfer),
+                // or we hang up exactly when the query's own budget runs out and learn
+                // nothing — not even the server's "timed out" remark.
+                readTimeout = 45_000
                 if (method == "POST") {
                     doOutput = true
                     setRequestProperty("Content-Type", "application/x-www-form-urlencoded")
@@ -180,8 +187,9 @@ class LandmarkManager {
     }
 
     private companion object {
-        /** Search radius around the observer, in metres. */
-        const val RADIUS_M = 60000
+        /** Search radius around the observer, in metres (kept modest so the query
+         *  finishes well inside the server's time budget even when it's busy). */
+        const val RADIUS_M = 40000
 
         // Honest, descriptive UA as Overpass asks for. A fake browser UA makes
         // overpass-api.de answer 406, and naming the app is the documented etiquette.
