@@ -12,8 +12,12 @@ class Landmark(val name: String, val type: String, val latitude: Double, val lon
 
 /**
  * Fetches nearby landmarks from the free, key-less OpenStreetMap Overpass API.
- * Tries a few public mirrors in turn, since any one can be busy. Runs on the
- * phone, which has open network access.
+ *
+ * Public Overpass instances are flaky: some are busy, some sit behind Cloudflare
+ * that rejects non-browser clients with a 403. So we try several mirrors, prefer
+ * a plain GET (CDN-friendly) with a POST fallback, and pull the real reason out
+ * of any error body so the UI can report something useful instead of a bare code.
+ * Runs on the phone, which has open network access.
  */
 class LandmarkManager {
 
@@ -36,32 +40,68 @@ class LandmarkManager {
                 );
                 out center 90;
             """.trimIndent()
-            val body = ("data=" + URLEncoder.encode(query, "UTF-8")).toByteArray()
-            var lastError = "no response"
+            val encoded = URLEncoder.encode(query, "UTF-8")
+            val errors = ArrayList<String>()
             for (endpoint in ENDPOINTS) {
-                try {
-                    val conn = (URL(endpoint).openConnection() as HttpURLConnection).apply {
-                        requestMethod = "POST"
-                        doOutput = true
-                        setRequestProperty("User-Agent", "Starmap-Android (+https://github.com/pr0zak/starmap)")
-                        setRequestProperty("Content-Type", "application/x-www-form-urlencoded")
-                        connectTimeout = 15_000
-                        readTimeout = 30_000
+                val host = runCatching { URL(endpoint).host }.getOrDefault(endpoint)
+                when (val get = request(endpoint, encoded, "GET")) {
+                    is Attempt.Body -> return@withContext Result.Ok(parse(JSONObject(get.text)))
+                    is Attempt.Error -> {
+                        errors.add("$host: ${get.reason}")
+                        // A few proxies forbid GET; retry once with POST before moving on.
+                        if ("403" in get.reason || "405" in get.reason) {
+                            val post = request(endpoint, encoded, "POST")
+                            if (post is Attempt.Body) {
+                                return@withContext Result.Ok(parse(JSONObject(post.text)))
+                            }
+                        }
                     }
-                    conn.outputStream.use { it.write(body) }
-                    val code = conn.responseCode
-                    if (code !in 200..299) {
-                        lastError = "HTTP $code"
-                        continue
-                    }
-                    val json = JSONObject(conn.inputStream.bufferedReader().use { it.readText() })
-                    return@withContext Result.Ok(parse(json))
-                } catch (e: Exception) {
-                    lastError = e.message ?: "network error"
                 }
             }
-            Result.Failed(lastError)
+            Result.Failed(errors.firstOrNull() ?: "no response")
         }
+
+    private sealed interface Attempt {
+        data class Body(val text: String) : Attempt
+        data class Error(val reason: String) : Attempt
+    }
+
+    private fun request(endpoint: String, encodedQuery: String, method: String): Attempt {
+        return try {
+            val url = if (method == "GET") URL("$endpoint?data=$encodedQuery") else URL(endpoint)
+            val conn = (url.openConnection() as HttpURLConnection).apply {
+                requestMethod = method
+                setRequestProperty("User-Agent", USER_AGENT)
+                setRequestProperty("Accept", "application/json")
+                connectTimeout = 10_000
+                readTimeout = 25_000
+                if (method == "POST") {
+                    doOutput = true
+                    setRequestProperty("Content-Type", "application/x-www-form-urlencoded")
+                }
+            }
+            if (method == "POST") {
+                conn.outputStream.use { it.write(("data=$encodedQuery").toByteArray()) }
+            }
+            val code = conn.responseCode
+            if (code in 200..299) {
+                Attempt.Body(conn.inputStream.bufferedReader().use { it.readText() })
+            } else {
+                val detail = runCatching {
+                    conn.errorStream?.bufferedReader()?.use { it.readText() }
+                }.getOrNull()?.let { hint(it) }.orEmpty()
+                Attempt.Error("HTTP $code${if (detail.isNotBlank()) " ($detail)" else ""}")
+            }
+        } catch (e: Exception) {
+            Attempt.Error(e.message ?: "network error")
+        }
+    }
+
+    /** A short, human-readable hint pulled from an Overpass HTML/text error page. */
+    private fun hint(body: String): String {
+        val clean = body.replace(Regex("<[^>]+>"), " ").replace(Regex("\\s+"), " ").trim()
+        return clean.take(80)
+    }
 
     private fun parse(json: JSONObject): List<Landmark> {
         val els = json.optJSONArray("elements") ?: return emptyList()
@@ -94,8 +134,16 @@ class LandmarkManager {
     }
 
     private companion object {
+        // Browser-style UA: several mirrors front Cloudflare, which 403s obvious
+        // bots. Still names the app so operators can identify the traffic.
+        const val USER_AGENT = "Mozilla/5.0 (Android; Mobile) Starmap/1.0"
+
+        // Non-Cloudflare instances first (most likely to answer a plain client),
+        // then the Cloudflare-fronted mirrors as last resorts.
         val ENDPOINTS = listOf(
             "https://overpass-api.de/api/interpreter",
+            "https://overpass.private.coffee/api/interpreter",
+            "https://overpass.osm.ch/api/interpreter",
             "https://overpass.kumi.systems/api/interpreter",
             "https://maps.mail.ru/osm/tools/overpass/api/interpreter",
         )
