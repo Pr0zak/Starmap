@@ -99,6 +99,8 @@ class SkyViewModel(app: Application) : AndroidViewModel(app) {
     private var landmarks: List<Landmark> = emptyList()
     private var landmarkFetchLat = Double.NaN
     private var landmarkFetchLon = Double.NaN
+    private var landmarkFetchRangeKm = Float.NaN
+    private var landmarkLastAttemptMs = 0L
     private var landmarkAwaitLogged = false
     private val _landmarkMessage = mutableStateOf<String?>(null)
     val landmarkMessage: State<String?> = _landmarkMessage
@@ -411,37 +413,46 @@ class SkyViewModel(app: Application) : AndroidViewModel(app) {
         startTimeFlow()
     }
 
-    /** Fetches nearby landmarks once enabled, refreshing when the observer moves a few km. */
+    /** Fetches nearby landmarks once enabled, refreshing when the observer moves a
+     *  few km or the range slider changes. Polls often but only hits the network
+     *  when something changed, with a short backoff so dragging the slider or a
+     *  failing server doesn't hammer Overpass. */
     private fun startLandmarkLoop() = viewModelScope.launch {
         while (isActive) {
             val s = settings.value
             val fix = effectiveLocation.value
             if (s.showLandmarks && fix != null) {
                 landmarkAwaitLogged = false
-                val moved = landmarkFetchLat.isNaN() ||
-                    haversineKm(landmarkFetchLat, landmarkFetchLon, fix.latitude, fix.longitude) > 5.0
-                if (moved) {
+                val rangeKm = s.landmarkRangeKm
+                val changed = landmarkFetchLat.isNaN() ||
+                    haversineKm(landmarkFetchLat, landmarkFetchLon, fix.latitude, fix.longitude) > 5.0 ||
+                    kotlin.math.abs(rangeKm - landmarkFetchRangeKm) > 0.5f
+                val sinceAttempt = System.currentTimeMillis() - landmarkLastAttemptMs
+                if (changed && sinceAttempt > 8_000) {
+                    landmarkLastAttemptMs = System.currentTimeMillis()
                     DiagLog.log(
-                        "Landmarks loop: fix=%.4f,%.4f %s — fetching".format(
-                            fix.latitude, fix.longitude, if (fix.fromGps) "gps" else "manual",
+                        "Landmarks loop: fix=%.4f,%.4f %s range=%dkm — fetching".format(
+                            fix.latitude, fix.longitude, if (fix.fromGps) "gps" else "manual", rangeKm.toInt(),
                         ),
                     )
-                    when (val r = landmarkManager.fetch(fix.latitude, fix.longitude)) {
+                    val km = rangeKm.toInt()
+                    when (val r = landmarkManager.fetch(fix.latitude, fix.longitude, (rangeKm * 1000).toInt())) {
                         is LandmarkManager.Result.Ok -> {
                             landmarks = r.landmarks
                             landmarkFetchLat = fix.latitude
                             landmarkFetchLon = fix.longitude
+                            landmarkFetchRangeKm = rangeKm
                             _landmarkMessage.value = if (r.landmarks.isEmpty()) {
-                                "No mapped landmarks within 40 km"
+                                "No mapped landmarks within $km km"
                             } else {
-                                "${r.landmarks.size} landmarks within 40 km — look toward the horizon"
+                                "${r.landmarks.size} landmarks within $km km — look toward the horizon"
                             }
                         }
                         is LandmarkManager.Result.Failed ->
                             _landmarkMessage.value = "Landmarks unavailable · ${r.message}"
                     }
                 }
-                kotlinx.coroutines.delay(60_000)
+                kotlinx.coroutines.delay(3_000)
             } else {
                 if (s.showLandmarks && fix == null && !landmarkAwaitLogged) {
                     DiagLog.log("Landmarks loop: enabled but no location fix yet")
@@ -450,6 +461,7 @@ class SkyViewModel(app: Application) : AndroidViewModel(app) {
                 if (landmarks.isNotEmpty() || _landmarkMessage.value != null) {
                     landmarks = emptyList()
                     landmarkFetchLat = Double.NaN
+                    landmarkFetchRangeKm = Float.NaN
                     _landmarkMessage.value = null
                 }
                 kotlinx.coroutines.delay(3_000)

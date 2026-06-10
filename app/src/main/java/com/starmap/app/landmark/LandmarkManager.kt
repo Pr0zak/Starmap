@@ -40,12 +40,12 @@ class LandmarkManager {
             val query = """
                 [out:json][timeout:25];
                 (
-                  node["place"~"city|town|village|borough"]($bbox);
+                  node["place"~"city|town|borough"]($bbox);
                   node["aeroway"="aerodrome"]["name"]($bbox);
                   way["aeroway"="aerodrome"]["name"]($bbox);
                   node["man_made"~"tower|mast"]["name"]($bbox);
                 );
-                out center 120;
+                out center 80;
             """.trimIndent()
             val encoded = URLEncoder.encode(query, "UTF-8")
             DiagLog.log("Landmarks: fetch lat=%.4f lon=%.4f r=%dm".format(lat, lon, r))

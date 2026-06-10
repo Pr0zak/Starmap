@@ -37,6 +37,7 @@ import kotlin.math.tan
 
 private const val MIN_DEPTH = 0.15f
 private const val ART_MESH = 8 // grid subdivisions per constellation figure
+private const val MAX_LANDMARK_LABELS = 14 // cap horizon labels so they stay readable
 
 /**
  * Sky-background colour for a given Sun altitude (degrees): night → twilight → day.
@@ -829,12 +830,20 @@ fun SkyCanvas(viewModel: SkyViewModel, settings: Settings, modifier: Modifier = 
             }
         }
 
-        // --- Landmarks: city / airport / tower pins on the horizon, fading with distance ---
+        // --- Landmarks: pins on the horizon; labels de-cluttered by priority + collision ---
         if (settings.showLandmarks && m.landmarks.isNotEmpty()) {
             bodyPaint.textSize = 12f * density
-            for (lm in m.landmarks) {
+            val rangeKm = settings.landmarkRangeKm.coerceAtLeast(5f)
+            // Distinctive types and nearer landmarks first, so when labels compete for
+            // horizon space the important ones win and the rest stay as plain pins.
+            fun rank(t: String) = when (t) { "airport" -> 0; "tower" -> 1; "city" -> 2; else -> 3 }
+            val ordered = m.landmarks.sortedWith(compareBy({ rank(it.type) }, { it.distanceKm }))
+            val taken = ArrayList<android.graphics.RectF>(32)
+            val levels = floatArrayOf(5f, 20f, 35f)
+            var labelCount = 0
+            for (lm in ordered) {
                 if (!project(lm.enu, p)) continue
-                val fade = (1.15f - lm.distanceKm / 55f).coerceIn(0.25f, 1f)
+                val fade = (1.2f - lm.distanceKm / (rangeKm * 0.95f)).coerceIn(0.3f, 1f)
                 val base = if (night) {
                     Color(0xFFCC6655)
                 } else {
@@ -849,16 +858,28 @@ fun SkyCanvas(viewModel: SkyViewModel, settings: Settings, modifier: Modifier = 
                 val top = androidx.compose.ui.geometry.Offset(p[0], p[1] - 7f * density)
                 drawLine(color, androidx.compose.ui.geometry.Offset(p[0], p[1]), top, strokeWidth = 1.5f * density)
                 drawCircle(color, r, top)
+                // Draw a text label only where it fits without overlapping one already
+                // placed (trying a few stacked heights); otherwise leave just the pin.
+                if (labelCount >= MAX_LANDMARK_LABELS) continue
                 val sym = when (lm.type) {
                     "airport" -> "✈ "
                     "tower" -> "📡 "
                     else -> ""
                 }
-                bodyPaint.color = color.toArgb()
-                drawContext.canvas.nativeCanvas.drawText(
-                    "$sym${lm.name}  ${(lm.distanceKm * 0.621371f).toInt()} mi",
-                    p[0] + r + 4f * density, p[1] - 5f * density, bodyPaint,
-                )
+                val text = "$sym${lm.name}  ${(lm.distanceKm * 0.621371f).toInt()} mi"
+                val tw = bodyPaint.measureText(text)
+                val lx = p[0] + r + 4f * density
+                for (lvl in levels) {
+                    val ly = p[1] - lvl * density
+                    val rect = android.graphics.RectF(lx - 2f, ly - 11f * density, lx + tw + 2f, ly + 3f * density)
+                    if (taken.none { android.graphics.RectF.intersects(it, rect) }) {
+                        taken.add(rect)
+                        bodyPaint.color = color.toArgb()
+                        drawContext.canvas.nativeCanvas.drawText(text, lx, ly, bodyPaint)
+                        labelCount++
+                        break
+                    }
+                }
             }
         }
 
@@ -1107,6 +1128,14 @@ private fun nearestObject(
             bestD2 = d2
             best = aircraftIdentified(ac)
         }
+    }
+    for (lm in m.landmarks) {
+        val kind = when (lm.type) {
+            "airport" -> "Airport"
+            "tower" -> "Radio tower"
+            else -> "City"
+        }
+        consider(lm.enu, 0, lm.name, kind, null, null, "${(lm.distanceKm * 0.621371f).toInt()} mi away")
     }
     return best
 }

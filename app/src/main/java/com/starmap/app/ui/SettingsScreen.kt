@@ -181,9 +181,19 @@ fun SettingsScreen(viewModel: SkyViewModel, settings: Settings, onBack: () -> Un
             SectionHeader("Landmarks")
             SettingSwitch(
                 "Show landmarks",
-                "Nearby cities, airports & towers on the horizon (OpenStreetMap) — needs internet.",
+                "Nearby cities, airports & towers on the horizon (OpenStreetMap) — needs internet. " +
+                    "Aim the centre at one to read it.",
                 checked = settings.showLandmarks,
             ) { viewModel.setBool(BoolSetting.Landmarks, it) }
+            SettingSlider(
+                label = "Range",
+                value = settings.landmarkRangeKm,
+                valueText = "${settings.landmarkRangeKm.toInt()} km " +
+                    "(${(settings.landmarkRangeKm * 0.621371f).toInt()} mi)",
+                range = 5f..80f,
+                steps = 14,
+                onChange = { viewModel.setFloat(FloatSetting.LandmarkRange, it) },
+            )
 
             SectionHeader("Display")
             SettingSwitch("Daylight sky", "Blue sky and twilight colours when the Sun is up",

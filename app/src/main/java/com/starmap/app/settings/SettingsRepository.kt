@@ -42,6 +42,7 @@ data class Settings(
     val showAircraftTrails: Boolean = true,
     val showAircraftLabels: Boolean = true,
     val showLandmarks: Boolean = false,
+    val landmarkRangeKm: Float = 40f,
     val aircraftRangeNm: Float = 40f,
     val showBelowHorizon: Boolean = false,
     val showDaylightSky: Boolean = true,
@@ -93,6 +94,7 @@ class SettingsRepository(private val context: Context) {
         val showAircraftTrails = booleanPreferencesKey("show_aircraft_trails")
         val showAircraftLabels = booleanPreferencesKey("show_aircraft_labels")
         val showLandmarks = booleanPreferencesKey("show_landmarks")
+        val landmarkRangeKm = floatPreferencesKey("landmark_range_km")
         val aircraftRangeNm = floatPreferencesKey("aircraft_range_nm")
         val showBelowHorizon = booleanPreferencesKey("show_below_horizon")
         val showDaylightSky = booleanPreferencesKey("show_daylight_sky")
@@ -139,6 +141,7 @@ class SettingsRepository(private val context: Context) {
             showAircraftTrails = p[Keys.showAircraftTrails] ?: true,
             showAircraftLabels = p[Keys.showAircraftLabels] ?: true,
             showLandmarks = p[Keys.showLandmarks] ?: false,
+            landmarkRangeKm = (p[Keys.landmarkRangeKm] ?: 40f).coerceIn(5f, 80f),
             aircraftRangeNm = (p[Keys.aircraftRangeNm] ?: 40f).coerceAtMost(80f),
             showBelowHorizon = p[Keys.showBelowHorizon] ?: false,
             showDaylightSky = p[Keys.showDaylightSky] ?: true,
@@ -180,6 +183,7 @@ class SettingsRepository(private val context: Context) {
         LabelMagnitudeLimit(Keys.labelMagnitudeLimit),
         Fov(Keys.fovDeg),
         AircraftRange(Keys.aircraftRangeNm),
+        LandmarkRange(Keys.landmarkRangeKm),
     }
 
     enum class BoolSetting(val key: Preferences.Key<Boolean>) {
