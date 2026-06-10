@@ -17,6 +17,11 @@ import com.starmap.app.astro.StarCatalog
 import com.starmap.app.astro.SunMoon
 import com.starmap.app.satellite.NamedSat
 import com.starmap.app.sensors.LocationProvider
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
+import kotlin.math.asin
+import kotlin.math.atan2
 import kotlin.math.sqrt
 
 /** A celestial object reduced to a true-north ENU unit vector ready for projection. */
@@ -114,6 +119,9 @@ class SkyModel(
     val cometPaths: List<FloatArray>,
     val sun: BodyEnu?,
     val moon: MoonEnu?,
+    /** Pre-formatted info shown when the Sun / Moon is identified (rise-set, phases). */
+    val sunDetail: String,
+    val moonDetail: String,
     /** count*3 ENU vectors for visible satellites. */
     val satEnu: FloatArray,
     val satNames: List<String>,
@@ -208,6 +216,21 @@ object SkyBuilder {
             phase.illuminatedFraction.toFloat(),
             phase.waxing,
             "Moon",
+        )
+
+        // Pre-formatted Sun / Moon info for the identify card.
+        val hm = SimpleDateFormat("HH:mm", Locale.getDefault())
+        val md = SimpleDateFormat("MMM d", Locale.getDefault())
+        val rs = SunMoon.sunRiseSet(timeMillis, fix.latitude, fix.longitude)
+        val riseSet = rs.note ?: "Rise ${rs.riseMillis?.let { hm.format(Date(it)) } ?: "—"}" +
+            " · Set ${rs.setMillis?.let { hm.format(Date(it)) } ?: "—"}"
+        val sunDetail = "%s\n%s".format(altAzText(sunEnu), riseSet)
+        val phases = SunMoon.nextMoonPhases(jd)
+            .joinToString("  ") { "${it.symbol} ${md.format(Date(it.timeMillis))}" }
+        val moonDetail = "%s · %d%%\n%s".format(
+            SunMoon.phaseName(phase.illuminatedFraction, phase.waxing),
+            (phase.illuminatedFraction * 100).toInt(),
+            phases,
         )
 
         val eclipticLine = if (includeEcliptic) eqLineToEnu(ReferenceLines.ecliptic, basis) else FloatArray(0)
@@ -425,7 +448,7 @@ object SkyBuilder {
         return SkyModel(
             n, starEnu, catalog.mag, catalog.ci, catalog.labels, mwEnu, mwLevel,
             cons, artEnu, eclipticLine, equatorLine, gridLines, planets, radiants, messierEnu, asteroids,
-            asteroidPaths, comets, cometPaths, sun, moon, satEnu, satNames, satIsIss,
+            asteroidPaths, comets, cometPaths, sun, moon, sunDetail, moonDetail, satEnu, satNames, satIsIss,
             aircraftRenders, declination, fix, timeMillis,
         )
     }
@@ -450,6 +473,14 @@ object SkyBuilder {
 
     private const val PATH_SAMPLES = 15      // each side of "now"
     private const val PATH_STEP_DAYS = 4.0   // ⇒ ±60 days of track
+
+    private fun altAzText(enu: FloatArray): String {
+        val alt = Math.toDegrees(asin(enu[2].coerceIn(-1f, 1f).toDouble()))
+        val az = (Math.toDegrees(atan2(enu[0].toDouble(), enu[1].toDouble())) + 360.0) % 360.0
+        val dirs = arrayOf("N", "NE", "E", "SE", "S", "SW", "W", "NW")
+        val compass = dirs[(((az + 22.5) % 360.0) / 45.0).toInt() % 8]
+        return "Alt %.0f° · Az %.0f° %s".format(alt, az, compass)
+    }
 
     private fun toEnu(vecEq: DoubleArray, basis: AstroMath.EnuBasis): FloatArray = floatArrayOf(
         AstroMath.dot(vecEq, basis.east).toFloat(),

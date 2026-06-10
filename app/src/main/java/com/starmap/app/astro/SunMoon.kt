@@ -170,4 +170,86 @@ object SunMoon {
     }
 
     data class Phase(val illuminatedFraction: Double, val waxing: Boolean, val elongationDeg: Double)
+
+    /** Sunrise / sunset (UTC epoch millis) for the date of [timeMillis] at the location. */
+    data class RiseSet(val riseMillis: Long?, val setMillis: Long?, val note: String?)
+
+    fun sunRiseSet(timeMillis: Long, latDeg: Double, lonDeg: Double): RiseSet {
+        val jd = timeMillis / 86_400_000.0 + 2_440_587.5
+        val nDay = Math.round(jd - 2_451_545.0 + 0.0008).toDouble()
+        val jStar = nDay - lonDeg / 360.0                 // mean solar noon
+        val m = norm360(357.5291 + 0.98560028 * jStar)    // solar mean anomaly
+        val mr = m * DEG2RAD
+        val c = 1.9148 * sin(mr) + 0.0200 * sin(2 * mr) + 0.0003 * sin(3 * mr)
+        val lambda = norm360(m + c + 180.0 + 102.9372)    // ecliptic longitude
+        val lr = lambda * DEG2RAD
+        val jTransit = 2_451_545.0 + jStar + 0.0053 * sin(mr) - 0.0069 * sin(2 * lr)
+        val sinDec = sin(lr) * sin(23.44 * DEG2RAD)
+        val cosDec = sqrt(1.0 - sinDec * sinDec)
+        val cosH = (sin(-0.833 * DEG2RAD) - sin(latDeg * DEG2RAD) * sinDec) /
+            (cos(latDeg * DEG2RAD) * cosDec)
+        if (cosH > 1.0) return RiseSet(null, null, "Sun stays down")
+        if (cosH < -1.0) return RiseSet(null, null, "Sun stays up")
+        val h = kotlin.math.acos(cosH) * RAD2DEG
+        return RiseSet(jdToMillis(jTransit - h / 360.0), jdToMillis(jTransit + h / 360.0), null)
+    }
+
+    /** A principal Moon phase with its symbol and time (UTC epoch millis). */
+    data class PhaseEvent(val name: String, val symbol: String, val timeMillis: Long)
+
+    /** The next four principal Moon phases (new, first quarter, full, last quarter), in order. */
+    fun nextMoonPhases(jd: Double): List<PhaseEvent> {
+        fun dAt(t: Double): Double {
+            val p = moonPhase(jd + t)
+            return if (p.waxing) p.elongationDeg else 360.0 - p.elongationDeg
+        }
+        val d0 = dAt(0.0)
+        val ts = ArrayList<Double>()
+        val cums = ArrayList<Double>()
+        var cum = d0
+        var prevRaw = d0
+        ts.add(0.0); cums.add(cum)
+        var t = 0.25
+        while (t <= 40.0) {
+            val raw = dAt(t)
+            var delta = raw - prevRaw
+            if (delta < 0) delta += 360.0
+            cum += delta
+            ts.add(t); cums.add(cum)
+            prevRaw = raw
+            t += 0.25
+        }
+        val types = listOf(
+            Triple(0.0, "New moon", "🌑"),
+            Triple(90.0, "First quarter", "🌓"),
+            Triple(180.0, "Full moon", "🌕"),
+            Triple(270.0, "Last quarter", "🌗"),
+        )
+        val events = ArrayList<PhaseEvent>()
+        for ((angle, name, sym) in types) {
+            var target = angle + 360.0 * kotlin.math.ceil((d0 - angle) / 360.0)
+            if (target <= d0 + 1.0) target += 360.0 // skip a phase that is essentially now
+            for (i in 1 until cums.size) {
+                if (cums[i] >= target) {
+                    val frac = (target - cums[i - 1]) / (cums[i] - cums[i - 1])
+                    val tc = ts[i - 1] + frac * (ts[i] - ts[i - 1])
+                    events.add(PhaseEvent(name, sym, jdToMillis(jd + tc)))
+                    break
+                }
+            }
+        }
+        events.sortBy { it.timeMillis }
+        return events
+    }
+
+    /** Common name for an illuminated fraction + waxing flag. */
+    fun phaseName(illum: Double, waxing: Boolean): String = when {
+        illum < 0.02 -> "New moon"
+        illum > 0.98 -> "Full moon"
+        illum in 0.46..0.54 -> if (waxing) "First quarter" else "Last quarter"
+        illum < 0.5 -> if (waxing) "Waxing crescent" else "Waning crescent"
+        else -> if (waxing) "Waxing gibbous" else "Waning gibbous"
+    }
+
+    private fun jdToMillis(jd: Double): Long = ((jd - 2_440_587.5) * 86_400_000.0).toLong()
 }

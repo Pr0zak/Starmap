@@ -1019,7 +1019,15 @@ private fun nearestObject(
     val out = FloatArray(2)
     var bestD2 = thresh * thresh
     var best: IdentifiedObject? = null
-    fun consider(arr: FloatArray, base: Int, name: String, kind: String, mag: Float?, target: SearchTarget?) {
+    fun consider(
+        arr: FloatArray,
+        base: Int,
+        name: String,
+        kind: String,
+        mag: Float?,
+        target: SearchTarget?,
+        detailOverride: String? = null,
+    ) {
         if (!ps.showBelow && arr[base + 2] < 0f) return
         if (!ps.projectAt(arr, base, out)) return
         val dx = out[0] - ox
@@ -1027,11 +1035,15 @@ private fun nearestObject(
         val d2 = dx * dx + dy * dy
         if (d2 < bestD2) {
             bestD2 = d2
-            best = identify(arr, base, name, kind, mag, target)
+            best = if (detailOverride != null) {
+                IdentifiedObject(name, kind, detailOverride, target)
+            } else {
+                identify(arr, base, name, kind, mag, target)
+            }
         }
     }
-    m.sun?.let { consider(it.enu, 0, "Sun", "Star", null, SearchTarget.SpecialT("Sun")) }
-    m.moon?.let { consider(it.enu, 0, "Moon", "Moon", null, SearchTarget.SpecialT("Moon")) }
+    m.sun?.let { consider(it.enu, 0, "Sun", "Star", null, SearchTarget.SpecialT("Sun"), m.sunDetail) }
+    m.moon?.let { consider(it.enu, 0, "Moon", "Moon", null, SearchTarget.SpecialT("Moon"), m.moonDetail) }
     for (pl in m.planets) consider(pl.enu, 0, pl.name, "Planet", null, SearchTarget.PlanetT(pl.name))
     for (c in m.comets) consider(c.enu, 0, c.name, "Comet", c.magnitude, SearchTarget.CometT(c.name))
     for (a in m.asteroids) consider(a.enu, 0, a.name, "Asteroid", null, SearchTarget.AsteroidT(a.name))
