@@ -424,9 +424,9 @@ class SkyViewModel(app: Application) : AndroidViewModel(app) {
                             landmarkFetchLat = fix.latitude
                             landmarkFetchLon = fix.longitude
                             _landmarkMessage.value = if (r.landmarks.isEmpty()) {
-                                "No mapped landmarks within range"
+                                "No mapped landmarks within 60 km"
                             } else {
-                                "${r.landmarks.size} landmarks — look toward the horizon"
+                                "${r.landmarks.size} landmarks within 60 km — look toward the horizon"
                             }
                         }
                         is LandmarkManager.Result.Failed ->

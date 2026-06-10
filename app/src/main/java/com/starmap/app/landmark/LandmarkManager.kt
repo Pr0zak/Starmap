@@ -26,40 +26,59 @@ class LandmarkManager {
         data class Failed(val message: String) : Result
     }
 
-    suspend fun fetch(lat: Double, lon: Double, radiusMeters: Int = 60000): Result =
+    suspend fun fetch(lat: Double, lon: Double, radiusMeters: Int = RADIUS_M): Result =
         withContext(Dispatchers.IO) {
             val r = radiusMeters
             val query = """
                 [out:json][timeout:25];
                 (
-                  node["place"="city"](around:$r,$lat,$lon);
-                  node["place"="town"](around:$r,$lat,$lon);
+                  node["place"~"city|town|village|borough"](around:$r,$lat,$lon);
                   node["aeroway"="aerodrome"]["name"](around:$r,$lat,$lon);
                   way["aeroway"="aerodrome"]["name"](around:$r,$lat,$lon);
                   node["man_made"~"tower|mast"]["name"](around:$r,$lat,$lon);
                 );
-                out center 90;
+                out center 120;
             """.trimIndent()
             val encoded = URLEncoder.encode(query, "UTF-8")
             val errors = ArrayList<String>()
             for (endpoint in ENDPOINTS) {
                 val host = runCatching { URL(endpoint).host }.getOrDefault(endpoint)
-                when (val get = request(endpoint, encoded, "GET")) {
-                    is Attempt.Body -> return@withContext Result.Ok(parse(JSONObject(get.text)))
-                    is Attempt.Error -> {
-                        errors.add("$host: ${get.reason}")
-                        // A few proxies forbid GET; retry once with POST before moving on.
-                        if ("403" in get.reason || "405" in get.reason) {
-                            val post = request(endpoint, encoded, "POST")
-                            if (post is Attempt.Body) {
-                                return@withContext Result.Ok(parse(JSONObject(post.text)))
+                when (val a = attempt(endpoint, encoded)) {
+                    is Attempt.Body -> {
+                        val json = runCatching { JSONObject(a.text) }.getOrNull()
+                        if (json == null) {
+                            errors.add("$host: unreadable response")
+                        } else {
+                            val items = parse(json)
+                            if (items.isNotEmpty()) return@withContext Result.Ok(items)
+                            // Overpass answers 200 with empty elements + a "remark" when it
+                            // times out or runs short of memory. Treat that as a failure so we
+                            // try the next mirror instead of claiming there is nothing nearby.
+                            val remark = json.optString("remark")
+                            if (remark.isNotBlank()) {
+                                errors.add("$host: ${hint(remark)}")
+                            } else {
+                                return@withContext Result.Ok(emptyList())
                             }
                         }
                     }
+                    is Attempt.Error -> errors.add("$host: ${a.reason}")
                 }
             }
             Result.Failed(errors.firstOrNull() ?: "no response")
         }
+
+    /** One endpoint: a plain GET, falling back to POST if the server forbids GET. */
+    private fun attempt(endpoint: String, encoded: String): Attempt {
+        val get = request(endpoint, encoded, "GET")
+        if (get is Attempt.Body) return get
+        val reason = (get as Attempt.Error).reason
+        if ("403" in reason || "405" in reason) {
+            val post = request(endpoint, encoded, "POST")
+            if (post is Attempt.Body) return post
+        }
+        return get
+    }
 
     private sealed interface Attempt {
         data class Body(val text: String) : Attempt
@@ -134,6 +153,9 @@ class LandmarkManager {
     }
 
     private companion object {
+        /** Search radius around the observer, in metres. */
+        const val RADIUS_M = 60000
+
         // Browser-style UA: several mirrors front Cloudflare, which 403s obvious
         // bots. Still names the app so operators can identify the traffic.
         const val USER_AGENT = "Mozilla/5.0 (Android; Mobile) Starmap/1.0"
