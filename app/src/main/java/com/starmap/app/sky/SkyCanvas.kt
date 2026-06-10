@@ -779,7 +779,8 @@ fun SkyCanvas(viewModel: SkyViewModel, settings: Settings, modifier: Modifier = 
                     bodyPaint.color = color.toArgb()
                     val ft = (ac.altitudeMeters / 0.3048).toInt()
                     drawContext.canvas.nativeCanvas.drawText(
-                        "${ac.callsign}  ${ft}ft", sx + 6f * density, sy + 4f * density, bodyPaint,
+                        "${ac.callsign}  ${ft}ft  ${distNm.toInt()}nm",
+                        sx + 6f * density, sy + 4f * density, bodyPaint,
                     )
                 }
             }
