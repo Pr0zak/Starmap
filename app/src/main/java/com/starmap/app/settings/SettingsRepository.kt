@@ -43,6 +43,9 @@ data class Settings(
     val showAircraftLabels: Boolean = true,
     val showLandmarks: Boolean = false,
     val landmarkRangeKm: Float = 40f,
+    val landmarkCities: Boolean = true,
+    val landmarkAirports: Boolean = true,
+    val landmarkTowers: Boolean = true,
     val aircraftRangeNm: Float = 40f,
     val showBelowHorizon: Boolean = false,
     val showDaylightSky: Boolean = true,
@@ -95,6 +98,9 @@ class SettingsRepository(private val context: Context) {
         val showAircraftLabels = booleanPreferencesKey("show_aircraft_labels")
         val showLandmarks = booleanPreferencesKey("show_landmarks")
         val landmarkRangeKm = floatPreferencesKey("landmark_range_km")
+        val landmarkCities = booleanPreferencesKey("landmark_cities")
+        val landmarkAirports = booleanPreferencesKey("landmark_airports")
+        val landmarkTowers = booleanPreferencesKey("landmark_towers")
         val aircraftRangeNm = floatPreferencesKey("aircraft_range_nm")
         val showBelowHorizon = booleanPreferencesKey("show_below_horizon")
         val showDaylightSky = booleanPreferencesKey("show_daylight_sky")
@@ -142,6 +148,9 @@ class SettingsRepository(private val context: Context) {
             showAircraftLabels = p[Keys.showAircraftLabels] ?: true,
             showLandmarks = p[Keys.showLandmarks] ?: false,
             landmarkRangeKm = (p[Keys.landmarkRangeKm] ?: 40f).coerceIn(5f, 80f),
+            landmarkCities = p[Keys.landmarkCities] ?: true,
+            landmarkAirports = p[Keys.landmarkAirports] ?: true,
+            landmarkTowers = p[Keys.landmarkTowers] ?: true,
             aircraftRangeNm = (p[Keys.aircraftRangeNm] ?: 40f).coerceAtMost(80f),
             showBelowHorizon = p[Keys.showBelowHorizon] ?: false,
             showDaylightSky = p[Keys.showDaylightSky] ?: true,
@@ -212,6 +221,9 @@ class SettingsRepository(private val context: Context) {
         AircraftTrails(Keys.showAircraftTrails),
         AircraftLabels(Keys.showAircraftLabels),
         Landmarks(Keys.showLandmarks),
+        LandmarkCities(Keys.landmarkCities),
+        LandmarkAirports(Keys.landmarkAirports),
+        LandmarkTowers(Keys.landmarkTowers),
         BelowHorizon(Keys.showBelowHorizon),
         DaylightSky(Keys.showDaylightSky),
         Refraction(Keys.applyRefraction),

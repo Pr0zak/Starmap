@@ -565,7 +565,13 @@ class SkyViewModel(app: Application) : AndroidViewModel(app) {
                             satellites = sats,
                             aircraft = aircraftTracks,
                             includeLandmarks = s.showLandmarks,
-                            landmarks = landmarks,
+                            landmarks = landmarks.filter {
+                                when (it.type) {
+                                    "airport" -> s.landmarkAirports
+                                    "tower" -> s.landmarkTowers
+                                    else -> s.landmarkCities
+                                }
+                            },
                             showBelowHorizon = s.showBelowHorizon,
                         )
                     }

@@ -194,6 +194,15 @@ fun SettingsScreen(viewModel: SkyViewModel, settings: Settings, onBack: () -> Un
                 steps = 14,
                 onChange = { viewModel.setFloat(FloatSetting.LandmarkRange, it) },
             )
+            SettingSwitch(
+                "Cities & towns", checked = settings.landmarkCities, enabled = settings.showLandmarks,
+            ) { viewModel.setBool(BoolSetting.LandmarkCities, it) }
+            SettingSwitch(
+                "Airports", checked = settings.landmarkAirports, enabled = settings.showLandmarks,
+            ) { viewModel.setBool(BoolSetting.LandmarkAirports, it) }
+            SettingSwitch(
+                "Towers & masts", checked = settings.landmarkTowers, enabled = settings.showLandmarks,
+            ) { viewModel.setBool(BoolSetting.LandmarkTowers, it) }
 
             SectionHeader("Display")
             SettingSwitch("Daylight sky", "Blue sky and twilight colours when the Sun is up",
