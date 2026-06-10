@@ -9,6 +9,17 @@
   Starmap shows what's there — labelled in real time — and moves with the phone.
 </p>
 
+## Screenshots
+
+<p align="center">
+  <img src="docs/screenshot-sky.png" width="30%" alt="Sky view">
+  <img src="docs/screenshot-radar.png" width="30%" alt="Radar mode">
+  <img src="docs/screenshot-aircraft.png" width="30%" alt="Aircraft details">
+</p>
+
+> Screenshots are captured on a device — drop PNGs at `docs/screenshot-sky.png`,
+> `docs/screenshot-radar.png` and `docs/screenshot-aircraft.png` to fill these in.
+
 ## How it works
 
 Starmap uses your phone's location and motion sensors (compass, accelerometer and
@@ -30,6 +41,11 @@ then draws everything in that direction:
 - **Satellites** — the International Space Station and the Starlink fleet.
 - **Aircraft** — live nearby planes and helicopters from ADS-B; tap one for its
   type, altitude, speed, heading, distance, route (origin → destination) and a photo.
+- **Landmarks** — nearby cities, airports and radio towers on the horizon
+  (OpenStreetMap), with an adjustable range and per-type filters; aim at one to read it.
+- **Radar mode** — a top-down "scope" centred on you, plotting nearby aircraft and
+  landmarks by true bearing and distance, with range rings, a compass, North-up or
+  heading-up, altitude-coloured traffic and a live aircraft list.
 - **Reference lines** — the ecliptic, celestial equator and an RA/Dec grid.
 - **Horizon & compass** — a horizon line and N/E/S/W markers.
 - **Time machine** — scrub the sky to any date and time, or run a time-lapse.
@@ -50,15 +66,19 @@ it stays accurate through the night and wherever you travel.
 - **Tap anything** — a star, planet, the Moon, a comet, a satellite or an
   aircraft — to identify it and see its details.
 - Tap the **camera** icon for augmented reality: the sky drawn over the live view.
+- Tap the **plane** icon for **radar mode** — a top-down scope centred on you with
+  aircraft and landmarks plotted by range; tap a blip or a list row for details, and
+  switch between North-up and heading-up.
 - Tap the **clock** to open the time machine — jump or time-lapse to any moment,
   then **Now** to snap back to live.
 - **Pinch** to zoom; switch to **manual mode** (hand icon) to drag around the sky
   without moving the phone.
 - Rotate to **landscape** any time.
-- Open **Settings** to choose exactly what to show, pick a **range** for aircraft,
-  turn on a **night-vision red mode**, set your location by hand, and more.
+- Open **Settings** to choose exactly what to show, set ranges for **aircraft** and
+  **landmarks** (and which landmark types appear), turn on a **night-vision red
+  mode**, set your location by hand, and more.
 
 The core sky works fully **offline** — the star, constellation, asteroid, comet,
 Milky Way and deep-sky data is built into the app. Location is used only to line the sky up with
 where you are; the motion sensors only to follow where the phone is pointing.
-Satellites and live aircraft need an internet connection.
+Satellites, live aircraft and landmarks need an internet connection.
