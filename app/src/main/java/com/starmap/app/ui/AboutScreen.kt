@@ -2,12 +2,15 @@ package com.starmap.app.ui
 
 import android.content.Intent
 import android.net.Uri
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -24,7 +27,10 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
@@ -112,10 +118,13 @@ fun AboutScreen(viewModel: SkyViewModel, onBack: () -> Unit) {
                         visualTransformation = PasswordVisualTransformation(),
                         modifier = Modifier.fillMaxWidth(),
                     )
+                    val clipboard = LocalClipboardManager.current
                     var diagStatus by remember { mutableStateOf<String?>(null) }
+                    var diagLink by remember { mutableStateOf<String?>(null) }
                     Spacer(Modifier.height(8.dp))
                     OutlinedButton(onClick = {
                         scope.launch {
+                            diagLink = null
                             diagStatus = "Uploading…"
                             val crash = File(context.filesDir, "last_crash.txt")
                             val text = if (crash.exists()) {
@@ -125,12 +134,32 @@ fun AboutScreen(viewModel: SkyViewModel, onBack: () -> Unit) {
                                     "Version ${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})"
                             }
                             LogUploader.upload(context, text)
-                                .onSuccess { diagStatus = "Uploaded (copy this link): $it" }
-                                .onFailure { diagStatus = "Failed: ${it.message}" }
+                                .onSuccess {
+                                    diagLink = it
+                                    clipboard.setText(AnnotatedString(it))
+                                    diagStatus = "Uploaded — link copied to clipboard."
+                                }
+                                .onFailure { diagStatus = "Failed: ${it.message}"; diagLink = null }
                         }
                     }) { Text("Upload diagnostics") }
                     diagStatus?.let {
                         Text(it, fontSize = 12.sp, modifier = Modifier.padding(top = 8.dp))
+                    }
+                    diagLink?.let { link ->
+                        SelectionContainer {
+                            Text(
+                                link,
+                                fontSize = 12.sp,
+                                color = Color(0xFF4DA3FF),
+                                modifier = Modifier.padding(top = 4.dp),
+                            )
+                        }
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            TextButton(onClick = { clipboard.setText(AnnotatedString(link)) }) {
+                                Text("Copy link")
+                            }
+                            TextButton(onClick = { openUrl(link) }) { Text("Open") }
+                        }
                     }
                 }
             }
