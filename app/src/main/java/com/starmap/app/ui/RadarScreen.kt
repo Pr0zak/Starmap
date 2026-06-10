@@ -41,6 +41,7 @@ import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.Stroke
@@ -157,6 +158,7 @@ fun RadarView(
                 },
         ) {
             hits.clear()
+            labelPaint.textSize = 10f * density
             val az = azState.floatValue
             val maxRangeKm = rangeNm * 1.852f
             val a = if (headingUp) Math.toRadians(az.toDouble()) else 0.0
@@ -197,6 +199,20 @@ fun RadarView(
                     lbl, cx + (sin(ang) * rim).toFloat(), cy - (cos(ang) * rim).toFloat() + 3f * density, ringPaint,
                 )
             }
+            // Minor compass ticks every 30°.
+            for (d in 30 until 360 step 30) {
+                if (d % 90 == 0) continue
+                val ang = Math.toRadians(d.toDouble()) - a
+                drawLine(
+                    Color(0x3320E060),
+                    Offset(cx + (sin(ang) * (r - 5f * density)).toFloat(), cy - (cos(ang) * (r - 5f * density)).toFloat()),
+                    Offset(cx + (sin(ang) * r).toFloat(), cy - (cos(ang) * r).toFloat()),
+                    strokeWidth = 1f * density,
+                )
+            }
+            drawContext.canvas.nativeCanvas.drawText(
+                "HDG ${az.roundToInt() % 360}°", cx, cy - r - 22f * density, ringPaint,
+            )
             drawContext.canvas.nativeCanvas.drawText(
                 "${rangeNm.roundToInt()} nm  ·  pinch to zoom", cx, cy + r + 20f * density, ringPaint,
             )
@@ -224,7 +240,9 @@ fun RadarView(
             // Aircraft: dead-reckoned blip, trail, velocity leader, chevron.
             val acPos = FloatArray(3)
             val acNow = System.currentTimeMillis()
-            for (ac in aircraft) {
+            val taken = ArrayList<android.graphics.RectF>(48)
+            val selRoute = viewModel.selectedRoute.value
+            for (ac in aircraft.sortedBy { it.rangeKm }) {
                 val ft = ac.altitudeMeters / 0.3048
                 if (ft < altMin || ft > altMax) continue
                 ac.positionInto(acNow, acPos)
@@ -289,11 +307,76 @@ fun RadarView(
                         s * (1.7f + 0.7f * pulse), o, style = Stroke(1.6f * density),
                     )
                 }
-                labelPaint.color = col.toArgb()
-                val name = ac.callsign.ifBlank { ac.typeCode.ifBlank { "?" } }
-                drawContext.canvas.nativeCanvas.drawText(
-                    "$name  FL${(ft / 100).roundToInt()}", o.x + 7f * density, o.y - 4f * density, labelPaint,
-                )
+                val vr = when {
+                    ac.verticalRateFpm > 200 -> " ↑"
+                    ac.verticalRateFpm < -200 -> " ↓"
+                    else -> ""
+                }
+                if (ac.icaoHex == selectedHex) {
+                    // Full data block beside the selected blip.
+                    val lines = buildList {
+                        add(ac.callsign.ifBlank { ac.registration.ifBlank { "Aircraft" } })
+                        add("${ac.typeCode.ifBlank { "—" }}  FL${(ft / 100).roundToInt()}$vr")
+                        add("${ac.groundSpeedKts.roundToInt()} kt  ·  ${(ac.rangeKm * 0.539957).roundToInt()} nm")
+                        selRoute?.let {
+                            val rt = "${it.origin}→${it.destination}"
+                            if (rt.length > 1) add(rt)
+                        }
+                    }
+                    labelPaint.textSize = 11f * density
+                    var bw = 0f
+                    for (ln in lines) bw = maxOf(bw, labelPaint.measureText(ln))
+                    val lh = 13f * density
+                    val bx = (o.x + 10f * density)
+                        .coerceAtMost(size.width - bw - 6f * density).coerceAtLeast(4f * density)
+                    val by = (o.y - 8f * density - lines.size * lh).coerceAtLeast(12f * density)
+                    drawRect(
+                        Color(0xD8090D12),
+                        topLeft = Offset(bx - 4f * density, by - 11f * density),
+                        size = Size(bw + 8f * density, lines.size * lh + 6f * density),
+                    )
+                    labelPaint.color = Color(0xFFFFE082).toArgb()
+                    var yy = by
+                    for (ln in lines) {
+                        drawContext.canvas.nativeCanvas.drawText(ln, bx, yy, labelPaint)
+                        yy += lh
+                    }
+                    taken.add(
+                        android.graphics.RectF(
+                            bx - 4f * density, by - 11f * density,
+                            bx + bw + 4f * density, by + lines.size * lh,
+                        ),
+                    )
+                    labelPaint.textSize = 10f * density
+                } else {
+                    val name = ac.callsign.ifBlank { ac.typeCode.ifBlank { "?" } }
+                    val text = "$name  FL${(ft / 100).roundToInt()}$vr"
+                    val tw = labelPaint.measureText(text)
+                    val lx = o.x + 7f * density
+                    val ly = o.y - 4f * density
+                    val rect = android.graphics.RectF(lx, ly - 9f * density, lx + tw, ly + 2f * density)
+                    if (ac.isEmergency || taken.none { android.graphics.RectF.intersects(it, rect) }) {
+                        taken.add(rect)
+                        labelPaint.color = col.toArgb()
+                        drawContext.canvas.nativeCanvas.drawText(text, lx, ly, labelPaint)
+                    }
+                }
+            }
+
+            // Altitude colour legend (left edge).
+            labelPaint.textSize = 9f * density
+            var lgy = cy - 26f * density
+            for ((c, lab) in listOf(
+                Color(0xFFCE93D8) to "30k+",
+                Color(0xFF5C9DFF) to "20–30k",
+                Color(0xFF4DD0E1) to "10–20k",
+                Color(0xFF8BC34A) to "1–10k",
+                Color(0xFFBCAAA4) to "<1k",
+            )) {
+                drawCircle(c, 3f * density, Offset(12f * density, lgy - 3f * density))
+                labelPaint.color = Color(0xCCB6C2D2).toArgb()
+                drawContext.canvas.nativeCanvas.drawText(lab, 20f * density, lgy, labelPaint)
+                lgy += 13f * density
             }
         }
 
