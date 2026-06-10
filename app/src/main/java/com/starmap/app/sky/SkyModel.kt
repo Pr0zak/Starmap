@@ -75,7 +75,24 @@ class AircraftRender(
     val emergencyText: String,
     /** Flattened ENU trail positions in km, x,y,z,… (oldest→newest). */
     val trail: FloatArray,
+    /** Wall-clock time (ms) the position fix was taken, for dead-reckoning. */
+    val updatedAtMillis: Long,
 )
+
+/**
+ * Dead-reckoned ENU position (km) as of [nowMillis]: the aircraft's fixed position
+ * advanced along its ground track at its ground speed for the time since its last
+ * fix. Written into [out] (size 3) to avoid per-frame allocation. Projecting this
+ * smooths the ~12-second jumps between ADS-B updates in both the sky and radar views.
+ */
+fun AircraftRender.positionInto(nowMillis: Long, out: FloatArray) {
+    val ageSeconds = ((nowMillis - updatedAtMillis).coerceIn(0L, 30_000L)) / 1000f
+    val travelledKm = (groundSpeedKts * 1.852 / 3600.0) * ageSeconds
+    val track = Math.toRadians(trackDeg)
+    out[0] = (enu[0] * rangeKm + travelledKm * kotlin.math.sin(track)).toFloat()
+    out[1] = (enu[1] * rangeKm + travelledKm * kotlin.math.cos(track)).toFloat()
+    out[2] = (enu[2] * rangeKm).toFloat()
+}
 
 /** A ground landmark on the horizon: its direction (alt 0) at its bearing, plus distance. */
 class LandmarkEnu(val name: String, val type: String, val enu: FloatArray, val distanceKm: Float)
@@ -440,7 +457,7 @@ object SkyBuilder {
                         unit, ac.icaoHex, ac.callsign, ac.isHelicopter, ac.typeCode,
                         ac.altitudeMeters, ac.groundSpeedKts, ac.trackDeg, range,
                         ac.registration, ac.verticalRateFpm, ac.squawk, ac.isEmergency, ac.emergencyText,
-                        trail,
+                        trail, ac.updatedAtMillis,
                     ),
                 )
             }

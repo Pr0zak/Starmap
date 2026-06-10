@@ -708,8 +708,11 @@ fun SkyCanvas(viewModel: SkyViewModel, settings: Settings, modifier: Modifier = 
             val planeColor = if (night) Color(0xFFCC8844) else Color(0xFFFFB060)
             val heliColor = if (night) Color(0xFFAA6699) else Color(0xFF55E0D0)
             bodyPaint.textSize = 11f * density
+            val acPos = FloatArray(3)
+            val acNow = System.currentTimeMillis()
             for (ac in m.aircraft) {
-                val v = ac.enu
+                ac.positionInto(acNow, acPos)
+                val v = acPos
                 val depth = v[0] * look[0] + v[1] * look[1] + v[2] * look[2]
                 if (depth < MIN_DEPTH) continue
                 val sx = cx + ((v[0] * right[0] + v[1] * right[1] + v[2] * right[2]) / depth) * focal
@@ -733,9 +736,7 @@ fun SkyCanvas(viewModel: SkyViewModel, settings: Settings, modifier: Modifier = 
                         if (k + 1 < n) {
                             bx2 = trail[nb]; by2 = trail[nb + 1]; bz2 = trail[nb + 2]
                         } else {
-                            bx2 = (ac.enu[0] * ac.rangeKm).toFloat()
-                            by2 = (ac.enu[1] * ac.rangeKm).toFloat()
-                            bz2 = (ac.enu[2] * ac.rangeKm).toFloat()
+                            bx2 = acPos[0]; by2 = acPos[1]; bz2 = acPos[2]
                         }
                         var s = 0
                         while (s < steps) {

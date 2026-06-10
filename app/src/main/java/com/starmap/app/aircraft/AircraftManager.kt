@@ -42,6 +42,7 @@ class AircraftTrack(
     val isEmergency: Boolean,
     val emergencyText: String,
     val trail: List<DoubleArray>,
+    val updatedAtMillis: Long,
 )
 
 /**

@@ -54,6 +54,7 @@ import com.starmap.app.settings.SettingsRepository.FloatSetting
 import com.starmap.app.sky.AircraftRender
 import com.starmap.app.sky.SkyModel
 import com.starmap.app.sky.SkyViewModel
+import com.starmap.app.sky.positionInto
 import kotlinx.coroutines.android.awaitFrame
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collectLatest
@@ -200,11 +201,13 @@ fun RadarView(
                 }
             }
 
-            // Aircraft: trail, then a chevron along heading, coloured by altitude.
+            // Aircraft: dead-reckoned blip, trail, velocity leader, chevron.
+            val acPos = FloatArray(3)
+            val acNow = System.currentTimeMillis()
             for (ac in aircraft) {
-                val dist = ac.rangeKm.toFloat()
-                val eKm = ac.enu[0] * dist
-                val nKm = ac.enu[1] * dist
+                ac.positionInto(acNow, acPos)
+                val eKm = acPos[0]
+                val nKm = acPos[1]
                 if (hypot(eKm, nKm) > maxRangeKm) continue
                 val o = proj(eKm, nKm)
                 hits.add(o to ac)
@@ -246,6 +249,11 @@ fun RadarView(
                 val s = 6f * density
                 fun dir(t: Double, len: Float) =
                     Offset(o.x + (sin(t) * len).toFloat(), o.y - (cos(t) * len).toFloat())
+                // Velocity leader line: roughly one minute ahead, scaled by ground speed.
+                val leadPx = (ac.groundSpeedKts * 1.852 / 60.0).toFloat() * scale
+                if (leadPx > 1f) {
+                    drawLine(col.copy(alpha = 0.5f), o, dir(theta, leadPx), strokeWidth = 1.2f * density)
+                }
                 val tip = dir(theta, s)
                 val bl = dir(theta + 2.6, s * 0.85f)
                 val brr = dir(theta - 2.6, s * 0.85f)

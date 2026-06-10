@@ -500,6 +500,7 @@ class SkyViewModel(app: Application) : AndroidViewModel(app) {
                 when (val r = aircraftManager.fetch(fix.latitude, fix.longitude, acRange)) {
                     is AircraftManager.Result.Ok -> {
                         val seen = HashSet<String>()
+                        val now = System.currentTimeMillis()
                         aircraftTracks = r.aircraft.map { ac ->
                             seen.add(ac.id)
                             val dq = aircraftHistory.getOrPut(ac.id) { ArrayDeque() }
@@ -509,7 +510,7 @@ class SkyViewModel(app: Application) : AndroidViewModel(app) {
                                 ac.id, ac.callsign, ac.isHelicopter, ac.latitude, ac.longitude,
                                 ac.altitudeMeters, ac.typeCode, ac.groundSpeedKts, ac.trackDeg,
                                 ac.registration, ac.verticalRateFpm, ac.squawk, ac.isEmergency,
-                                ac.emergencyText, dq.dropLast(1).toList(),
+                                ac.emergencyText, dq.dropLast(1).toList(), now,
                             )
                         }
                         aircraftHistory.keys.retainAll(seen)
