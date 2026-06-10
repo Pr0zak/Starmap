@@ -227,7 +227,7 @@ object SkyBuilder {
         )
 
         // Pre-formatted Sun / Moon info for the identify card.
-        val hm = SimpleDateFormat("HH:mm", Locale.getDefault())
+        val hm = SimpleDateFormat("h:mm a", Locale.getDefault())
         val md = SimpleDateFormat("MMM d", Locale.getDefault())
         val rs = SunMoon.sunRiseSet(timeMillis, fix.latitude, fix.longitude)
         val riseSet = rs.note ?: "Rise ${rs.riseMillis?.let { hm.format(Date(it)) } ?: "—"}" +

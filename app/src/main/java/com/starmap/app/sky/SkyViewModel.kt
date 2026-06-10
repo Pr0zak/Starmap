@@ -98,6 +98,8 @@ class SkyViewModel(app: Application) : AndroidViewModel(app) {
     private var landmarks: List<Landmark> = emptyList()
     private var landmarkFetchLat = Double.NaN
     private var landmarkFetchLon = Double.NaN
+    private val _landmarkMessage = mutableStateOf<String?>(null)
+    val landmarkMessage: State<String?> = _landmarkMessage
     private val aircraftHistory = HashMap<String, ArrayDeque<DoubleArray>>()
 
     private val _selectedAircraft = mutableStateOf<AircraftRender?>(null)
@@ -421,15 +423,22 @@ class SkyViewModel(app: Application) : AndroidViewModel(app) {
                             landmarks = r.landmarks
                             landmarkFetchLat = fix.latitude
                             landmarkFetchLon = fix.longitude
+                            _landmarkMessage.value = if (r.landmarks.isEmpty()) {
+                                "No mapped landmarks within range"
+                            } else {
+                                "${r.landmarks.size} landmarks — look toward the horizon"
+                            }
                         }
-                        is LandmarkManager.Result.Failed -> Log.w(TAG, "Landmarks: ${r.message}")
+                        is LandmarkManager.Result.Failed ->
+                            _landmarkMessage.value = "Landmarks unavailable · ${r.message}"
                     }
                 }
                 kotlinx.coroutines.delay(60_000)
             } else {
-                if (landmarks.isNotEmpty()) {
+                if (landmarks.isNotEmpty() || _landmarkMessage.value != null) {
                     landmarks = emptyList()
                     landmarkFetchLat = Double.NaN
+                    _landmarkMessage.value = null
                 }
                 kotlinx.coroutines.delay(3_000)
             }

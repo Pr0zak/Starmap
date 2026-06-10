@@ -391,6 +391,10 @@ private fun SkyScreen(
                     fontSize = 12.sp,
                 )
             }
+            val landmarkMsg by viewModel.landmarkMessage
+            landmarkMsg?.let {
+                Text(it, color = Color(0xCCFFE082), fontSize = 12.sp, modifier = Modifier.padding(top = 2.dp))
+            }
         }
 
         val detail by viewModel.objectDetail
@@ -605,7 +609,7 @@ private fun TimeBar(viewModel: SkyViewModel, model: SkyModel?) {
     val rate by viewModel.timeFlowRate
     val millis = model?.timeMillis ?: System.currentTimeMillis()
     val fmt = remember {
-        java.text.SimpleDateFormat("EEE d MMM yyyy · HH:mm", java.util.Locale.getDefault())
+        java.text.SimpleDateFormat("EEE d MMM yyyy · h:mm a", java.util.Locale.getDefault())
     }
     Surface(
         color = Color(0xE61B2030),
