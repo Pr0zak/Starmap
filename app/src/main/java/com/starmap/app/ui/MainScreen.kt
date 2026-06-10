@@ -247,6 +247,17 @@ private fun SkyScreen(
         }
     }
 
+    if (settings.radarMode) {
+        RadarView(
+            viewModel = viewModel,
+            settings = settings,
+            model = model,
+            onExit = { viewModel.setBool(BoolSetting.RadarMode, false) },
+            modifier = Modifier.fillMaxSize(),
+        )
+        return
+    }
+
     Box(modifier = Modifier.fillMaxSize()) {
         if (arActive) {
             CameraPreview(modifier = Modifier.fillMaxSize())
@@ -284,6 +295,11 @@ private fun SkyScreen(
                     Icon(
                         Icons.Filled.CameraAlt, contentDescription = "Camera AR",
                         tint = if (arActive) Color(0xFFFFD54F) else Color(0xFFD8E0F0),
+                    )
+                }
+                IconButton(onClick = { viewModel.setBool(BoolSetting.RadarMode, true) }) {
+                    Icon(
+                        Icons.Filled.Flight, contentDescription = "Radar mode", tint = Color(0xFFD8E0F0),
                     )
                 }
                 IconButton(onClick = { showTimePanel = !showTimePanel }) {
@@ -754,7 +770,7 @@ private fun PhotoNote(text: String) {
 }
 
 @Composable
-private fun AircraftInfoCard(
+internal fun AircraftInfoCard(
     ac: AircraftRender,
     route: AircraftManager.Route?,
     photo: AircraftManager.Photo?,

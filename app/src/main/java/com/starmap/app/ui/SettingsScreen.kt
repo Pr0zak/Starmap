@@ -177,6 +177,11 @@ fun SettingsScreen(viewModel: SkyViewModel, settings: Settings, onBack: () -> Un
                 "Labels", "Callsign and altitude",
                 checked = settings.showAircraftLabels, enabled = settings.showAircraft,
             ) { viewModel.setBool(BoolSetting.AircraftLabels, it) }
+            SettingSwitch(
+                "Radar (top-down) mode",
+                "A bird's-eye scope of nearby aircraft & landmarks by range. Also on the top bar (✈).",
+                checked = settings.radarMode,
+            ) { viewModel.setBool(BoolSetting.RadarMode, it) }
 
             SectionHeader("Landmarks")
             SettingSwitch(

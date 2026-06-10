@@ -47,6 +47,9 @@ data class Settings(
     val landmarkAirports: Boolean = true,
     val landmarkTowers: Boolean = true,
     val aircraftRangeNm: Float = 40f,
+    val radarMode: Boolean = false,
+    val radarHeadingUp: Boolean = false,
+    val radarRangeNm: Float = 40f,
     val showBelowHorizon: Boolean = false,
     val showDaylightSky: Boolean = true,
     val applyRefraction: Boolean = true,
@@ -102,6 +105,9 @@ class SettingsRepository(private val context: Context) {
         val landmarkAirports = booleanPreferencesKey("landmark_airports")
         val landmarkTowers = booleanPreferencesKey("landmark_towers")
         val aircraftRangeNm = floatPreferencesKey("aircraft_range_nm")
+        val radarMode = booleanPreferencesKey("radar_mode")
+        val radarHeadingUp = booleanPreferencesKey("radar_heading_up")
+        val radarRangeNm = floatPreferencesKey("radar_range_nm")
         val showBelowHorizon = booleanPreferencesKey("show_below_horizon")
         val showDaylightSky = booleanPreferencesKey("show_daylight_sky")
         val applyRefraction = booleanPreferencesKey("apply_refraction")
@@ -152,6 +158,9 @@ class SettingsRepository(private val context: Context) {
             landmarkAirports = p[Keys.landmarkAirports] ?: true,
             landmarkTowers = p[Keys.landmarkTowers] ?: true,
             aircraftRangeNm = (p[Keys.aircraftRangeNm] ?: 40f).coerceAtMost(80f),
+            radarMode = p[Keys.radarMode] ?: false,
+            radarHeadingUp = p[Keys.radarHeadingUp] ?: false,
+            radarRangeNm = (p[Keys.radarRangeNm] ?: 40f).coerceIn(5f, 150f),
             showBelowHorizon = p[Keys.showBelowHorizon] ?: false,
             showDaylightSky = p[Keys.showDaylightSky] ?: true,
             applyRefraction = p[Keys.applyRefraction] ?: true,
@@ -193,6 +202,7 @@ class SettingsRepository(private val context: Context) {
         Fov(Keys.fovDeg),
         AircraftRange(Keys.aircraftRangeNm),
         LandmarkRange(Keys.landmarkRangeKm),
+        RadarRange(Keys.radarRangeNm),
     }
 
     enum class BoolSetting(val key: Preferences.Key<Boolean>) {
@@ -220,6 +230,8 @@ class SettingsRepository(private val context: Context) {
         Aircraft(Keys.showAircraft),
         AircraftTrails(Keys.showAircraftTrails),
         AircraftLabels(Keys.showAircraftLabels),
+        RadarMode(Keys.radarMode),
+        RadarHeadingUp(Keys.radarHeadingUp),
         Landmarks(Keys.showLandmarks),
         LandmarkCities(Keys.landmarkCities),
         LandmarkAirports(Keys.landmarkAirports),
