@@ -46,7 +46,7 @@ class LandmarkManager {
             var sawEmpty = false
             for (endpoint in ENDPOINTS) {
                 val host = runCatching { URL(endpoint).host }.getOrDefault(endpoint)
-                when (val a = attempt(endpoint, encoded)) {
+                when (val a = attempt(host, endpoint, encoded)) {
                     is Attempt.Body -> {
                         val json = runCatching { JSONObject(a.text) }.getOrNull()
                         if (json == null) {
@@ -76,10 +76,7 @@ class LandmarkManager {
                             }
                         }
                     }
-                    is Attempt.Error -> {
-                        DiagLog.log("Landmarks: $host -> ${a.reason}")
-                        errors.add("$host: ${a.reason}")
-                    }
+                    is Attempt.Error -> errors.add("$host: ${a.reason}")
                 }
             }
             if (sawEmpty) {
@@ -90,16 +87,20 @@ class LandmarkManager {
             Result.Failed(errors.firstOrNull() ?: "no response")
         }
 
-    /** One endpoint: a plain GET, falling back to POST if the server forbids GET. */
-    private fun attempt(endpoint: String, encoded: String): Attempt {
+    /**
+     * One endpoint: POST (Overpass's canonical method) first, with a GET fallback.
+     * overpass-api.de returns 406 to our GET regardless of the Accept header, so
+     * POST has to lead. Each failed method is logged so a stubborn server is
+     * obvious in the diagnostics.
+     */
+    private fun attempt(host: String, endpoint: String, encoded: String): Attempt {
+        val post = request(endpoint, encoded, "POST")
+        if (post is Attempt.Body) return post
+        DiagLog.log("Landmarks: $host POST -> ${(post as Attempt.Error).reason}")
         val get = request(endpoint, encoded, "GET")
         if (get is Attempt.Body) return get
-        val reason = (get as Attempt.Error).reason
-        if ("403" in reason || "405" in reason) {
-            val post = request(endpoint, encoded, "POST")
-            if (post is Attempt.Body) return post
-        }
-        return get
+        DiagLog.log("Landmarks: $host GET -> ${(get as Attempt.Error).reason}")
+        return post
     }
 
     private sealed interface Attempt {
