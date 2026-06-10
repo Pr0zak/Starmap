@@ -15,19 +15,23 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Explore
 import androidx.compose.material.icons.filled.Place
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.RangeSlider
+import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -49,6 +53,7 @@ import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.starmap.app.settings.Settings
@@ -251,17 +256,7 @@ fun RadarView(
                 if (hypot(eKm, nKm) > maxRangeKm) continue
                 val o = proj(eKm, nKm)
                 hits.add(o to ac)
-                val col = if (ac.isEmergency) {
-                    Color(0xFFFF5252)
-                } else {
-                    when {
-                        ft < 1000 -> Color(0xFFBCAAA4)
-                        ft < 10000 -> Color(0xFF8BC34A)
-                        ft < 20000 -> Color(0xFF4DD0E1)
-                        ft < 30000 -> Color(0xFF5C9DFF)
-                        else -> Color(0xFFCE93D8)
-                    }
-                }
+                val col = if (ac.isEmergency) Color(0xFFFF5252) else altColor(ft)
 
                 // Trail polyline (positions, fading toward the oldest sample).
                 val tr = ac.trail
@@ -362,22 +357,6 @@ fun RadarView(
                     }
                 }
             }
-
-            // Altitude colour legend (left edge).
-            labelPaint.textSize = 9f * density
-            var lgy = cy - 26f * density
-            for ((c, lab) in listOf(
-                Color(0xFFCE93D8) to "30k+",
-                Color(0xFF5C9DFF) to "20–30k",
-                Color(0xFF4DD0E1) to "10–20k",
-                Color(0xFF8BC34A) to "1–10k",
-                Color(0xFFBCAAA4) to "<1k",
-            )) {
-                drawCircle(c, 3f * density, Offset(12f * density, lgy - 3f * density))
-                labelPaint.color = Color(0xCCB6C2D2).toArgb()
-                drawContext.canvas.nativeCanvas.drawText(lab, 20f * density, lgy, labelPaint)
-                lgy += 13f * density
-            }
         }
 
         // Top controls + the selected-aircraft card (reused from the sky view).
@@ -442,48 +421,67 @@ private fun RadarDrawer(
     val sorted = aircraft
         .filter { val f = it.altitudeMeters / 0.3048; f >= altMin && f <= altMax }
         .sortedBy { it.rangeKm }
-    Surface(color = Color(0xF20A0E13), modifier = modifier.fillMaxWidth()) {
+    Surface(
+        color = Color(0xF20B0F15),
+        shape = RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp),
+        modifier = modifier.fillMaxWidth(),
+    ) {
         Column(
-            modifier = Modifier.animateContentSize().fillMaxWidth().padding(horizontal = 12.dp),
+            modifier = Modifier.animateContentSize().fillMaxWidth().padding(horizontal = 16.dp),
         ) {
             Box(
-                modifier = Modifier.fillMaxWidth().clickable { expanded = !expanded }.padding(vertical = 7.dp),
+                modifier = Modifier.fillMaxWidth().clickable { expanded = !expanded }.padding(vertical = 8.dp),
                 contentAlignment = Alignment.Center,
             ) {
                 Box(
-                    modifier = Modifier.width(38.dp).height(4.dp)
-                        .background(Color(0x55FFFFFF), RoundedCornerShape(2.dp)),
+                    modifier = Modifier.width(36.dp).height(4.dp)
+                        .background(Color(0x44FFFFFF), RoundedCornerShape(2.dp)),
                 )
             }
             Row(
-                modifier = Modifier.fillMaxWidth().clickable { expanded = !expanded }.padding(bottom = 4.dp),
+                modifier = Modifier.fillMaxWidth().clickable { expanded = !expanded }
+                    .padding(bottom = if (expanded) 8.dp else 14.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                val nearest = sorted.firstOrNull()?.let { " · nearest ${(it.rangeKm * 0.539957).roundToInt()} nm" } ?: ""
-                Text("${sorted.size} aircraft$nearest", color = Color(0xFFD8E0F0), fontSize = 13.sp)
-                Spacer(Modifier.weight(1f))
-                Text(if (expanded) "▼ list" else "▲ list", color = Color(0xFFB6C2D2), fontSize = 12.sp)
-            }
-            Row(modifier = Modifier.padding(bottom = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-                Text("Alt", color = Color(0xFFB6C2D2), fontSize = 12.sp, modifier = Modifier.width(28.dp))
-                RangeSlider(
-                    value = altMin..altMax,
-                    onValueChange = { onAlt(it.start, it.endInclusive) },
-                    valueRange = 0f..60000f,
-                    modifier = Modifier.weight(1f),
-                )
                 Text(
-                    "${(altMin / 1000).roundToInt()}–${(altMax / 1000).roundToInt()}k",
-                    color = Color(0xFFD8E0F0), fontSize = 11.sp, modifier = Modifier.width(56.dp),
+                    "${sorted.size} aircraft", color = Color(0xFFEAF0F8),
+                    fontSize = 14.sp, fontWeight = FontWeight.Medium,
                 )
+                sorted.firstOrNull()?.let {
+                    Text(
+                        "  ·  nearest ${(it.rangeKm * 0.539957).roundToInt()} nm",
+                        color = Color(0xFF8A96A6), fontSize = 12.sp,
+                    )
+                }
+                Spacer(Modifier.weight(1f))
+                Text(if (expanded) "Hide ▾" else "List ▸", color = Color(0xFFFFD54F), fontSize = 12.sp)
             }
             if (expanded) {
-                LazyColumn(modifier = Modifier.heightIn(max = 260.dp)) {
+                Row(modifier = Modifier.padding(bottom = 2.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Text("Alt", color = Color(0xFF8A96A6), fontSize = 12.sp, modifier = Modifier.width(26.dp))
+                    RangeSlider(
+                        value = altMin..altMax,
+                        onValueChange = { onAlt(it.start, it.endInclusive) },
+                        valueRange = 0f..60000f,
+                        colors = SliderDefaults.colors(
+                            thumbColor = Color(0xFFFFD54F),
+                            activeTrackColor = Color(0xFF2F7D52),
+                            inactiveTrackColor = Color(0x33FFFFFF),
+                        ),
+                        modifier = Modifier.weight(1f),
+                    )
+                    Text(
+                        "${(altMin / 1000).roundToInt()}–${(altMax / 1000).roundToInt()}k ft",
+                        color = Color(0xFFB6C2D2), fontSize = 11.sp, modifier = Modifier.width(64.dp),
+                    )
+                }
+                HorizontalDivider(color = Color(0x14FFFFFF))
+                LazyColumn(modifier = Modifier.heightIn(max = 280.dp)) {
                     items(sorted) { ac ->
                         AircraftRow(ac, ac.icaoHex == selectedHex) { viewModel.selectAircraft(ac) }
                     }
                 }
-                Spacer(Modifier.height(6.dp))
+                Spacer(Modifier.height(8.dp))
             }
         }
     }
@@ -494,20 +492,30 @@ private fun AircraftRow(ac: AircraftRender, selected: Boolean, onClick: () -> Un
     val nm = (ac.rangeKm * 0.539957).roundToInt()
     val ft = (ac.altitudeMeters / 0.3048).roundToInt()
     val gs = ac.groundSpeedKts.roundToInt()
-    val arrow = if (ac.verticalRateFpm > 100) "↑" else if (ac.verticalRateFpm < -100) "↓" else "·"
+    val arrow = if (ac.verticalRateFpm > 100) " ↑" else if (ac.verticalRateFpm < -100) " ↓" else ""
     val name = ac.callsign.ifBlank { ac.registration.ifBlank { ac.typeCode.ifBlank { "Aircraft" } } }
+    val dot = if (ac.isEmergency) Color(0xFFFF5252) else altColor(ac.altitudeMeters / 0.3048)
     Row(
         modifier = Modifier.fillMaxWidth()
-            .background(if (selected) Color(0x33FFD54F) else Color.Transparent)
-            .clickable(onClick = onClick).padding(vertical = 6.dp),
+            .background(if (selected) Color(0x26FFD54F) else Color.Transparent)
+            .clickable(onClick = onClick).padding(vertical = 7.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
+        Box(Modifier.padding(end = 8.dp).size(7.dp).background(dot, CircleShape))
         Text(
             name, color = if (ac.isEmergency) Color(0xFFFF6B6B) else Color(0xFFE6ECF5),
             fontSize = 13.sp, modifier = Modifier.weight(1f),
         )
-        Text("$ft ft $arrow", color = Color(0xFFB6C2D2), fontSize = 12.sp, modifier = Modifier.width(76.dp))
-        Text("$gs kt", color = Color(0xFFB6C2D2), fontSize = 12.sp, modifier = Modifier.width(52.dp))
-        Text("$nm nm", color = Color(0xFFD8E0F0), fontSize = 12.sp, modifier = Modifier.width(52.dp))
+        Text("$ft ft$arrow", color = Color(0xFFB6C2D2), fontSize = 12.sp, modifier = Modifier.width(70.dp))
+        Text("$gs kt", color = Color(0xFF8A96A6), fontSize = 12.sp, modifier = Modifier.width(50.dp))
+        Text("$nm nm", color = Color(0xFFD8E0F0), fontSize = 12.sp, modifier = Modifier.width(50.dp))
     }
+}
+
+private fun altColor(ft: Double): Color = when {
+    ft < 1000 -> Color(0xFFBCAAA4)
+    ft < 10000 -> Color(0xFF8BC34A)
+    ft < 20000 -> Color(0xFF4DD0E1)
+    ft < 30000 -> Color(0xFF5C9DFF)
+    else -> Color(0xFFCE93D8)
 }
