@@ -24,8 +24,10 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Explore
 import androidx.compose.material.icons.filled.Place
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.RangeSlider
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -98,6 +100,15 @@ fun RadarView(
             viewModel.setFloat(FloatSetting.RadarRange, it)
         }
     }
+    var altMin by remember { mutableFloatStateOf(settings.radarAltMinFt) }
+    var altMax by remember { mutableFloatStateOf(settings.radarAltMaxFt) }
+    LaunchedEffect(Unit) {
+        snapshotFlow { altMin to altMax }.collectLatest { (lo, hi) ->
+            delay(400)
+            viewModel.setFloat(FloatSetting.RadarAltMin, lo)
+            viewModel.setFloat(FloatSetting.RadarAltMax, hi)
+        }
+    }
 
     val aircraft = model?.aircraft ?: emptyList()
     val landmarks = model?.landmarks ?: emptyList()
@@ -105,6 +116,15 @@ fun RadarView(
     val selectedHex = selAc?.icaoHex
 
     val hits = remember { mutableListOf<Pair<Offset, AircraftRender>>() }
+    fun nearestTo(p: Offset): AircraftRender? {
+        var best: AircraftRender? = null
+        var bestD = 34f * density
+        for ((o, ac) in hits) {
+            val d = hypot(o.x - p.x, o.y - p.y)
+            if (d < bestD) { bestD = d; best = ac }
+        }
+        return best
+    }
     val labelPaint = remember {
         android.graphics.Paint().apply { isAntiAlias = true; textSize = 10f * density }
     }
@@ -120,15 +140,15 @@ fun RadarView(
         Canvas(
             modifier = Modifier.fillMaxSize()
                 .pointerInput(Unit) {
-                    detectTapGestures { p ->
-                        var best: AircraftRender? = null
-                        var bestD = 34f * density
-                        for ((o, ac) in hits) {
-                            val d = hypot(o.x - p.x, o.y - p.y)
-                            if (d < bestD) { bestD = d; best = ac }
-                        }
-                        viewModel.selectAircraft(best)
-                    }
+                    detectTapGestures(
+                        onTap = { viewModel.selectAircraft(nearestTo(it)) },
+                        onLongPress = { p ->
+                            nearestTo(p)?.let {
+                                viewModel.selectAircraft(it)
+                                viewModel.followAircraft(it.icaoHex)
+                            }
+                        },
+                    )
                 }
                 .pointerInput(Unit) {
                     detectTransformGestures { _, _, zoom, _ ->
@@ -205,13 +225,14 @@ fun RadarView(
             val acPos = FloatArray(3)
             val acNow = System.currentTimeMillis()
             for (ac in aircraft) {
+                val ft = ac.altitudeMeters / 0.3048
+                if (ft < altMin || ft > altMax) continue
                 ac.positionInto(acNow, acPos)
                 val eKm = acPos[0]
                 val nKm = acPos[1]
                 if (hypot(eKm, nKm) > maxRangeKm) continue
                 val o = proj(eKm, nKm)
                 hits.add(o to ac)
-                val ft = ac.altitudeMeters / 0.3048
                 val col = if (ac.isEmergency) {
                     Color(0xFFFF5252)
                 } else {
@@ -262,7 +283,11 @@ fun RadarView(
                 }
                 drawPath(path, col)
                 if (ac.icaoHex == selectedHex) {
-                    drawCircle(Color(0xFFFFD54F), s * 1.9f, o, style = Stroke(1.5f * density))
+                    val pulse = (sin(acNow / 280.0) * 0.5 + 0.5).toFloat()
+                    drawCircle(
+                        Color(0xFFFFD54F).copy(alpha = 0.45f + 0.55f * pulse),
+                        s * (1.7f + 0.7f * pulse), o, style = Stroke(1.6f * density),
+                    )
                 }
                 labelPaint.color = col.toArgb()
                 val name = ac.callsign.ifBlank { ac.typeCode.ifBlank { "?" } }
@@ -310,19 +335,30 @@ fun RadarView(
             }
         }
 
-        RadarDrawer(viewModel, aircraft, Modifier.align(Alignment.BottomCenter))
+        RadarDrawer(
+            viewModel, aircraft, altMin, altMax, selectedHex,
+            onAlt = { lo, hi -> altMin = lo; altMax = hi },
+            modifier = Modifier.align(Alignment.BottomCenter),
+        )
     }
 }
 
 /** Bottom drawer: a handle to expand/collapse, then the aircraft list by distance. */
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun RadarDrawer(
     viewModel: SkyViewModel,
     aircraft: List<AircraftRender>,
+    altMin: Float,
+    altMax: Float,
+    selectedHex: String?,
+    onAlt: (Float, Float) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     var expanded by remember { mutableStateOf(false) }
-    val sorted = aircraft.sortedBy { it.rangeKm }
+    val sorted = aircraft
+        .filter { val f = it.altitudeMeters / 0.3048; f >= altMin && f <= altMax }
+        .sortedBy { it.rangeKm }
     Surface(color = Color(0xF20A0E13), modifier = modifier.fillMaxWidth()) {
         Column(
             modifier = Modifier.animateContentSize().fillMaxWidth().padding(horizontal = 12.dp),
@@ -337,7 +373,7 @@ private fun RadarDrawer(
                 )
             }
             Row(
-                modifier = Modifier.fillMaxWidth().clickable { expanded = !expanded }.padding(bottom = 6.dp),
+                modifier = Modifier.fillMaxWidth().clickable { expanded = !expanded }.padding(bottom = 4.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 val nearest = sorted.firstOrNull()?.let { " · nearest ${(it.rangeKm * 0.539957).roundToInt()} nm" } ?: ""
@@ -345,9 +381,24 @@ private fun RadarDrawer(
                 Spacer(Modifier.weight(1f))
                 Text(if (expanded) "▼ list" else "▲ list", color = Color(0xFFB6C2D2), fontSize = 12.sp)
             }
+            Row(modifier = Modifier.padding(bottom = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                Text("Alt", color = Color(0xFFB6C2D2), fontSize = 12.sp, modifier = Modifier.width(28.dp))
+                RangeSlider(
+                    value = altMin..altMax,
+                    onValueChange = { onAlt(it.start, it.endInclusive) },
+                    valueRange = 0f..60000f,
+                    modifier = Modifier.weight(1f),
+                )
+                Text(
+                    "${(altMin / 1000).roundToInt()}–${(altMax / 1000).roundToInt()}k",
+                    color = Color(0xFFD8E0F0), fontSize = 11.sp, modifier = Modifier.width(56.dp),
+                )
+            }
             if (expanded) {
-                LazyColumn(modifier = Modifier.heightIn(max = 280.dp)) {
-                    items(sorted) { ac -> AircraftRow(ac) { viewModel.selectAircraft(ac) } }
+                LazyColumn(modifier = Modifier.heightIn(max = 260.dp)) {
+                    items(sorted) { ac ->
+                        AircraftRow(ac, ac.icaoHex == selectedHex) { viewModel.selectAircraft(ac) }
+                    }
                 }
                 Spacer(Modifier.height(6.dp))
             }
@@ -356,14 +407,16 @@ private fun RadarDrawer(
 }
 
 @Composable
-private fun AircraftRow(ac: AircraftRender, onClick: () -> Unit) {
+private fun AircraftRow(ac: AircraftRender, selected: Boolean, onClick: () -> Unit) {
     val nm = (ac.rangeKm * 0.539957).roundToInt()
     val ft = (ac.altitudeMeters / 0.3048).roundToInt()
     val gs = ac.groundSpeedKts.roundToInt()
     val arrow = if (ac.verticalRateFpm > 100) "↑" else if (ac.verticalRateFpm < -100) "↓" else "·"
     val name = ac.callsign.ifBlank { ac.registration.ifBlank { ac.typeCode.ifBlank { "Aircraft" } } }
     Row(
-        modifier = Modifier.fillMaxWidth().clickable(onClick = onClick).padding(vertical = 6.dp),
+        modifier = Modifier.fillMaxWidth()
+            .background(if (selected) Color(0x33FFD54F) else Color.Transparent)
+            .clickable(onClick = onClick).padding(vertical = 6.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Text(

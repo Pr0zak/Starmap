@@ -51,6 +51,8 @@ data class Settings(
     val radarHeadingUp: Boolean = false,
     val radarLandmarks: Boolean = true,
     val radarRangeNm: Float = 40f,
+    val radarAltMinFt: Float = 0f,
+    val radarAltMaxFt: Float = 60000f,
     val showBelowHorizon: Boolean = false,
     val showDaylightSky: Boolean = true,
     val applyRefraction: Boolean = true,
@@ -110,6 +112,8 @@ class SettingsRepository(private val context: Context) {
         val radarHeadingUp = booleanPreferencesKey("radar_heading_up")
         val radarLandmarks = booleanPreferencesKey("radar_landmarks")
         val radarRangeNm = floatPreferencesKey("radar_range_nm")
+        val radarAltMinFt = floatPreferencesKey("radar_alt_min_ft")
+        val radarAltMaxFt = floatPreferencesKey("radar_alt_max_ft")
         val showBelowHorizon = booleanPreferencesKey("show_below_horizon")
         val showDaylightSky = booleanPreferencesKey("show_daylight_sky")
         val applyRefraction = booleanPreferencesKey("apply_refraction")
@@ -164,6 +168,8 @@ class SettingsRepository(private val context: Context) {
             radarHeadingUp = p[Keys.radarHeadingUp] ?: false,
             radarLandmarks = p[Keys.radarLandmarks] ?: true,
             radarRangeNm = (p[Keys.radarRangeNm] ?: 40f).coerceIn(5f, 150f),
+            radarAltMinFt = (p[Keys.radarAltMinFt] ?: 0f).coerceIn(0f, 60000f),
+            radarAltMaxFt = (p[Keys.radarAltMaxFt] ?: 60000f).coerceIn(0f, 60000f),
             showBelowHorizon = p[Keys.showBelowHorizon] ?: false,
             showDaylightSky = p[Keys.showDaylightSky] ?: true,
             applyRefraction = p[Keys.applyRefraction] ?: true,
@@ -206,6 +212,8 @@ class SettingsRepository(private val context: Context) {
         AircraftRange(Keys.aircraftRangeNm),
         LandmarkRange(Keys.landmarkRangeKm),
         RadarRange(Keys.radarRangeNm),
+        RadarAltMin(Keys.radarAltMinFt),
+        RadarAltMax(Keys.radarAltMaxFt),
     }
 
     enum class BoolSetting(val key: Preferences.Key<Boolean>) {
