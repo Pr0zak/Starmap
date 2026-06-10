@@ -421,7 +421,7 @@ class SkyViewModel(app: Application) : AndroidViewModel(app) {
         while (isActive) {
             val s = settings.value
             val fix = effectiveLocation.value
-            if ((s.showLandmarks || s.radarMode) && fix != null) {
+            if ((s.showLandmarks || (s.radarMode && s.radarLandmarks)) && fix != null) {
                 landmarkAwaitLogged = false
                 val rangeKm = s.landmarkRangeKm
                 val changed = landmarkFetchLat.isNaN() ||
@@ -454,7 +454,7 @@ class SkyViewModel(app: Application) : AndroidViewModel(app) {
                 }
                 kotlinx.coroutines.delay(3_000)
             } else {
-                if ((s.showLandmarks || s.radarMode) && fix == null && !landmarkAwaitLogged) {
+                if ((s.showLandmarks || (s.radarMode && s.radarLandmarks)) && fix == null && !landmarkAwaitLogged) {
                     DiagLog.log("Landmarks loop: enabled but no location fix yet")
                     landmarkAwaitLogged = true
                 }
@@ -565,7 +565,7 @@ class SkyViewModel(app: Application) : AndroidViewModel(app) {
                             includeRefraction = s.applyRefraction,
                             satellites = sats,
                             aircraft = aircraftTracks,
-                            includeLandmarks = s.showLandmarks || s.radarMode,
+                            includeLandmarks = s.showLandmarks || (s.radarMode && s.radarLandmarks),
                             landmarks = landmarks.filter {
                                 when (it.type) {
                                     "airport" -> s.landmarkAirports

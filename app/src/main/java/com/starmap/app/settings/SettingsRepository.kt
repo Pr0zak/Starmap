@@ -49,6 +49,7 @@ data class Settings(
     val aircraftRangeNm: Float = 40f,
     val radarMode: Boolean = false,
     val radarHeadingUp: Boolean = false,
+    val radarLandmarks: Boolean = true,
     val radarRangeNm: Float = 40f,
     val showBelowHorizon: Boolean = false,
     val showDaylightSky: Boolean = true,
@@ -107,6 +108,7 @@ class SettingsRepository(private val context: Context) {
         val aircraftRangeNm = floatPreferencesKey("aircraft_range_nm")
         val radarMode = booleanPreferencesKey("radar_mode")
         val radarHeadingUp = booleanPreferencesKey("radar_heading_up")
+        val radarLandmarks = booleanPreferencesKey("radar_landmarks")
         val radarRangeNm = floatPreferencesKey("radar_range_nm")
         val showBelowHorizon = booleanPreferencesKey("show_below_horizon")
         val showDaylightSky = booleanPreferencesKey("show_daylight_sky")
@@ -160,6 +162,7 @@ class SettingsRepository(private val context: Context) {
             aircraftRangeNm = (p[Keys.aircraftRangeNm] ?: 40f).coerceAtMost(80f),
             radarMode = p[Keys.radarMode] ?: false,
             radarHeadingUp = p[Keys.radarHeadingUp] ?: false,
+            radarLandmarks = p[Keys.radarLandmarks] ?: true,
             radarRangeNm = (p[Keys.radarRangeNm] ?: 40f).coerceIn(5f, 150f),
             showBelowHorizon = p[Keys.showBelowHorizon] ?: false,
             showDaylightSky = p[Keys.showDaylightSky] ?: true,
@@ -232,6 +235,7 @@ class SettingsRepository(private val context: Context) {
         AircraftLabels(Keys.showAircraftLabels),
         RadarMode(Keys.radarMode),
         RadarHeadingUp(Keys.radarHeadingUp),
+        RadarLandmarks(Keys.radarLandmarks),
         Landmarks(Keys.showLandmarks),
         LandmarkCities(Keys.landmarkCities),
         LandmarkAirports(Keys.landmarkAirports),

@@ -1,9 +1,11 @@
 package com.starmap.app.ui
 
+import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -17,12 +19,13 @@ import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Explore
+import androidx.compose.material.icons.filled.Place
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -32,6 +35,7 @@ import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
@@ -51,6 +55,8 @@ import com.starmap.app.sky.AircraftRender
 import com.starmap.app.sky.SkyModel
 import com.starmap.app.sky.SkyViewModel
 import kotlinx.coroutines.android.awaitFrame
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.collectLatest
 import kotlin.math.cos
 import kotlin.math.hypot
 import kotlin.math.roundToInt
@@ -58,9 +64,10 @@ import kotlin.math.sin
 
 /**
  * Top-down "radar" scope: the observer sits at the centre with concentric range
- * rings, and aircraft + ground landmarks are plotted by their true bearing and
- * distance. North-up by default, with a heading-up toggle that rotates the scope
- * to the way the phone points. An expandable sheet lists the aircraft by range.
+ * rings, and aircraft (with trails) plus ground landmarks are plotted by their
+ * true bearing and distance. North-up by default, with a heading-up toggle that
+ * rotates the scope to the way the phone points. Pinch to change range; a bottom
+ * drawer lists the aircraft by distance.
  */
 @Composable
 fun RadarView(
@@ -72,14 +79,22 @@ fun RadarView(
 ) {
     val density = LocalDensity.current.density
     val headingUp = settings.radarHeadingUp
-    val rangeNm = settings.radarRangeNm
-    val maxRangeKm = rangeNm * 1.852f
+    val showPois = settings.radarLandmarks
 
     val azState = remember { mutableFloatStateOf(0f) }
     LaunchedEffect(Unit) {
         while (true) {
             azState.floatValue = viewModel.orientation.basis.azimuthDeg
             awaitFrame()
+        }
+    }
+
+    // Local range so pinch is smooth; persisted (debounced) without recomposing.
+    var rangeNm by remember { mutableFloatStateOf(settings.radarRangeNm) }
+    LaunchedEffect(Unit) {
+        snapshotFlow { rangeNm }.collectLatest {
+            delay(400)
+            viewModel.setFloat(FloatSetting.RadarRange, it)
         }
     }
 
@@ -102,20 +117,27 @@ fun RadarView(
 
     Box(modifier.fillMaxSize().background(Color(0xFF05080C))) {
         Canvas(
-            modifier = Modifier.fillMaxSize().pointerInput(Unit) {
-                detectTapGestures { p ->
-                    var best: AircraftRender? = null
-                    var bestD = 34f * density
-                    for ((o, ac) in hits) {
-                        val d = hypot(o.x - p.x, o.y - p.y)
-                        if (d < bestD) { bestD = d; best = ac }
+            modifier = Modifier.fillMaxSize()
+                .pointerInput(Unit) {
+                    detectTapGestures { p ->
+                        var best: AircraftRender? = null
+                        var bestD = 34f * density
+                        for ((o, ac) in hits) {
+                            val d = hypot(o.x - p.x, o.y - p.y)
+                            if (d < bestD) { bestD = d; best = ac }
+                        }
+                        viewModel.selectAircraft(best)
                     }
-                    viewModel.selectAircraft(best)
                 }
-            },
+                .pointerInput(Unit) {
+                    detectTransformGestures { _, _, zoom, _ ->
+                        if (zoom != 1f) rangeNm = (rangeNm / zoom).coerceIn(5f, 150f)
+                    }
+                },
         ) {
             hits.clear()
             val az = azState.floatValue
+            val maxRangeKm = rangeNm * 1.852f
             val a = if (headingUp) Math.toRadians(az.toDouble()) else 0.0
             val ca = cos(a)
             val sa = sin(a)
@@ -154,27 +176,31 @@ fun RadarView(
                     lbl, cx + (sin(ang) * rim).toFloat(), cy - (cos(ang) * rim).toFloat() + 3f * density, ringPaint,
                 )
             }
+            drawContext.canvas.nativeCanvas.drawText(
+                "${rangeNm.roundToInt()} nm  ·  pinch to zoom", cx, cy + r + 20f * density, ringPaint,
+            )
             ringPaint.textAlign = android.graphics.Paint.Align.LEFT
 
-            // Observer.
             drawCircle(Color(0xFFD8E0F0), 3f * density, Offset(cx, cy))
 
             // Ground landmarks (POIs).
-            for (lm in landmarks) {
-                val dist = lm.distanceKm
-                if (dist > maxRangeKm) continue
-                val o = proj(lm.enu[0] * dist, lm.enu[1] * dist)
-                val col = when (lm.type) {
-                    "airport" -> Color(0xFF80C8FF)
-                    "tower" -> Color(0xFFFF9E80)
-                    else -> Color(0xFFFFE082)
+            if (showPois) {
+                for (lm in landmarks) {
+                    val dist = lm.distanceKm
+                    if (dist > maxRangeKm) continue
+                    val o = proj(lm.enu[0] * dist, lm.enu[1] * dist)
+                    val col = when (lm.type) {
+                        "airport" -> Color(0xFF80C8FF)
+                        "tower" -> Color(0xFFFF9E80)
+                        else -> Color(0xFFFFE082)
+                    }
+                    drawCircle(col.copy(alpha = 0.85f), 2.5f * density, o)
+                    labelPaint.color = col.copy(alpha = 0.8f).toArgb()
+                    drawContext.canvas.nativeCanvas.drawText(lm.name, o.x + 4f * density, o.y + 3f * density, labelPaint)
                 }
-                drawCircle(col.copy(alpha = 0.85f), 2.5f * density, o)
-                labelPaint.color = col.copy(alpha = 0.8f).toArgb()
-                drawContext.canvas.nativeCanvas.drawText(lm.name, o.x + 4f * density, o.y + 3f * density, labelPaint)
             }
 
-            // Aircraft, plotted by true (E, N), chevron along heading, colour by altitude.
+            // Aircraft: trail, then a chevron along heading, coloured by altitude.
             for (ac in aircraft) {
                 val dist = ac.rangeKm.toFloat()
                 val eKm = ac.enu[0] * dist
@@ -194,6 +220,28 @@ fun RadarView(
                         else -> Color(0xFFCE93D8)
                     }
                 }
+
+                // Trail polyline (positions, fading toward the oldest sample).
+                val tr = ac.trail
+                val pts = tr.size / 3
+                var prev: Offset? = null
+                var j = 0
+                while (j + 2 < tr.size) {
+                    val te = tr[j]
+                    val tnk = tr[j + 1]
+                    if (te != 0f || tnk != 0f) {
+                        val to = proj(te, tnk)
+                        val p0 = prev
+                        if (p0 != null) {
+                            val frac = if (pts > 0) (j / 3).toFloat() / pts else 0f
+                            drawLine(col.copy(alpha = 0.08f + 0.30f * frac), p0, to, strokeWidth = 1.2f * density)
+                        }
+                        prev = to
+                    }
+                    j += 3
+                }
+                prev?.let { drawLine(col.copy(alpha = 0.38f), it, o, strokeWidth = 1.2f * density) }
+
                 val theta = Math.toRadians(ac.trackDeg) - a
                 val s = 6f * density
                 fun dir(t: Double, len: Float) =
@@ -226,10 +274,12 @@ fun RadarView(
                 }
                 Text("RADAR", color = Color(0xFFB6C2D2), fontSize = 14.sp)
                 Spacer(Modifier.weight(1f))
-                Text(
-                    if (headingUp) "Heading-up" else "North-up",
-                    color = Color(0xFFB6C2D2), fontSize = 12.sp,
-                )
+                IconButton(onClick = { viewModel.setBool(BoolSetting.RadarLandmarks, !showPois) }) {
+                    Icon(
+                        Icons.Filled.Place, contentDescription = "Landmarks",
+                        tint = if (showPois) Color(0xFFFFD54F) else Color(0xFF6B7686),
+                    )
+                }
                 IconButton(onClick = { viewModel.setBool(BoolSetting.RadarHeadingUp, !headingUp) }) {
                     Icon(
                         Icons.Filled.Explore, contentDescription = "Heading up",
@@ -252,47 +302,46 @@ fun RadarView(
             }
         }
 
-        RadarBottom(viewModel, settings, aircraft, Modifier.align(Alignment.BottomCenter))
+        RadarDrawer(viewModel, aircraft, Modifier.align(Alignment.BottomCenter))
     }
 }
 
+/** Bottom drawer: a handle to expand/collapse, then the aircraft list by distance. */
 @Composable
-private fun RadarBottom(
+private fun RadarDrawer(
     viewModel: SkyViewModel,
-    settings: Settings,
     aircraft: List<AircraftRender>,
     modifier: Modifier = Modifier,
 ) {
     var expanded by remember { mutableStateOf(false) }
     val sorted = aircraft.sortedBy { it.rangeKm }
     Surface(color = Color(0xF20A0E13), modifier = modifier.fillMaxWidth()) {
-        Column(modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text("Range", color = Color(0xFFB6C2D2), fontSize = 12.sp, modifier = Modifier.width(48.dp))
-                Slider(
-                    value = settings.radarRangeNm,
-                    onValueChange = { viewModel.setFloat(FloatSetting.RadarRange, it) },
-                    valueRange = 5f..150f,
-                    modifier = Modifier.weight(1f),
-                )
-                Text(
-                    "${settings.radarRangeNm.roundToInt()} nm",
-                    color = Color(0xFFD8E0F0), fontSize = 12.sp, modifier = Modifier.width(54.dp),
+        Column(
+            modifier = Modifier.animateContentSize().fillMaxWidth().padding(horizontal = 12.dp),
+        ) {
+            Box(
+                modifier = Modifier.fillMaxWidth().clickable { expanded = !expanded }.padding(vertical = 7.dp),
+                contentAlignment = Alignment.Center,
+            ) {
+                Box(
+                    modifier = Modifier.width(38.dp).height(4.dp)
+                        .background(Color(0x55FFFFFF), RoundedCornerShape(2.dp)),
                 )
             }
             Row(
-                modifier = Modifier.fillMaxWidth().clickable { expanded = !expanded }.padding(vertical = 6.dp),
+                modifier = Modifier.fillMaxWidth().clickable { expanded = !expanded }.padding(bottom = 6.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 val nearest = sorted.firstOrNull()?.let { " · nearest ${(it.rangeKm * 0.539957).roundToInt()} nm" } ?: ""
                 Text("${sorted.size} aircraft$nearest", color = Color(0xFFD8E0F0), fontSize = 13.sp)
                 Spacer(Modifier.weight(1f))
-                Text(if (expanded) "▼" else "▲", color = Color(0xFFB6C2D2), fontSize = 13.sp)
+                Text(if (expanded) "▼ list" else "▲ list", color = Color(0xFFB6C2D2), fontSize = 12.sp)
             }
             if (expanded) {
-                LazyColumn(modifier = Modifier.heightIn(max = 260.dp)) {
+                LazyColumn(modifier = Modifier.heightIn(max = 280.dp)) {
                     items(sorted) { ac -> AircraftRow(ac) { viewModel.selectAircraft(ac) } }
                 }
+                Spacer(Modifier.height(6.dp))
             }
         }
     }

@@ -733,7 +733,9 @@ fun SkyCanvas(viewModel: SkyViewModel, settings: Settings, modifier: Modifier = 
                         if (k + 1 < n) {
                             bx2 = trail[nb]; by2 = trail[nb + 1]; bz2 = trail[nb + 2]
                         } else {
-                            bx2 = ac.enu[0]; by2 = ac.enu[1]; bz2 = ac.enu[2]
+                            bx2 = (ac.enu[0] * ac.rangeKm).toFloat()
+                            by2 = (ac.enu[1] * ac.rangeKm).toFloat()
+                            bz2 = (ac.enu[2] * ac.rangeKm).toFloat()
                         }
                         var s = 0
                         while (s < steps) {

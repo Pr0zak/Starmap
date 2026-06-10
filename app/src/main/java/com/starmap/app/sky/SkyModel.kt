@@ -73,7 +73,7 @@ class AircraftRender(
     val squawk: String,
     val isEmergency: Boolean,
     val emergencyText: String,
-    /** Flattened ENU trail polyline x,y,z,… (oldest→newest). */
+    /** Flattened ENU trail positions in km, x,y,z,… (oldest→newest). */
     val trail: FloatArray,
 )
 
@@ -429,9 +429,9 @@ object SkyBuilder {
                     val penu = Satellites.enuFromEcef(pe, obsEcef, fix.latitude, fix.longitude)
                     val pr = sqrt(penu[0] * penu[0] + penu[1] * penu[1] + penu[2] * penu[2])
                     if (pr > 0.0) {
-                        trail[ti] = (penu[0] / pr).toFloat()
-                        trail[ti + 1] = (penu[1] / pr).toFloat()
-                        trail[ti + 2] = (penu[2] / pr).toFloat()
+                        trail[ti] = penu[0].toFloat()
+                        trail[ti + 1] = penu[1].toFloat()
+                        trail[ti + 2] = penu[2].toFloat()
                     }
                     ti += 3
                 }
