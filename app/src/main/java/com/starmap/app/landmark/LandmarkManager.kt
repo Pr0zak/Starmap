@@ -53,7 +53,10 @@ class LandmarkManager {
             var sawEmpty = false
             for (endpoint in ENDPOINTS) {
                 val host = runCatching { URL(endpoint).host }.getOrDefault(endpoint)
-                when (val a = attempt(host, endpoint, encoded)) {
+                // The primary instance gets a generous read budget; the flaky mirrors
+                // fail fast so a bad sweep loops back to retry the primary quickly.
+                val readMs = if (endpoint == ENDPOINTS.first()) 30_000 else 12_000
+                when (val a = attempt(host, endpoint, encoded, readMs)) {
                     is Attempt.Body -> {
                         val json = runCatching { JSONObject(a.text) }.getOrNull()
                         if (json == null) {
@@ -100,15 +103,15 @@ class LandmarkManager {
      * POST has to lead. Each failed method is logged so a stubborn server is
      * obvious in the diagnostics.
      */
-    private fun attempt(host: String, endpoint: String, encoded: String): Attempt {
-        val post = request(endpoint, encoded, "POST")
+    private fun attempt(host: String, endpoint: String, encoded: String, readMs: Int): Attempt {
+        val post = request(endpoint, encoded, "POST", readMs)
         if (post is Attempt.Body) return post
         val reason = (post as Attempt.Error).reason
         DiagLog.log("Landmarks: $host POST -> $reason")
         // A timeout means the server is too slow for this query right now, so GET
         // would just time out too; only retry with GET for a real HTTP rejection.
         if ("timeout" in reason || "timed out" in reason) return post
-        val get = request(endpoint, encoded, "GET")
+        val get = request(endpoint, encoded, "GET", readMs)
         if (get is Attempt.Body) return get
         DiagLog.log("Landmarks: $host GET -> ${(get as Attempt.Error).reason}")
         return post
@@ -119,7 +122,7 @@ class LandmarkManager {
         data class Error(val reason: String) : Attempt
     }
 
-    private fun request(endpoint: String, encodedQuery: String, method: String): Attempt {
+    private fun request(endpoint: String, encodedQuery: String, method: String, readMs: Int): Attempt {
         return try {
             val url = if (method == "GET") URL("$endpoint?data=$encodedQuery") else URL(endpoint)
             val conn = (url.openConnection() as HttpURLConnection).apply {
@@ -131,10 +134,7 @@ class LandmarkManager {
                 // Accept header at all, and no compression.
                 setRequestProperty("Accept-Encoding", "identity")
                 connectTimeout = 10_000
-                // Must exceed the server-side [timeout:25] below (plus queue/transfer),
-                // or we hang up exactly when the query's own budget runs out and learn
-                // nothing — not even the server's "timed out" remark.
-                readTimeout = 45_000
+                readTimeout = readMs
                 if (method == "POST") {
                     doOutput = true
                     setRequestProperty("Content-Type", "application/x-www-form-urlencoded")
