@@ -24,6 +24,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.draw.clip
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Explore
@@ -96,6 +97,7 @@ fun RadarView(
     val showPois = settings.radarLandmarks
     val basemap = settings.radarBasemap
     val basemapOpacity = settings.radarBasemapOpacity
+    var showBasemapMenu by remember { mutableStateOf(false) }
 
     val azState = remember { mutableFloatStateOf(0f) }
     LaunchedEffect(Unit) {
@@ -390,11 +392,11 @@ fun RadarView(
                 }
                 Text("RADAR", color = Color(0xFFB6C2D2), fontSize = 14.sp)
                 Spacer(Modifier.weight(1f))
-                IconButton(onClick = { viewModel.setRadarBasemap((basemap + 1) % 3) }) {
+                IconButton(onClick = { showBasemapMenu = !showBasemapMenu }) {
                     Icon(
                         Icons.Filled.Layers,
-                        contentDescription = "Basemap: ${basemapLabel(basemap)}",
-                        tint = if (basemap != 0) Color(0xFFFFD54F) else Color(0xFF6B7686),
+                        contentDescription = "Basemap layer",
+                        tint = if (basemap != 0) Color(0xFFFFD54F) else Color(0xFFD8E0F0),
                     )
                 }
                 IconButton(onClick = { viewModel.setBool(BoolSetting.RadarLandmarks, !showPois) }) {
@@ -410,19 +412,44 @@ fun RadarView(
                     )
                 }
             }
-            if (basemap != 0) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(
-                        "${basemapLabel(basemap)} · opacity",
-                        color = Color(0xFFB6C2D2), fontSize = 11.sp,
-                        modifier = Modifier.width(120.dp),
-                    )
-                    Slider(
-                        value = basemapOpacity,
-                        onValueChange = { viewModel.setFloat(FloatSetting.RadarBasemapOpacity, it) },
-                        valueRange = 0.1f..1f,
-                        modifier = Modifier.weight(1f),
-                    )
+            if (showBasemapMenu) {
+                Spacer(Modifier.height(6.dp))
+                Box(Modifier.fillMaxWidth()) {
+                    Surface(
+                        modifier = Modifier.align(Alignment.TopEnd).width(232.dp),
+                        shape = RoundedCornerShape(14.dp),
+                        color = Color(0xF2161E2A),
+                    ) {
+                        Column(Modifier.padding(14.dp)) {
+                            Text("BASEMAP", color = Color(0xFF8B97A8), fontSize = 10.sp)
+                            Spacer(Modifier.height(8.dp))
+                            Row {
+                                BasemapChip("Off", basemap == 0) { viewModel.setRadarBasemap(0) }
+                                Spacer(Modifier.width(6.dp))
+                                BasemapChip("Satellite", basemap == 1) { viewModel.setRadarBasemap(1) }
+                                Spacer(Modifier.width(6.dp))
+                                BasemapChip("Streets", basemap == 2) { viewModel.setRadarBasemap(2) }
+                            }
+                            if (basemap != 0) {
+                                Spacer(Modifier.height(12.dp))
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Text("Opacity", color = Color(0xFFB6C2D2), fontSize = 12.sp)
+                                    Spacer(Modifier.weight(1f))
+                                    Text(
+                                        "${(basemapOpacity * 100).roundToInt()}%",
+                                        color = Color(0xFFFFD54F), fontSize = 12.sp,
+                                    )
+                                }
+                                Slider(
+                                    value = basemapOpacity,
+                                    onValueChange = {
+                                        viewModel.setFloat(FloatSetting.RadarBasemapOpacity, it)
+                                    },
+                                    valueRange = 0.1f..1f,
+                                )
+                            }
+                        }
+                    }
                 }
             }
             selAc?.let { ac ->
@@ -461,10 +488,18 @@ fun RadarView(
     }
 }
 
-private fun basemapLabel(mode: Int): String = when (mode) {
-    1 -> "Satellite"
-    2 -> "Street map"
-    else -> "Off"
+@Composable
+private fun BasemapChip(label: String, selected: Boolean, onClick: () -> Unit) {
+    Text(
+        label,
+        color = if (selected) Color(0xFF101418) else Color(0xFFD8E0F0),
+        fontSize = 12.sp,
+        modifier = Modifier
+            .clip(RoundedCornerShape(8.dp))
+            .background(if (selected) Color(0xFFFFD54F) else Color(0x22FFFFFF))
+            .clickable(onClick = onClick)
+            .padding(horizontal = 12.dp, vertical = 6.dp),
+    )
 }
 
 /**
