@@ -28,6 +28,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Explore
+import androidx.compose.material.icons.filled.Flight
 import androidx.compose.material.icons.filled.Layers
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.Place
@@ -98,6 +99,7 @@ fun RadarView(
     val density = LocalDensity.current.density
     val headingUp = settings.radarHeadingUp
     val showPois = settings.radarLandmarks
+    val showAircraft = settings.radarAircraft
     val basemap = settings.radarBasemap
     val basemapOpacity = settings.radarBasemapOpacity
     val weather = settings.radarWeather
@@ -309,7 +311,7 @@ fun RadarView(
             val acNow = System.currentTimeMillis()
             val taken = ArrayList<android.graphics.RectF>(48)
             val selRoute = viewModel.selectedRoute.value
-            for (ac in aircraft.sortedBy { it.rangeKm }) {
+            for (ac in if (showAircraft) aircraft.sortedBy { it.rangeKm } else emptyList()) {
                 val ft = ac.altitudeMeters / 0.3048
                 if (ft < altMin || ft > altMax) continue
                 ac.positionInto(acNow, acPos)
@@ -438,6 +440,12 @@ fun RadarView(
                         tint = if (basemap != 0) Color(0xFFFFD54F) else Color(0xFFD8E0F0),
                     )
                 }
+                IconButton(onClick = { viewModel.setBool(BoolSetting.RadarAircraft, !showAircraft) }) {
+                    Icon(
+                        Icons.Filled.Flight, contentDescription = "Aircraft",
+                        tint = if (showAircraft) Color(0xFFFFD54F) else Color(0xFF6B7686),
+                    )
+                }
                 IconButton(onClick = { viewModel.setBool(BoolSetting.RadarLandmarks, !showPois) }) {
                     Icon(
                         Icons.Filled.Place, contentDescription = "Landmarks",
@@ -515,42 +523,12 @@ fun RadarView(
                                     },
                                     valueRange = 0.1f..1f,
                                 )
-                                Spacer(Modifier.height(4.dp))
                                 if (weatherFrames.isEmpty()) {
+                                    Spacer(Modifier.height(4.dp))
                                     Text(
                                         if (weatherMaps == null) "Loading frames…" else "No data available",
                                         color = Color(0xFF8B97A8), fontSize = 11.sp,
                                     )
-                                } else {
-                                    Row(verticalAlignment = Alignment.CenterVertically) {
-                                        IconButton(onClick = { playing = !playing }) {
-                                            Icon(
-                                                if (playing) Icons.Filled.Pause else Icons.Filled.PlayArrow,
-                                                contentDescription = if (playing) "Pause" else "Play",
-                                                tint = Color(0xFFFFD54F),
-                                            )
-                                        }
-                                        if (weatherFrames.size >= 2) {
-                                            Slider(
-                                                value = frameIdx.toFloat()
-                                                    .coerceIn(0f, (weatherFrames.size - 1).toFloat()),
-                                                onValueChange = {
-                                                    playing = false
-                                                    frameIdx = it.roundToInt()
-                                                },
-                                                valueRange = 0f..(weatherFrames.size - 1).toFloat(),
-                                                steps = (weatherFrames.size - 2).coerceAtLeast(0),
-                                                modifier = Modifier.weight(1f),
-                                            )
-                                        } else {
-                                            Spacer(Modifier.weight(1f))
-                                        }
-                                        Text(
-                                            frameTimeLabel(curFrame?.timeSec),
-                                            color = Color(0xFFB6C2D2), fontSize = 11.sp,
-                                            modifier = Modifier.width(54.dp),
-                                        )
-                                    }
                                 }
                             }
                         }
@@ -578,18 +556,59 @@ fun RadarView(
             modifier = Modifier.align(Alignment.CenterEnd).fillMaxHeight(0.6f).padding(end = 2.dp),
         )
 
-        if (basemap != 0) {
-            Text(
-                "Map © Esri",
-                color = Color(0x99B6C2D2), fontSize = 9.sp,
-                modifier = Modifier.align(Alignment.BottomStart).padding(start = 12.dp, bottom = 72.dp),
+        Column(modifier = Modifier.align(Alignment.BottomCenter).fillMaxWidth()) {
+            if (basemap != 0 || weather != 0) {
+                Text(
+                    buildString {
+                        if (basemap != 0) append("Map © Esri")
+                        if (weather != 0) {
+                            if (isNotEmpty()) append("   ·   ")
+                            append("Weather © RainViewer")
+                        }
+                    },
+                    color = Color(0x99B6C2D2), fontSize = 9.sp,
+                    modifier = Modifier.padding(start = 12.dp, bottom = 4.dp),
+                )
+            }
+            // Weather timeline: pinned above the drawer so it stays visible while the
+            // animation plays on the full scope.
+            if (weather != 0 && weatherFrames.isNotEmpty()) {
+                Surface(color = Color(0xF20B0F15), modifier = Modifier.fillMaxWidth()) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 2.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        IconButton(onClick = { playing = !playing }) {
+                            Icon(
+                                if (playing) Icons.Filled.Pause else Icons.Filled.PlayArrow,
+                                contentDescription = if (playing) "Pause" else "Play",
+                                tint = Color(0xFFFFD54F),
+                            )
+                        }
+                        if (weatherFrames.size >= 2) {
+                            Slider(
+                                value = frameIdx.toFloat().coerceIn(0f, (weatherFrames.size - 1).toFloat()),
+                                onValueChange = { playing = false; frameIdx = it.roundToInt() },
+                                valueRange = 0f..(weatherFrames.size - 1).toFloat(),
+                                steps = (weatherFrames.size - 2).coerceAtLeast(0),
+                                modifier = Modifier.weight(1f),
+                            )
+                        } else {
+                            Spacer(Modifier.weight(1f))
+                        }
+                        Text(
+                            frameTimeLabel(curFrame?.timeSec),
+                            color = Color(0xFFB6C2D2), fontSize = 11.sp,
+                            modifier = Modifier.width(54.dp),
+                        )
+                    }
+                }
+            }
+            RadarDrawer(
+                viewModel, aircraft, altMin, altMax, selectedHex,
+                modifier = Modifier.fillMaxWidth(),
             )
         }
-
-        RadarDrawer(
-            viewModel, aircraft, altMin, altMax, selectedHex,
-            modifier = Modifier.align(Alignment.BottomCenter),
-        )
     }
 }
 

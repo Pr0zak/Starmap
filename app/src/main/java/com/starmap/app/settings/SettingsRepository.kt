@@ -50,6 +50,7 @@ data class Settings(
     val radarMode: Boolean = false,
     val radarHeadingUp: Boolean = false,
     val radarLandmarks: Boolean = true,
+    val radarAircraft: Boolean = true,
     val radarRangeNm: Float = 40f,
     val radarAltMinFt: Float = 0f,
     val radarAltMaxFt: Float = 60000f,
@@ -116,6 +117,7 @@ class SettingsRepository(private val context: Context) {
         val radarMode = booleanPreferencesKey("radar_mode")
         val radarHeadingUp = booleanPreferencesKey("radar_heading_up")
         val radarLandmarks = booleanPreferencesKey("radar_landmarks")
+        val radarAircraft = booleanPreferencesKey("radar_aircraft")
         val radarRangeNm = floatPreferencesKey("radar_range_nm")
         val radarAltMinFt = floatPreferencesKey("radar_alt_min_ft")
         val radarAltMaxFt = floatPreferencesKey("radar_alt_max_ft")
@@ -175,6 +177,7 @@ class SettingsRepository(private val context: Context) {
             radarMode = p[Keys.radarMode] ?: false,
             radarHeadingUp = p[Keys.radarHeadingUp] ?: false,
             radarLandmarks = p[Keys.radarLandmarks] ?: true,
+            radarAircraft = p[Keys.radarAircraft] ?: true,
             radarRangeNm = (p[Keys.radarRangeNm] ?: 40f).coerceIn(5f, 150f),
             radarAltMinFt = (p[Keys.radarAltMinFt] ?: 0f).coerceIn(0f, 60000f),
             radarAltMaxFt = (p[Keys.radarAltMaxFt] ?: 60000f).coerceIn(0f, 60000f),
@@ -263,6 +266,7 @@ class SettingsRepository(private val context: Context) {
         RadarMode(Keys.radarMode),
         RadarHeadingUp(Keys.radarHeadingUp),
         RadarLandmarks(Keys.radarLandmarks),
+        RadarAircraft(Keys.radarAircraft),
         Landmarks(Keys.showLandmarks),
         LandmarkCities(Keys.landmarkCities),
         LandmarkAirports(Keys.landmarkAirports),
