@@ -210,10 +210,6 @@ fun SettingsScreen(viewModel: SkyViewModel, settings: Settings, onBack: () -> Un
             ) { viewModel.setBool(BoolSetting.LandmarkTowers, it) }
 
             SectionHeader("Display")
-            SettingSwitch("Daylight sky", "Blue sky and twilight colours when the Sun is up",
-                checked = settings.showDaylightSky) {
-                viewModel.setBool(BoolSetting.DaylightSky, it)
-            }
             SettingSwitch("Night mode (red)", "Preserves dark adaptation",
                 checked = settings.nightMode) {
                 viewModel.setBool(BoolSetting.NightMode, it)

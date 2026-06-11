@@ -14,7 +14,7 @@ import kotlinx.coroutines.flow.map
 
 /** All user-tunable options for the sky view. */
 data class Settings(
-    val magnitudeLimit: Float = 6.0f,
+    val magnitudeLimit: Float = 4.0f,
     val labelMagnitudeLimit: Float = 2.5f,
     val fovDeg: Float = 55f,
     val showStarLabels: Boolean = true,
@@ -42,11 +42,11 @@ data class Settings(
     val showAircraftTrails: Boolean = true,
     val showAircraftLabels: Boolean = true,
     val showLandmarks: Boolean = false,
-    val landmarkRangeKm: Float = 40f,
+    val landmarkRangeKm: Float = 20f,
     val landmarkCities: Boolean = true,
     val landmarkAirports: Boolean = true,
     val landmarkTowers: Boolean = true,
-    val aircraftRangeNm: Float = 40f,
+    val aircraftRangeNm: Float = 20f,
     val radarMode: Boolean = false,
     val radarHeadingUp: Boolean = false,
     val radarLandmarks: Boolean = true,
@@ -54,7 +54,6 @@ data class Settings(
     val radarAltMinFt: Float = 0f,
     val radarAltMaxFt: Float = 60000f,
     val showBelowHorizon: Boolean = false,
-    val showDaylightSky: Boolean = true,
     val applyRefraction: Boolean = true,
     val centerIdentify: Boolean = true,
     val arMode: Boolean = false,
@@ -115,7 +114,6 @@ class SettingsRepository(private val context: Context) {
         val radarAltMinFt = floatPreferencesKey("radar_alt_min_ft")
         val radarAltMaxFt = floatPreferencesKey("radar_alt_max_ft")
         val showBelowHorizon = booleanPreferencesKey("show_below_horizon")
-        val showDaylightSky = booleanPreferencesKey("show_daylight_sky")
         val applyRefraction = booleanPreferencesKey("apply_refraction")
         val centerIdentify = booleanPreferencesKey("center_identify")
         val arMode = booleanPreferencesKey("ar_mode")
@@ -171,7 +169,6 @@ class SettingsRepository(private val context: Context) {
             radarAltMinFt = (p[Keys.radarAltMinFt] ?: 0f).coerceIn(0f, 60000f),
             radarAltMaxFt = (p[Keys.radarAltMaxFt] ?: 60000f).coerceIn(0f, 60000f),
             showBelowHorizon = p[Keys.showBelowHorizon] ?: false,
-            showDaylightSky = p[Keys.showDaylightSky] ?: true,
             applyRefraction = p[Keys.applyRefraction] ?: true,
             centerIdentify = p[Keys.centerIdentify] ?: true,
             arMode = p[Keys.arMode] ?: false,
@@ -249,7 +246,6 @@ class SettingsRepository(private val context: Context) {
         LandmarkAirports(Keys.landmarkAirports),
         LandmarkTowers(Keys.landmarkTowers),
         BelowHorizon(Keys.showBelowHorizon),
-        DaylightSky(Keys.showDaylightSky),
         Refraction(Keys.applyRefraction),
         CenterIdentify(Keys.centerIdentify),
         ArMode(Keys.arMode),
