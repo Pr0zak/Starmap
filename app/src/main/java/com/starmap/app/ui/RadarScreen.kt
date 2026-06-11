@@ -4,12 +4,14 @@ import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -26,12 +28,9 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Explore
 import androidx.compose.material.icons.filled.Place
-import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.RangeSlider
-import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -44,11 +43,14 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.input.pointer.pointerInput
@@ -66,6 +68,7 @@ import com.starmap.app.sky.positionInto
 import kotlinx.coroutines.android.awaitFrame
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collectLatest
+import kotlin.math.abs
 import kotlin.math.cos
 import kotlin.math.hypot
 import kotlin.math.roundToInt
@@ -169,9 +172,10 @@ fun RadarView(
             val a = if (headingUp) Math.toRadians(az.toDouble()) else 0.0
             val ca = cos(a)
             val sa = sin(a)
-            val cx = size.width / 2f
+            val tapeW = 46f * density // reserved on the right for the altitude tape
+            val cx = (size.width - tapeW) / 2f
             val cy = size.height * 0.46f
-            val r = minOf(size.width * 0.46f, size.height * 0.40f)
+            val r = minOf((size.width - tapeW) * 0.46f, size.height * 0.40f)
             val scale = r / maxRangeKm
 
             fun proj(eKm: Float, nKm: Float): Offset {
@@ -256,7 +260,7 @@ fun RadarView(
                 if (hypot(eKm, nKm) > maxRangeKm) continue
                 val o = proj(eKm, nKm)
                 hits.add(o to ac)
-                val col = if (ac.isEmergency) Color(0xFFFF5252) else altColor(ft)
+                val col = aircraftColor(ac)
 
                 // Trail polyline (positions, fading toward the oldest sample).
                 val tr = ac.trail
@@ -397,16 +401,100 @@ fun RadarView(
             }
         }
 
+        AltitudeTape(
+            altMin = altMin, altMax = altMax, valueRange = 0f..60000f,
+            onChange = { lo, hi -> altMin = lo; altMax = hi },
+            modifier = Modifier.align(Alignment.CenterEnd).fillMaxHeight(0.6f).padding(end = 2.dp),
+        )
+
         RadarDrawer(
             viewModel, aircraft, altMin, altMax, selectedHex,
-            onAlt = { lo, hi -> altMin = lo; altMax = hi },
             modifier = Modifier.align(Alignment.BottomCenter),
         )
     }
 }
 
+/**
+ * Altimeter-style vertical tape on the right edge: a gradient bar (the altitude
+ * colour legend) with two handles bracketing the visible altitude band. Drag a
+ * handle to filter; the band brightens, everything outside dims.
+ */
+@Composable
+private fun AltitudeTape(
+    altMin: Float,
+    altMax: Float,
+    valueRange: ClosedFloatingPointRange<Float>,
+    onChange: (Float, Float) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val density = LocalDensity.current.density
+    var dragMin by remember { mutableStateOf(true) }
+    val lo = valueRange.start
+    val span = (valueRange.endInclusive - lo).coerceAtLeast(1f)
+    fun frac(v: Float) = ((v - lo) / span).coerceIn(0f, 1f)
+    val valPaint = remember {
+        android.graphics.Paint().apply {
+            isAntiAlias = true
+            textSize = 9f * density
+            textAlign = android.graphics.Paint.Align.RIGHT
+            color = android.graphics.Color.argb(255, 255, 213, 79)
+        }
+    }
+    Box(
+        modifier = modifier.width(46.dp).pointerInput(Unit) {
+            detectDragGestures(
+                onDragStart = { off ->
+                    val h = size.height.toFloat()
+                    val yMin = (1f - frac(altMin)) * h
+                    val yMax = (1f - frac(altMax)) * h
+                    dragMin = abs(off.y - yMin) <= abs(off.y - yMax)
+                },
+            ) { change, _ ->
+                change.consume()
+                val h = size.height.toFloat().coerceAtLeast(1f)
+                val v = lo + (1f - (change.position.y / h).coerceIn(0f, 1f)) * span
+                if (dragMin) onChange(v.coerceAtMost(altMax), altMax)
+                else onChange(altMin, v.coerceAtLeast(altMin))
+            }
+        },
+    ) {
+        Canvas(Modifier.fillMaxSize()) {
+            val h = size.height
+            val barW = 9f * density
+            val barLeft = size.width - barW - 3f * density
+            val radius = CornerRadius(barW / 2f, barW / 2f)
+            val brush = Brush.verticalGradient(
+                colors = listOf(
+                    altColor(valueRange.endInclusive.toDouble()),
+                    altColor((lo + span * 0.75f).toDouble()),
+                    altColor((lo + span * 0.5f).toDouble()),
+                    altColor((lo + span * 0.25f).toDouble()),
+                    altColor(lo.toDouble()),
+                ),
+                startY = 0f, endY = h,
+            )
+            // Dim full bar = the legend / out-of-band region.
+            drawRoundRect(brush, Offset(barLeft, 0f), Size(barW, h), radius, alpha = 0.22f)
+            // Bright active band between the handles.
+            val yTop = (1f - frac(altMax)) * h
+            val yBot = (1f - frac(altMin)) * h
+            drawRoundRect(brush, Offset(barLeft, yTop), Size(barW, (yBot - yTop).coerceAtLeast(2f)), radius)
+            // Handles + value labels.
+            for ((y, v) in listOf(yTop to altMax, yBot to altMin)) {
+                drawLine(
+                    Color(0xFFFFD54F), Offset(barLeft - 4f * density, y),
+                    Offset(barLeft + barW + 3f * density, y), strokeWidth = 2f * density,
+                )
+                drawCircle(Color(0xFFFFD54F), 3.5f * density, Offset(barLeft - 4f * density, y))
+                drawContext.canvas.nativeCanvas.drawText(
+                    "${(v / 1000).roundToInt()}k", barLeft - 9f * density, y + 3.5f * density, valPaint,
+                )
+            }
+        }
+    }
+}
+
 /** Bottom drawer: a handle to expand/collapse, then the aircraft list by distance. */
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun RadarDrawer(
     viewModel: SkyViewModel,
@@ -414,7 +502,6 @@ private fun RadarDrawer(
     altMin: Float,
     altMax: Float,
     selectedHex: String?,
-    onAlt: (Float, Float) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     var expanded by remember { mutableStateOf(false) }
@@ -457,24 +544,6 @@ private fun RadarDrawer(
                 Text(if (expanded) "Hide ▾" else "List ▸", color = Color(0xFFFFD54F), fontSize = 12.sp)
             }
             if (expanded) {
-                Row(modifier = Modifier.padding(bottom = 2.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Text("Alt", color = Color(0xFF8A96A6), fontSize = 12.sp, modifier = Modifier.width(26.dp))
-                    RangeSlider(
-                        value = altMin..altMax,
-                        onValueChange = { onAlt(it.start, it.endInclusive) },
-                        valueRange = 0f..60000f,
-                        colors = SliderDefaults.colors(
-                            thumbColor = Color(0xFFFFD54F),
-                            activeTrackColor = Color(0xFF2F7D52),
-                            inactiveTrackColor = Color(0x33FFFFFF),
-                        ),
-                        modifier = Modifier.weight(1f),
-                    )
-                    Text(
-                        "${(altMin / 1000).roundToInt()}–${(altMax / 1000).roundToInt()}k ft",
-                        color = Color(0xFFB6C2D2), fontSize = 11.sp, modifier = Modifier.width(64.dp),
-                    )
-                }
                 HorizontalDivider(color = Color(0x14FFFFFF))
                 LazyColumn(modifier = Modifier.heightIn(max = 280.dp)) {
                     items(sorted) { ac ->
@@ -494,7 +563,7 @@ private fun AircraftRow(ac: AircraftRender, selected: Boolean, onClick: () -> Un
     val gs = ac.groundSpeedKts.roundToInt()
     val arrow = if (ac.verticalRateFpm > 100) " ↑" else if (ac.verticalRateFpm < -100) " ↓" else ""
     val name = ac.callsign.ifBlank { ac.registration.ifBlank { ac.typeCode.ifBlank { "Aircraft" } } }
-    val dot = if (ac.isEmergency) Color(0xFFFF5252) else altColor(ac.altitudeMeters / 0.3048)
+    val dot = aircraftColor(ac)
     Row(
         modifier = Modifier.fillMaxWidth()
             .background(if (selected) Color(0x26FFD54F) else Color.Transparent)
@@ -512,10 +581,29 @@ private fun AircraftRow(ac: AircraftRender, selected: Boolean, onClick: () -> Un
     }
 }
 
-private fun altColor(ft: Double): Color = when {
-    ft < 1000 -> Color(0xFFBCAAA4)
-    ft < 10000 -> Color(0xFF8BC34A)
-    ft < 20000 -> Color(0xFF4DD0E1)
-    ft < 30000 -> Color(0xFF5C9DFF)
-    else -> Color(0xFFCE93D8)
+/** Continuous altitude→colour ramp (low green → high pink), like FR24/tar1090. */
+private val ALT_STOPS = arrayOf(
+    0f to Color(0xFF66BB6A),
+    12000f to Color(0xFF26C6DA),
+    24000f to Color(0xFF5C9DFF),
+    36000f to Color(0xFFB388FF),
+    48000f to Color(0xFFFF7AA2),
+)
+
+private fun altColor(ft: Double): Color {
+    val f = ft.toFloat()
+    if (f <= ALT_STOPS.first().first) return ALT_STOPS.first().second
+    for (i in 0 until ALT_STOPS.size - 1) {
+        val (a, ca) = ALT_STOPS[i]
+        val (b, cb) = ALT_STOPS[i + 1]
+        if (f <= b) return lerp(ca, cb, ((f - a) / (b - a)).coerceIn(0f, 1f))
+    }
+    return ALT_STOPS.last().second
+}
+
+/** Blip/row colour: emergency red, gray on the ground, else the altitude ramp. */
+private fun aircraftColor(ac: AircraftRender): Color = when {
+    ac.isEmergency -> Color(0xFFFF5252)
+    ac.altitudeMeters < 30.0 -> Color(0xFF9AA4B0)
+    else -> altColor(ac.altitudeMeters / 0.3048)
 }
