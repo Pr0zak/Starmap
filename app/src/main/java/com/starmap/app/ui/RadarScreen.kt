@@ -416,7 +416,7 @@ fun RadarView(
                 Spacer(Modifier.height(6.dp))
                 Box(Modifier.fillMaxWidth()) {
                     Surface(
-                        modifier = Modifier.align(Alignment.TopEnd).width(232.dp),
+                        modifier = Modifier.align(Alignment.TopCenter).width(232.dp),
                         shape = RoundedCornerShape(14.dp),
                         color = Color(0xF2161E2A),
                     ) {
