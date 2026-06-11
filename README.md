@@ -12,13 +12,11 @@
 ## Screenshots
 
 <p align="center">
-  <img src="docs/screenshot-sky.png" width="30%" alt="Sky view">
-  <img src="docs/screenshot-radar.png" width="30%" alt="Radar mode">
-  <img src="docs/screenshot-aircraft.png" width="30%" alt="Aircraft details">
+  <img src="docs/screenshot-sky.png" width="24%" alt="Sky view">
+  <img src="docs/screenshot-aircraft.png" width="24%" alt="Live aircraft overhead">
+  <img src="docs/screenshot-radar.png" width="24%" alt="Radar mode">
+  <img src="docs/screenshot-info.png" width="24%" alt="Object information">
 </p>
-
-> Screenshots are captured on a device — drop PNGs at `docs/screenshot-sky.png`,
-> `docs/screenshot-radar.png` and `docs/screenshot-aircraft.png` to fill these in.
 
 ## How it works
 

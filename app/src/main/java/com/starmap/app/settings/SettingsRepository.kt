@@ -129,7 +129,7 @@ class SettingsRepository(private val context: Context) {
 
     val settings: Flow<Settings> = context.dataStore.data.map { p ->
         Settings(
-            magnitudeLimit = p[Keys.magnitudeLimit] ?: 6.0f,
+            magnitudeLimit = p[Keys.magnitudeLimit] ?: 4.0f,
             labelMagnitudeLimit = p[Keys.labelMagnitudeLimit] ?: 2.5f,
             fovDeg = p[Keys.fovDeg] ?: 55f,
             showStarLabels = p[Keys.showStarLabels] ?: true,
@@ -157,11 +157,11 @@ class SettingsRepository(private val context: Context) {
             showAircraftTrails = p[Keys.showAircraftTrails] ?: true,
             showAircraftLabels = p[Keys.showAircraftLabels] ?: true,
             showLandmarks = p[Keys.showLandmarks] ?: false,
-            landmarkRangeKm = (p[Keys.landmarkRangeKm] ?: 40f).coerceIn(5f, 80f),
+            landmarkRangeKm = (p[Keys.landmarkRangeKm] ?: 20f).coerceIn(5f, 80f),
             landmarkCities = p[Keys.landmarkCities] ?: true,
             landmarkAirports = p[Keys.landmarkAirports] ?: true,
             landmarkTowers = p[Keys.landmarkTowers] ?: true,
-            aircraftRangeNm = (p[Keys.aircraftRangeNm] ?: 40f).coerceAtMost(80f),
+            aircraftRangeNm = (p[Keys.aircraftRangeNm] ?: 20f).coerceAtMost(80f),
             radarMode = p[Keys.radarMode] ?: false,
             radarHeadingUp = p[Keys.radarHeadingUp] ?: false,
             radarLandmarks = p[Keys.radarLandmarks] ?: true,
