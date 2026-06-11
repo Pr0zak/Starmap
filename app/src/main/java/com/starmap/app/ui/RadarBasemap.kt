@@ -35,10 +35,12 @@ import kotlin.math.ln
 internal data class RadarGeom(val cx: Float, val cy: Float, val r: Float)
 
 internal fun radarGeometry(w: Float, h: Float, density: Float): RadarGeom {
-    val tapeW = 40f * density // reserved on the right for the altitude tape
-    val cx = (w - tapeW) / 2f
-    val cy = h * 0.47f
-    val r = minOf((w - tapeW) * 0.49f, h * 0.45f)
+    // Full-screen scope: the circle fills the width (the altitude tape overlays the
+    // right edge rather than reserving a strip) and uses most of the height. A slight
+    // over-scan past the side edges keeps the scope feeling full-bleed.
+    val cx = w / 2f
+    val cy = h * 0.46f
+    val r = minOf(w * 0.53f, h * 0.43f)
     return RadarGeom(cx, cy, r)
 }
 

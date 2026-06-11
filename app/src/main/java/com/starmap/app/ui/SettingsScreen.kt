@@ -37,6 +37,7 @@ fun SettingsScreen(viewModel: SkyViewModel, settings: Settings, onBack: () -> Un
         Column(modifier = Modifier.verticalScroll(rememberScrollState()).padding(bottom = 32.dp)) {
 
             SectionHeader("Sky")
+            SettingsGroup {
             SettingSlider(
                 label = "Star magnitude limit",
                 value = settings.magnitudeLimit,
@@ -60,8 +61,10 @@ fun SettingsScreen(viewModel: SkyViewModel, settings: Settings, onBack: () -> Un
                 range = 12f..90f,
                 onChange = { viewModel.setFloat(FloatSetting.Fov, it) },
             )
+            }
 
             SectionHeader("Show in the sky")
+            SettingsGroup {
             SettingSwitch("Star labels", checked = settings.showStarLabels) {
                 viewModel.setBool(BoolSetting.StarLabels, it)
             }
@@ -113,8 +116,10 @@ fun SettingsScreen(viewModel: SkyViewModel, settings: Settings, onBack: () -> Un
             SettingSwitch("Moon", checked = settings.showMoon) {
                 viewModel.setBool(BoolSetting.Moon, it)
             }
+            }
 
             SectionHeader("Horizon & compass")
+            SettingsGroup {
             SettingSwitch("Horizon line", checked = settings.showHorizon) {
                 viewModel.setBool(BoolSetting.Horizon, it)
             }
@@ -139,8 +144,10 @@ fun SettingsScreen(viewModel: SkyViewModel, settings: Settings, onBack: () -> Un
                 checked = settings.applyRefraction) {
                 viewModel.setBool(BoolSetting.Refraction, it)
             }
+            }
 
             SectionHeader("Satellites")
+            SettingsGroup {
             val issReady = viewModel.satelliteManager.isIssDownloaded
             val starlinkReady = viewModel.satelliteManager.isStarlinkDownloaded
             SettingSwitch(
@@ -155,7 +162,9 @@ fun SettingsScreen(viewModel: SkyViewModel, settings: Settings, onBack: () -> Un
                 checked = settings.showStarlink,
                 enabled = starlinkReady,
             ) { viewModel.setBool(BoolSetting.Starlink, it) }
+            }
             SectionHeader("Aircraft")
+            SettingsGroup {
             SettingSwitch(
                 "Show aircraft",
                 "Live nearby planes & helicopters (ADS-B) — needs internet. Tap one for details.",
@@ -177,8 +186,10 @@ fun SettingsScreen(viewModel: SkyViewModel, settings: Settings, onBack: () -> Un
                 "Labels", "Callsign and altitude",
                 checked = settings.showAircraftLabels, enabled = settings.showAircraft,
             ) { viewModel.setBool(BoolSetting.AircraftLabels, it) }
+            }
 
             SectionHeader("Landmarks")
+            SettingsGroup {
             SettingSwitch(
                 "Show landmarks",
                 "Nearby cities, airports & towers on the horizon (OpenStreetMap) — needs internet. " +
@@ -203,8 +214,10 @@ fun SettingsScreen(viewModel: SkyViewModel, settings: Settings, onBack: () -> Un
             SettingSwitch(
                 "Towers & masts", checked = settings.landmarkTowers, enabled = settings.showLandmarks,
             ) { viewModel.setBool(BoolSetting.LandmarkTowers, it) }
+            }
 
             SectionHeader("Display")
+            SettingsGroup {
             SettingSwitch("Night mode (red)", "Preserves dark adaptation",
                 checked = settings.nightMode) {
                 viewModel.setBool(BoolSetting.NightMode, it)
@@ -217,8 +230,10 @@ fun SettingsScreen(viewModel: SkyViewModel, settings: Settings, onBack: () -> Un
             }
             OrientationRow(settings.orientationMode) { viewModel.setOrientation(it) }
             FovCirclesRow(settings.fovCirclesMode) { viewModel.setFovCircles(it) }
+            }
 
             SectionHeader("Catalog")
+            SettingsGroup {
             SettingSwitch(
                 "Extended star catalog",
                 "≈41,000 stars to magnitude 8 (built in). Turn off for a lighter naked-eye sky.",
@@ -226,17 +241,24 @@ fun SettingsScreen(viewModel: SkyViewModel, settings: Settings, onBack: () -> Un
             ) {
                 viewModel.setBool(BoolSetting.ExtendedCatalog, it)
             }
+            }
 
             SectionHeader("Offline data")
+            SettingsGroup {
             OfflineDataSection(viewModel)
+            }
 
             SectionHeader("Updates")
+            SettingsGroup {
             SettingSwitch("Check for updates on launch", checked = settings.autoCheckUpdates) {
                 viewModel.setBool(BoolSetting.AutoCheckUpdates, it)
             }
+            }
 
             SectionHeader("Location")
+            SettingsGroup {
             ManualLocationSection(viewModel, settings)
+            }
         }
     }
 }
