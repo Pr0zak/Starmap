@@ -127,6 +127,8 @@ dependencies {
     implementation(libs.androidx.datastore.preferences)
     implementation(libs.kotlinx.coroutines.android)
     implementation(libs.coil.compose)
+    // Radar basemap (online raster tiles: satellite / street map)
+    implementation("org.osmdroid:osmdroid-android:6.1.20")
     implementation(libs.androidx.camera.core)
     implementation(libs.androidx.camera.camera2)
     implementation(libs.androidx.camera.lifecycle)

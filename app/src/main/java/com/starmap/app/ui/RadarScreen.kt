@@ -27,10 +27,12 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Explore
+import androidx.compose.material.icons.filled.Layers
 import androidx.compose.material.icons.filled.Place
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -92,6 +94,8 @@ fun RadarView(
     val density = LocalDensity.current.density
     val headingUp = settings.radarHeadingUp
     val showPois = settings.radarLandmarks
+    val basemap = settings.radarBasemap
+    val basemapOpacity = settings.radarBasemapOpacity
 
     val azState = remember { mutableFloatStateOf(0f) }
     LaunchedEffect(Unit) {
@@ -146,6 +150,19 @@ fun RadarView(
     }
 
     Box(modifier.fillMaxSize().background(Color(0xFF05080C))) {
+        // Optional online basemap (satellite / streets) beneath the scope.
+        val fix = model?.location
+        if (basemap != 0 && fix != null) {
+            RadarBasemap(
+                latitude = fix.latitude,
+                longitude = fix.longitude,
+                maxRangeKm = rangeNm * 1.852f,
+                headingUp = headingUp,
+                bearing = { azState.floatValue },
+                mode = basemap,
+                opacity = basemapOpacity,
+            )
+        }
         Canvas(
             modifier = Modifier.fillMaxSize()
                 .pointerInput(Unit) {
@@ -172,10 +189,10 @@ fun RadarView(
             val a = if (headingUp) Math.toRadians(az.toDouble()) else 0.0
             val ca = cos(a)
             val sa = sin(a)
-            val tapeW = 46f * density // reserved on the right for the altitude tape
-            val cx = (size.width - tapeW) / 2f
-            val cy = size.height * 0.46f
-            val r = minOf((size.width - tapeW) * 0.46f, size.height * 0.40f)
+            val geom = radarGeometry(size.width, size.height, density)
+            val cx = geom.cx
+            val cy = geom.cy
+            val r = geom.r
             val scale = r / maxRangeKm
 
             fun proj(eKm: Float, nKm: Float): Offset {
@@ -373,6 +390,13 @@ fun RadarView(
                 }
                 Text("RADAR", color = Color(0xFFB6C2D2), fontSize = 14.sp)
                 Spacer(Modifier.weight(1f))
+                IconButton(onClick = { viewModel.setRadarBasemap((basemap + 1) % 3) }) {
+                    Icon(
+                        Icons.Filled.Layers,
+                        contentDescription = "Basemap: ${basemapLabel(basemap)}",
+                        tint = if (basemap != 0) Color(0xFFFFD54F) else Color(0xFF6B7686),
+                    )
+                }
                 IconButton(onClick = { viewModel.setBool(BoolSetting.RadarLandmarks, !showPois) }) {
                     Icon(
                         Icons.Filled.Place, contentDescription = "Landmarks",
@@ -383,6 +407,21 @@ fun RadarView(
                     Icon(
                         Icons.Filled.Explore, contentDescription = "Heading up",
                         tint = if (headingUp) Color(0xFFFFD54F) else Color(0xFFD8E0F0),
+                    )
+                }
+            }
+            if (basemap != 0) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        "${basemapLabel(basemap)} · opacity",
+                        color = Color(0xFFB6C2D2), fontSize = 11.sp,
+                        modifier = Modifier.width(120.dp),
+                    )
+                    Slider(
+                        value = basemapOpacity,
+                        onValueChange = { viewModel.setFloat(FloatSetting.RadarBasemapOpacity, it) },
+                        valueRange = 0.1f..1f,
+                        modifier = Modifier.weight(1f),
                     )
                 }
             }
@@ -407,11 +446,25 @@ fun RadarView(
             modifier = Modifier.align(Alignment.CenterEnd).fillMaxHeight(0.6f).padding(end = 2.dp),
         )
 
+        if (basemap != 0) {
+            Text(
+                "Map © Esri",
+                color = Color(0x99B6C2D2), fontSize = 9.sp,
+                modifier = Modifier.align(Alignment.BottomStart).padding(start = 12.dp, bottom = 72.dp),
+            )
+        }
+
         RadarDrawer(
             viewModel, aircraft, altMin, altMax, selectedHex,
             modifier = Modifier.align(Alignment.BottomCenter),
         )
     }
+}
+
+private fun basemapLabel(mode: Int): String = when (mode) {
+    1 -> "Satellite"
+    2 -> "Street map"
+    else -> "Off"
 }
 
 /**

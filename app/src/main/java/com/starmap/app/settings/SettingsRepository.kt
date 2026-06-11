@@ -53,6 +53,9 @@ data class Settings(
     val radarRangeNm: Float = 40f,
     val radarAltMinFt: Float = 0f,
     val radarAltMaxFt: Float = 60000f,
+    /** 0 = off, 1 = satellite imagery, 2 = street map. */
+    val radarBasemap: Int = 0,
+    val radarBasemapOpacity: Float = 0.6f,
     val showBelowHorizon: Boolean = false,
     val applyRefraction: Boolean = true,
     val centerIdentify: Boolean = true,
@@ -118,6 +121,8 @@ class SettingsRepository(private val context: Context) {
         val centerIdentify = booleanPreferencesKey("center_identify")
         val arMode = booleanPreferencesKey("ar_mode")
         val nightMode = booleanPreferencesKey("night_mode")
+        val radarBasemap = intPreferencesKey("radar_basemap")
+        val radarBasemapOpacity = floatPreferencesKey("radar_basemap_opacity")
         val orientationMode = intPreferencesKey("orientation_mode")
         val fovCirclesMode = intPreferencesKey("fov_circles_mode")
         val useExtendedCatalog = booleanPreferencesKey("use_extended_catalog")
@@ -168,6 +173,8 @@ class SettingsRepository(private val context: Context) {
             radarRangeNm = (p[Keys.radarRangeNm] ?: 40f).coerceIn(5f, 150f),
             radarAltMinFt = (p[Keys.radarAltMinFt] ?: 0f).coerceIn(0f, 60000f),
             radarAltMaxFt = (p[Keys.radarAltMaxFt] ?: 60000f).coerceIn(0f, 60000f),
+            radarBasemap = (p[Keys.radarBasemap] ?: 0).coerceIn(0, 2),
+            radarBasemapOpacity = (p[Keys.radarBasemapOpacity] ?: 0.6f).coerceIn(0f, 1f),
             showBelowHorizon = p[Keys.showBelowHorizon] ?: false,
             applyRefraction = p[Keys.applyRefraction] ?: true,
             centerIdentify = p[Keys.centerIdentify] ?: true,
@@ -202,6 +209,9 @@ class SettingsRepository(private val context: Context) {
     suspend fun setFovCircles(mode: Int) =
         context.dataStore.edit { it[Keys.fovCirclesMode] = mode }
 
+    suspend fun setRadarBasemap(mode: Int) =
+        context.dataStore.edit { it[Keys.radarBasemap] = mode }
+
     enum class FloatSetting(val key: Preferences.Key<Float>) {
         MagnitudeLimit(Keys.magnitudeLimit),
         LabelMagnitudeLimit(Keys.labelMagnitudeLimit),
@@ -211,6 +221,7 @@ class SettingsRepository(private val context: Context) {
         RadarRange(Keys.radarRangeNm),
         RadarAltMin(Keys.radarAltMinFt),
         RadarAltMax(Keys.radarAltMaxFt),
+        RadarBasemapOpacity(Keys.radarBasemapOpacity),
     }
 
     enum class BoolSetting(val key: Preferences.Key<Boolean>) {
