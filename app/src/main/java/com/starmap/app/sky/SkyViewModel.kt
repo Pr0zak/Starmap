@@ -614,6 +614,7 @@ class SkyViewModel(app: Application) : AndroidViewModel(app) {
     fun setOrientation(mode: Int) = viewModelScope.launch { settingsRepo.setOrientation(mode) }
     fun setFovCircles(mode: Int) = viewModelScope.launch { settingsRepo.setFovCircles(mode) }
     fun setRadarBasemap(mode: Int) = viewModelScope.launch { settingsRepo.setRadarBasemap(mode) }
+    fun setRadarWeather(mode: Int) = viewModelScope.launch { settingsRepo.setRadarWeather(mode) }
 
     // --- Updates ---
     fun checkForUpdates() {

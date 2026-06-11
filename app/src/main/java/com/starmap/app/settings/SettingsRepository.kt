@@ -56,6 +56,9 @@ data class Settings(
     /** 0 = off, 1 = satellite imagery, 2 = street map. */
     val radarBasemap: Int = 0,
     val radarBasemapOpacity: Float = 0.6f,
+    /** 0 = off, 1 = rain (radar), 2 = clouds (satellite). */
+    val radarWeather: Int = 0,
+    val radarWeatherOpacity: Float = 0.7f,
     val showBelowHorizon: Boolean = false,
     val applyRefraction: Boolean = true,
     val centerIdentify: Boolean = true,
@@ -123,6 +126,8 @@ class SettingsRepository(private val context: Context) {
         val nightMode = booleanPreferencesKey("night_mode")
         val radarBasemap = intPreferencesKey("radar_basemap")
         val radarBasemapOpacity = floatPreferencesKey("radar_basemap_opacity")
+        val radarWeather = intPreferencesKey("radar_weather")
+        val radarWeatherOpacity = floatPreferencesKey("radar_weather_opacity")
         val orientationMode = intPreferencesKey("orientation_mode")
         val fovCirclesMode = intPreferencesKey("fov_circles_mode")
         val useExtendedCatalog = booleanPreferencesKey("use_extended_catalog")
@@ -175,6 +180,8 @@ class SettingsRepository(private val context: Context) {
             radarAltMaxFt = (p[Keys.radarAltMaxFt] ?: 60000f).coerceIn(0f, 60000f),
             radarBasemap = (p[Keys.radarBasemap] ?: 0).coerceIn(0, 2),
             radarBasemapOpacity = (p[Keys.radarBasemapOpacity] ?: 0.6f).coerceIn(0f, 1f),
+            radarWeather = (p[Keys.radarWeather] ?: 0).coerceIn(0, 2),
+            radarWeatherOpacity = (p[Keys.radarWeatherOpacity] ?: 0.7f).coerceIn(0f, 1f),
             showBelowHorizon = p[Keys.showBelowHorizon] ?: false,
             applyRefraction = p[Keys.applyRefraction] ?: true,
             centerIdentify = p[Keys.centerIdentify] ?: true,
@@ -212,6 +219,9 @@ class SettingsRepository(private val context: Context) {
     suspend fun setRadarBasemap(mode: Int) =
         context.dataStore.edit { it[Keys.radarBasemap] = mode }
 
+    suspend fun setRadarWeather(mode: Int) =
+        context.dataStore.edit { it[Keys.radarWeather] = mode }
+
     enum class FloatSetting(val key: Preferences.Key<Float>) {
         MagnitudeLimit(Keys.magnitudeLimit),
         LabelMagnitudeLimit(Keys.labelMagnitudeLimit),
@@ -222,6 +232,7 @@ class SettingsRepository(private val context: Context) {
         RadarAltMin(Keys.radarAltMinFt),
         RadarAltMax(Keys.radarAltMaxFt),
         RadarBasemapOpacity(Keys.radarBasemapOpacity),
+        RadarWeatherOpacity(Keys.radarWeatherOpacity),
     }
 
     enum class BoolSetting(val key: Preferences.Key<Boolean>) {

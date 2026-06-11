@@ -29,7 +29,9 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Explore
 import androidx.compose.material.icons.filled.Layers
+import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.Place
+import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -40,6 +42,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -97,7 +100,30 @@ fun RadarView(
     val showPois = settings.radarLandmarks
     val basemap = settings.radarBasemap
     val basemapOpacity = settings.radarBasemapOpacity
+    val weather = settings.radarWeather
+    val weatherOpacity = settings.radarWeatherOpacity
     var showBasemapMenu by remember { mutableStateOf(false) }
+
+    // Weather animation state (RainViewer frames over the last ~2 h).
+    var weatherMaps by remember { mutableStateOf<WeatherTiles.Maps?>(null) }
+    var frameIdx by remember { mutableIntStateOf(0) }
+    var playing by remember { mutableStateOf(false) }
+    LaunchedEffect(weather) {
+        if (weather != 0 && weatherMaps == null) weatherMaps = WeatherTiles.fetch()
+    }
+    val weatherFrames = weatherMaps?.frames(weather) ?: emptyList()
+    LaunchedEffect(weatherFrames.size, weather) {
+        if (weatherFrames.isNotEmpty()) frameIdx = weatherFrames.lastIndex
+    }
+    LaunchedEffect(playing, weatherFrames.size) {
+        if (playing && weatherFrames.isNotEmpty()) {
+            while (true) {
+                delay(600)
+                frameIdx = (frameIdx + 1) % weatherFrames.size
+            }
+        }
+    }
+    val curFrame = weatherFrames.getOrNull(frameIdx.coerceIn(0, (weatherFrames.size - 1).coerceAtLeast(0)))
 
     val azState = remember { mutableFloatStateOf(0f) }
     LaunchedEffect(Unit) {
@@ -163,6 +189,19 @@ fun RadarView(
                 bearing = { azState.floatValue },
                 mode = basemap,
                 opacity = basemapOpacity,
+            )
+        }
+        if (weather != 0 && fix != null && curFrame != null) {
+            RadarWeatherLayer(
+                latitude = fix.latitude,
+                longitude = fix.longitude,
+                maxRangeKm = rangeNm * 1.852f,
+                headingUp = headingUp,
+                bearing = { azState.floatValue },
+                mode = weather,
+                opacity = weatherOpacity,
+                host = weatherMaps?.host,
+                framePath = curFrame.path,
             )
         }
         Canvas(
@@ -448,6 +487,72 @@ fun RadarView(
                                     valueRange = 0.1f..1f,
                                 )
                             }
+
+                            Spacer(Modifier.height(16.dp))
+                            Text("WEATHER", color = Color(0xFF8B97A8), fontSize = 10.sp)
+                            Spacer(Modifier.height(8.dp))
+                            Row {
+                                BasemapChip("Off", weather == 0) { viewModel.setRadarWeather(0) }
+                                Spacer(Modifier.width(6.dp))
+                                BasemapChip("Rain", weather == 1) { viewModel.setRadarWeather(1) }
+                                Spacer(Modifier.width(6.dp))
+                                BasemapChip("Clouds", weather == 2) { viewModel.setRadarWeather(2) }
+                            }
+                            if (weather != 0) {
+                                Spacer(Modifier.height(12.dp))
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Text("Opacity", color = Color(0xFFB6C2D2), fontSize = 12.sp)
+                                    Spacer(Modifier.weight(1f))
+                                    Text(
+                                        "${(weatherOpacity * 100).roundToInt()}%",
+                                        color = Color(0xFFFFD54F), fontSize = 12.sp,
+                                    )
+                                }
+                                Slider(
+                                    value = weatherOpacity,
+                                    onValueChange = {
+                                        viewModel.setFloat(FloatSetting.RadarWeatherOpacity, it)
+                                    },
+                                    valueRange = 0.1f..1f,
+                                )
+                                Spacer(Modifier.height(4.dp))
+                                if (weatherFrames.isEmpty()) {
+                                    Text(
+                                        if (weatherMaps == null) "Loading frames…" else "No data available",
+                                        color = Color(0xFF8B97A8), fontSize = 11.sp,
+                                    )
+                                } else {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        IconButton(onClick = { playing = !playing }) {
+                                            Icon(
+                                                if (playing) Icons.Filled.Pause else Icons.Filled.PlayArrow,
+                                                contentDescription = if (playing) "Pause" else "Play",
+                                                tint = Color(0xFFFFD54F),
+                                            )
+                                        }
+                                        if (weatherFrames.size >= 2) {
+                                            Slider(
+                                                value = frameIdx.toFloat()
+                                                    .coerceIn(0f, (weatherFrames.size - 1).toFloat()),
+                                                onValueChange = {
+                                                    playing = false
+                                                    frameIdx = it.roundToInt()
+                                                },
+                                                valueRange = 0f..(weatherFrames.size - 1).toFloat(),
+                                                steps = (weatherFrames.size - 2).coerceAtLeast(0),
+                                                modifier = Modifier.weight(1f),
+                                            )
+                                        } else {
+                                            Spacer(Modifier.weight(1f))
+                                        }
+                                        Text(
+                                            frameTimeLabel(curFrame?.timeSec),
+                                            color = Color(0xFFB6C2D2), fontSize = 11.sp,
+                                            modifier = Modifier.width(54.dp),
+                                        )
+                                    }
+                                }
+                            }
                         }
                     }
                 }
@@ -485,6 +590,17 @@ fun RadarView(
             viewModel, aircraft, altMin, altMax, selectedHex,
             modifier = Modifier.align(Alignment.BottomCenter),
         )
+    }
+}
+
+/** Frame time relative to now, e.g. "now", "−40m" (past), "+10m" (nowcast). */
+private fun frameTimeLabel(timeSec: Long?): String {
+    if (timeSec == null) return ""
+    val mins = ((System.currentTimeMillis() / 1000 - timeSec) / 60).toInt()
+    return when {
+        mins in -1..1 -> "now"
+        mins > 0 -> "−${mins}m"
+        else -> "+${-mins}m"
     }
 }
 
