@@ -2,9 +2,6 @@ package com.starmap.app.ui
 
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.offset
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -15,7 +12,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
@@ -39,7 +35,7 @@ internal fun radarGeometry(w: Float, h: Float, density: Float): RadarGeom {
     // right edge rather than reserving a strip) and uses most of the height. A slight
     // over-scan past the side edges keeps the scope feeling full-bleed.
     val cx = w / 2f
-    val cy = h * 0.46f
+    val cy = h * 0.5f
     val r = minOf(w * 0.53f, h * 0.43f)
     return RadarGeom(cx, cy, r)
 }
@@ -143,11 +139,9 @@ fun RadarBasemap(
                 mv.setExpectedCenter(GeoPoint(latitude, longitude))
                 mv.invalidate()
             },
-            modifier = Modifier
-                .offset(((g.cx - g.r) / density).dp, ((g.cy - g.r) / density).dp)
-                .size((2f * g.r / density).dp)
-                .clip(CircleShape)
-                .alpha(opacity),
+            // Fill the whole screen (centred on the observer) so there are no black
+            // borders; the range rings are drawn as circles on top.
+            modifier = Modifier.fillMaxSize().alpha(opacity),
         )
     }
 }

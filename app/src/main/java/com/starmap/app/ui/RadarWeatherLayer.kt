@@ -3,9 +3,7 @@ package com.starmap.app.ui
 import android.graphics.Color as AndroidColor
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -17,7 +15,6 @@ import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
@@ -123,12 +120,12 @@ fun RadarWeatherLayer(
         val weatherZoom = minOf(desiredZoom, 7.0)
         val scaleFactor = Math.pow(2.0, desiredZoom - weatherZoom).toFloat()
 
+        // Fill the whole screen: a square viewport (the longer screen dimension)
+        // rendered at z7 and scaled up so the real tiles cover the screen with no
+        // black borders, centred on the observer.
+        val side = maxOf(w, h)
         Box(
-            Modifier
-                .offset(((g.cx - g.r) / density).dp, ((g.cy - g.r) / density).dp)
-                .size((2f * g.r / density).dp)
-                .clip(CircleShape)
-                .alpha(opacity),
+            Modifier.fillMaxSize().alpha(opacity),
             contentAlignment = Alignment.Center,
         ) {
             AndroidView(
@@ -139,7 +136,7 @@ fun RadarWeatherLayer(
                     mv.invalidate()
                 },
                 modifier = Modifier
-                    .size((2f * g.r / scaleFactor / density).dp)
+                    .size((side / scaleFactor / density).dp)
                     .graphicsLayer(scaleX = scaleFactor, scaleY = scaleFactor),
             )
         }
