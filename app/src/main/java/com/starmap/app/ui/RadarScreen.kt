@@ -114,7 +114,16 @@ fun RadarView(
     var weatherLoaded by remember { mutableIntStateOf(0) }
     var weatherTotal by remember { mutableIntStateOf(0) }
     LaunchedEffect(weather) {
-        if (weather != 0 && weatherMaps == null) weatherMaps = WeatherTiles.fetch()
+        if (weather == 0) return@LaunchedEffect
+        while (true) {
+            // Refresh every few minutes so frame paths don't expire (RainViewer rolls
+            // its ~2 h window); only re-cache when the newest frame actually changed.
+            val m = WeatherTiles.fetch()
+            if (m != null && m.rain.lastOrNull()?.path != weatherMaps?.rain?.lastOrNull()?.path) {
+                weatherMaps = m
+            }
+            delay(5 * 60 * 1000L)
+        }
     }
     val weatherFrames = weatherMaps?.frames(weather) ?: emptyList()
     val weatherBuffered = weatherTotal > 0 && weatherLoaded >= weatherTotal
@@ -165,6 +174,10 @@ fun RadarView(
     val landmarks = model?.landmarks ?: emptyList()
     val selAc by viewModel.selectedAircraft
     val selectedHex = selAc?.icaoHex
+    // The big detail card can be dismissed while keeping the aircraft selected
+    // (highlighted, with its on-scope data block). Re-shown when the selection changes.
+    var detailsHidden by remember { mutableStateOf(false) }
+    LaunchedEffect(selectedHex) { detailsHidden = false }
 
     val hits = remember { mutableListOf<Pair<Offset, AircraftRender>>() }
     fun nearestTo(p: Offset): AircraftRender? {
@@ -220,7 +233,7 @@ fun RadarView(
             modifier = Modifier.fillMaxSize()
                 .pointerInput(Unit) {
                     detectTapGestures(
-                        onTap = { viewModel.selectAircraft(nearestTo(it)) },
+                        onTap = { viewModel.selectAircraft(nearestTo(it)); detailsHidden = false },
                         onLongPress = { p ->
                             nearestTo(p)?.let {
                                 viewModel.selectAircraft(it)
@@ -557,7 +570,7 @@ fun RadarView(
                     }
                 }
             }
-            selAc?.let { ac ->
+            selAc?.takeIf { !detailsHidden }?.let { ac ->
                 Spacer(Modifier.height(8.dp))
                 val route by viewModel.selectedRoute
                 val photo by viewModel.selectedPhoto
@@ -567,7 +580,7 @@ fun RadarView(
                     ac, route, photo, photoStatus,
                     tracking = followHex == ac.icaoHex,
                     onTrack = { viewModel.followAircraft(if (followHex == ac.icaoHex) null else ac.icaoHex) },
-                    onClose = { viewModel.selectAircraft(null) },
+                    onClose = { detailsHidden = true },
                 )
             }
         }

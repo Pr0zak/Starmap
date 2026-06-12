@@ -30,6 +30,10 @@ object WeatherTiles {
     /** Tile grid (Web-Mercator zoom [z]) covering the scope, shared by every frame. */
     data class Grid(val z: Int, val txMin: Int, val txMax: Int, val tyMin: Int, val tyMax: Int)
 
+    /** Tiles are composited at this size (downsampled from 256) to bound memory
+     *  across the ~13 cached frames. Weather radar is low-res, so it still reads fine. */
+    const val TILE_OUT_PX = 128
+
     suspend fun fetch(): Maps? = withContext(Dispatchers.IO) {
         try {
             val text = URL("https://api.rainviewer.com/public/weather-maps.json")
@@ -60,26 +64,31 @@ object WeatherTiles {
     suspend fun loadFrameBitmap(host: String, path: String, rain: Boolean, grid: Grid): Bitmap? {
         val wTiles = grid.txMax - grid.txMin + 1
         val hTiles = grid.tyMax - grid.tyMin + 1
-        if (wTiles <= 0 || hTiles <= 0 || wTiles * hTiles > 80) return null
+        if (wTiles <= 0 || hTiles <= 0 || wTiles * hTiles > 120) return null
         val suffix = if (rain) "/2/1_1.png" else "/0/0_0.png"
         val n = 1 shl grid.z
+        val out = TILE_OUT_PX
         return withContext(Dispatchers.IO) {
-            val bmp = Bitmap.createBitmap(wTiles * 256, hTiles * 256, Bitmap.Config.ARGB_8888)
+            val bmp = Bitmap.createBitmap(wTiles * out, hTiles * out, Bitmap.Config.ARGB_8888)
             val canvas = Canvas(bmp)
+            val paint = android.graphics.Paint().apply { isFilterBitmap = true }
             coroutineScope {
                 val jobs = ArrayList<kotlinx.coroutines.Deferred<Unit>>()
                 for (tx in grid.txMin..grid.txMax) {
                     for (ty in grid.tyMin..grid.tyMax) {
                         if (ty < 0 || ty >= n) continue
                         val wx = ((tx % n) + n) % n
-                        val dx = ((tx - grid.txMin) * 256).toFloat()
-                        val dy = ((ty - grid.tyMin) * 256).toFloat()
+                        val dstX = (tx - grid.txMin) * out
+                        val dstY = (ty - grid.tyMin) * out
                         jobs += async {
                             try {
                                 val url = "$host$path/256/${grid.z}/$wx/$ty$suffix"
                                 val bytes = URL(url).openStream().use { it.readBytes() }
                                 val tile = BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
-                                if (tile != null) synchronized(canvas) { canvas.drawBitmap(tile, dx, dy, null) }
+                                if (tile != null) {
+                                    val dst = android.graphics.Rect(dstX, dstY, dstX + out, dstY + out)
+                                    synchronized(canvas) { canvas.drawBitmap(tile, null, dst, paint) }
+                                }
                             } catch (e: Exception) {
                                 // missing tile → leave transparent
                             }

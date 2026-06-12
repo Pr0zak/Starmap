@@ -21,11 +21,8 @@ import androidx.compose.ui.unit.IntSize
 import kotlin.math.PI
 import kotlin.math.cos
 import kotlin.math.floor
-import kotlin.math.hypot
 import kotlin.math.ln
 import kotlin.math.sin
-
-private const val RV_ZOOM = 7 // RainViewer data tops out at ~z7
 
 /** Where the shared frame bitmap sits relative to the scope, plus the draw transform. */
 private data class WeatherGrid(
@@ -75,24 +72,30 @@ fun RadarWeatherLayer(
         val g = radarGeometry(w, h, density)
         val metersPerPixel = maxRangeKm * 1000.0 / g.r
         val desiredZoom = (ln(156543.03392 * cos(Math.toRadians(latitude)) / metersPerPixel) / ln(2.0))
-            .coerceIn(3.0, 12.0)
-        val scaleFactor = Math.pow(2.0, desiredZoom - RV_ZOOM).toFloat()
+            .coerceIn(2.0, 12.0)
+        // RainViewer only has data to ~z7. Pick a tile zoom that keeps the grid small
+        // and within range (instead of always z7, which blew up the grid — and went
+        // blank — at large ranges), then scale to the exact scope zoom.
+        val tileZoom = floor(desiredZoom).toInt().coerceIn(2, 7)
+        val nativeScale = Math.pow(2.0, desiredZoom - tileZoom).toFloat()
+        val ratio = WeatherTiles.TILE_OUT_PX / 256.0 // composited tiles are downsampled
 
-        val n = 1 shl RV_ZOOM
+        val n = 1 shl tileZoom
         val ogx = (longitude + 180.0) / 360.0 * n * 256.0
         val s = sin(Math.toRadians(latitude))
         val ogy = (0.5 - ln((1 + s) / (1 - s)) / (4 * PI)) * n * 256.0
-        val half = hypot(w.toDouble(), h.toDouble()) / 2.0 / scaleFactor
-        val txMin = floor((ogx - half) / 256.0).toInt()
-        val txMax = floor((ogx + half) / 256.0).toInt()
-        val tyMin = floor((ogy - half) / 256.0).toInt()
-        val tyMax = floor((ogy + half) / 256.0).toInt()
-        val grid = WeatherTiles.Grid(RV_ZOOM, txMin, txMax, tyMin, tyMax)
+        val halfX = w / 2.0 * 1.15 / nativeScale
+        val halfY = h / 2.0 * 1.15 / nativeScale
+        val txMin = floor((ogx - halfX) / 256.0).toInt()
+        val txMax = floor((ogx + halfX) / 256.0).toInt()
+        val tyMin = floor((ogy - halfY) / 256.0).toInt()
+        val tyMax = floor((ogy + halfY) / 256.0).toInt()
+        val grid = WeatherTiles.Grid(tileZoom, txMin, txMax, tyMin, tyMax)
         wg = WeatherGrid(
             grid = grid, cx = g.cx, cy = g.cy,
-            observerX = (ogx - txMin * 256).toFloat(),
-            observerY = (ogy - tyMin * 256).toFloat(),
-            scaleFactor = scaleFactor,
+            observerX = ((ogx - txMin * 256) * ratio).toFloat(),
+            observerY = ((ogy - tyMin * 256) * ratio).toFloat(),
+            scaleFactor = (nativeScale / ratio).toFloat(),
         )
 
         var done = 0
