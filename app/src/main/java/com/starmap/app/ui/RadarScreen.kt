@@ -37,6 +37,7 @@ import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -139,6 +140,8 @@ fun RadarView(
             awaitFrame()
         }
     }
+    // Stable bearing provider so the map layers aren't recomposed every animation frame.
+    val bearingProvider = remember { { azState.floatValue } }
 
     // Local range so pinch is smooth; persisted (debounced) without recomposing.
     var rangeNm by remember { mutableFloatStateOf(settings.radarRangeNm) }
@@ -193,7 +196,7 @@ fun RadarView(
                 longitude = fix.longitude,
                 maxRangeKm = rangeNm * 1.852f,
                 headingUp = headingUp,
-                bearing = { azState.floatValue },
+                bearing = bearingProvider,
                 mode = basemap,
                 opacity = basemapOpacity,
             )
@@ -204,7 +207,7 @@ fun RadarView(
                 longitude = fix.longitude,
                 maxRangeKm = rangeNm * 1.852f,
                 headingUp = headingUp,
-                bearing = { azState.floatValue },
+                bearing = bearingProvider,
                 mode = weather,
                 opacity = weatherOpacity,
                 host = weatherMaps?.host,
@@ -601,11 +604,22 @@ fun RadarView(
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         if (!weatherBuffered) {
-                            val pct = if (weatherTotal > 0) weatherLoaded * 100 / weatherTotal else 0
+                            val frac = if (weatherTotal > 0) weatherLoaded.toFloat() / weatherTotal else 0f
                             Text(
-                                "   Caching frames…  $pct%",
+                                "Caching frames",
                                 color = Color(0xFFB6C2D2), fontSize = 12.sp,
-                                modifier = Modifier.weight(1f).padding(vertical = 14.dp),
+                                modifier = Modifier.padding(start = 4.dp, end = 10.dp),
+                            )
+                            LinearProgressIndicator(
+                                progress = { frac },
+                                color = Color(0xFFFFD54F),
+                                trackColor = Color(0x33FFFFFF),
+                                modifier = Modifier.weight(1f).padding(vertical = 18.dp),
+                            )
+                            Text(
+                                "${(frac * 100).roundToInt()}%",
+                                color = Color(0xFFB6C2D2), fontSize = 12.sp,
+                                modifier = Modifier.width(44.dp).padding(start = 8.dp),
                             )
                         } else {
                             IconButton(onClick = { playing = !playing }) {

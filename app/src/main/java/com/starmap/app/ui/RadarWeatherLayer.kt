@@ -65,7 +65,8 @@ fun RadarWeatherLayer(
     val h = sizePx.height.toFloat()
     val framesKey = frames.lastOrNull()?.path ?: ""
 
-    LaunchedEffect(sizePx, latRound(latitude), latRound(longitude), maxRangeKm, mode, host, framesKey) {
+    // Round the centre to ~1 km so GPS jitter doesn't keep restarting the prefetch.
+    LaunchedEffect(sizePx, keyRound(latitude), keyRound(longitude), maxRangeKm, mode, host, framesKey) {
         bitmaps.clear()
         wg = null
         onBuffered(0, frames.size)
@@ -94,10 +95,12 @@ fun RadarWeatherLayer(
             scaleFactor = scaleFactor,
         )
 
+        var done = 0
         for (f in frames) {
             val bmp = WeatherTiles.loadFrameBitmap(host, f.path, rain = mode == 1, grid = grid)
             if (bmp != null) bitmaps[f.path] = bmp
-            onBuffered(bitmaps.size, frames.size)
+            done++
+            onBuffered(done, frames.size) // count attempts so a failed tile can't stall buffering
         }
     }
 
@@ -121,4 +124,4 @@ fun RadarWeatherLayer(
     }
 }
 
-private fun latRound(v: Double): Double = Math.round(v * 1000.0) / 1000.0
+private fun keyRound(v: Double): Double = Math.round(v * 100.0) / 100.0
