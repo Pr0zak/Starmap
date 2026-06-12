@@ -524,8 +524,6 @@ fun RadarView(
                                 BasemapChip("Off", weather == 0) { viewModel.setRadarWeather(0) }
                                 Spacer(Modifier.width(6.dp))
                                 BasemapChip("Rain", weather == 1) { viewModel.setRadarWeather(1) }
-                                Spacer(Modifier.width(6.dp))
-                                BasemapChip("Clouds", weather == 2) { viewModel.setRadarWeather(2) }
                             }
                             if (weather != 0) {
                                 Spacer(Modifier.height(12.dp))
@@ -579,10 +577,7 @@ fun RadarView(
 
         Column(modifier = Modifier.align(Alignment.BottomCenter).fillMaxWidth()) {
             if (weather != 0) {
-                WeatherLegend(
-                    mode = weather,
-                    modifier = Modifier.padding(start = 12.dp, bottom = 4.dp),
-                )
+                WeatherLegend(modifier = Modifier.padding(start = 12.dp, bottom = 4.dp))
             }
             if (basemap != 0 || weather != 0) {
                 Text(
@@ -659,34 +654,27 @@ private fun frameTimeLabel(timeSec: Long?): String {
     }
 }
 
-// Colour ramps matching the RainViewer schemes the layers render with.
+// Colour ramp matching the RainViewer rain scheme the layer renders with.
 private val RAIN_RAMP = listOf(
     Color(0xFF88DDEE), Color(0xFF00A3E0), Color(0xFF0088BF),
     Color(0xFFFFE000), Color(0xFFFF9600), Color(0xFFD20000),
 )
-private val CLOUD_RAMP = listOf(
-    Color(0xFF3A4654), Color(0xFF8A98A8), Color(0xFFCDD6E0), Color(0xFFFFFFFF),
-)
 
-/** Compact intensity legend for the active weather layer. */
+/** Compact rain-intensity legend. */
 @Composable
-private fun WeatherLegend(mode: Int, modifier: Modifier = Modifier) {
-    val ramp = if (mode == 2) CLOUD_RAMP else RAIN_RAMP
-    val title = if (mode == 2) "Cloud cover" else "Rain"
-    val lo = if (mode == 2) "Thin" else "Light"
-    val hi = if (mode == 2) "Thick" else "Heavy"
+private fun WeatherLegend(modifier: Modifier = Modifier) {
     val labelColor = Color(0xFFB6C2D2)
     Row(verticalAlignment = Alignment.CenterVertically, modifier = modifier) {
-        Text("$title  ", color = labelColor, fontSize = 9.sp)
-        Text("$lo ", color = labelColor, fontSize = 9.sp)
+        Text("Rain  ", color = labelColor, fontSize = 9.sp)
+        Text("Light ", color = labelColor, fontSize = 9.sp)
         Row(
             modifier = Modifier.clip(RoundedCornerShape(2.dp)),
         ) {
-            for (c in ramp) {
+            for (c in RAIN_RAMP) {
                 Box(Modifier.width(16.dp).height(8.dp).background(c))
             }
         }
-        Text(" $hi", color = labelColor, fontSize = 9.sp)
+        Text(" Heavy", color = labelColor, fontSize = 9.sp)
     }
 }
 

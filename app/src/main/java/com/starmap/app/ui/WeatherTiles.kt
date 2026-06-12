@@ -23,12 +23,8 @@ object WeatherTiles {
 
     data class Frame(val timeSec: Long, val path: String)
 
-    data class Maps(val host: String, val rain: List<Frame>, val clouds: List<Frame>) {
-        fun frames(mode: Int): List<Frame> = when (mode) {
-            1 -> rain
-            2 -> clouds
-            else -> emptyList()
-        }
+    data class Maps(val host: String, val rain: List<Frame>) {
+        fun frames(mode: Int): List<Frame> = if (mode == 1) rain else emptyList()
     }
 
     /** Tile grid (Web-Mercator zoom [z]) covering the scope, shared by every frame. */
@@ -42,8 +38,7 @@ object WeatherTiles {
             val host = root.getString("host")
             val radar = root.optJSONObject("radar")
             val rain = parse(radar?.optJSONArray("past")) + parse(radar?.optJSONArray("nowcast"))
-            val clouds = parse(root.optJSONObject("satellite")?.optJSONArray("infrared"))
-            Maps(host, rain, clouds)
+            Maps(host, rain)
         } catch (e: Exception) {
             null
         }

@@ -57,7 +57,7 @@ data class Settings(
     /** 0 = off, 1 = satellite imagery, 2 = street map. */
     val radarBasemap: Int = 0,
     val radarBasemapOpacity: Float = 0.6f,
-    /** 0 = off, 1 = rain (radar), 2 = clouds (satellite). */
+    /** 0 = off, 1 = rain (radar). */
     val radarWeather: Int = 0,
     val radarWeatherOpacity: Float = 0.7f,
     val showBelowHorizon: Boolean = false,
@@ -183,7 +183,7 @@ class SettingsRepository(private val context: Context) {
             radarAltMaxFt = (p[Keys.radarAltMaxFt] ?: 60000f).coerceIn(0f, 60000f),
             radarBasemap = (p[Keys.radarBasemap] ?: 0).coerceIn(0, 2),
             radarBasemapOpacity = (p[Keys.radarBasemapOpacity] ?: 0.6f).coerceIn(0f, 1f),
-            radarWeather = (p[Keys.radarWeather] ?: 0).coerceIn(0, 2),
+            radarWeather = (p[Keys.radarWeather] ?: 0).coerceIn(0, 1),
             radarWeatherOpacity = (p[Keys.radarWeatherOpacity] ?: 0.7f).coerceIn(0f, 1f),
             showBelowHorizon = p[Keys.showBelowHorizon] ?: false,
             applyRefraction = p[Keys.applyRefraction] ?: true,
