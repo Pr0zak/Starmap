@@ -4,6 +4,7 @@ import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.detectTransformGestures
@@ -109,17 +110,22 @@ fun RadarView(
     var weatherMaps by remember { mutableStateOf<WeatherTiles.Maps?>(null) }
     var frameIdx by remember { mutableIntStateOf(0) }
     var playing by remember { mutableStateOf(false) }
+    var weatherLoaded by remember { mutableIntStateOf(0) }
+    var weatherTotal by remember { mutableIntStateOf(0) }
     LaunchedEffect(weather) {
         if (weather != 0 && weatherMaps == null) weatherMaps = WeatherTiles.fetch()
     }
     val weatherFrames = weatherMaps?.frames(weather) ?: emptyList()
+    val weatherBuffered = weatherTotal > 0 && weatherLoaded >= weatherTotal
     LaunchedEffect(weatherFrames.size, weather) {
         if (weatherFrames.isNotEmpty()) frameIdx = weatherFrames.lastIndex
     }
-    LaunchedEffect(playing, weatherFrames.size) {
-        if (playing && weatherFrames.isNotEmpty()) {
+    // Don't animate until every frame is cached, so playback is smooth.
+    LaunchedEffect(weatherBuffered) { if (!weatherBuffered) playing = false }
+    LaunchedEffect(playing, weatherBuffered, weatherFrames.size) {
+        if (playing && weatherBuffered && weatherFrames.isNotEmpty()) {
             while (true) {
-                delay(600)
+                delay(550)
                 frameIdx = (frameIdx + 1) % weatherFrames.size
             }
         }
@@ -192,7 +198,7 @@ fun RadarView(
                 opacity = basemapOpacity,
             )
         }
-        if (weather != 0 && fix != null && curFrame != null) {
+        if (weather != 0 && fix != null && weatherFrames.isNotEmpty()) {
             RadarWeatherLayer(
                 latitude = fix.latitude,
                 longitude = fix.longitude,
@@ -202,7 +208,9 @@ fun RadarView(
                 mode = weather,
                 opacity = weatherOpacity,
                 host = weatherMaps?.host,
-                framePath = curFrame.path,
+                frames = weatherFrames,
+                frameIndex = frameIdx,
+                onBuffered = { loaded, total -> weatherLoaded = loaded; weatherTotal = total },
             )
         }
         Canvas(
@@ -422,6 +430,16 @@ fun RadarView(
             }
         }
 
+        // Tap anywhere outside the basemap/weather menu to dismiss it.
+        if (showBasemapMenu) {
+            Box(
+                Modifier.fillMaxSize().clickable(
+                    interactionSource = remember { MutableInteractionSource() },
+                    indication = null,
+                ) { showBasemapMenu = false },
+            )
+        }
+
         // Top controls + the selected-aircraft card (reused from the sky view).
         Column(
             modifier = Modifier.align(Alignment.TopStart).fillMaxWidth().statusBarsPadding().padding(8.dp),
@@ -462,7 +480,11 @@ fun RadarView(
                 Spacer(Modifier.height(6.dp))
                 Box(Modifier.fillMaxWidth()) {
                     Surface(
-                        modifier = Modifier.align(Alignment.TopCenter).width(232.dp),
+                        modifier = Modifier.align(Alignment.TopCenter).width(232.dp)
+                            .clickable(
+                                interactionSource = remember { MutableInteractionSource() },
+                                indication = null,
+                            ) {},
                         shape = RoundedCornerShape(14.dp),
                         color = Color(0xF2161E2A),
                     ) {
@@ -583,29 +605,38 @@ fun RadarView(
                         modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 2.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        IconButton(onClick = { playing = !playing }) {
-                            Icon(
-                                if (playing) Icons.Filled.Pause else Icons.Filled.PlayArrow,
-                                contentDescription = if (playing) "Pause" else "Play",
-                                tint = Color(0xFFFFD54F),
-                            )
-                        }
-                        if (weatherFrames.size >= 2) {
-                            CleanSlider(
-                                value = frameIdx.toFloat().coerceIn(0f, (weatherFrames.size - 1).toFloat()),
-                                onValueChange = { playing = false; frameIdx = it.roundToInt() },
-                                valueRange = 0f..(weatherFrames.size - 1).toFloat(),
-                                steps = (weatherFrames.size - 2).coerceAtLeast(0),
-                                modifier = Modifier.weight(1f),
+                        if (!weatherBuffered) {
+                            val pct = if (weatherTotal > 0) weatherLoaded * 100 / weatherTotal else 0
+                            Text(
+                                "   Caching frames…  $pct%",
+                                color = Color(0xFFB6C2D2), fontSize = 12.sp,
+                                modifier = Modifier.weight(1f).padding(vertical = 14.dp),
                             )
                         } else {
-                            Spacer(Modifier.weight(1f))
+                            IconButton(onClick = { playing = !playing }) {
+                                Icon(
+                                    if (playing) Icons.Filled.Pause else Icons.Filled.PlayArrow,
+                                    contentDescription = if (playing) "Pause" else "Play",
+                                    tint = Color(0xFFFFD54F),
+                                )
+                            }
+                            if (weatherFrames.size >= 2) {
+                                CleanSlider(
+                                    value = frameIdx.toFloat().coerceIn(0f, (weatherFrames.size - 1).toFloat()),
+                                    onValueChange = { playing = false; frameIdx = it.roundToInt() },
+                                    valueRange = 0f..(weatherFrames.size - 1).toFloat(),
+                                    steps = (weatherFrames.size - 2).coerceAtLeast(0),
+                                    modifier = Modifier.weight(1f),
+                                )
+                            } else {
+                                Spacer(Modifier.weight(1f))
+                            }
+                            Text(
+                                frameTimeLabel(curFrame?.timeSec),
+                                color = Color(0xFFB6C2D2), fontSize = 11.sp,
+                                modifier = Modifier.width(54.dp),
+                            )
                         }
-                        Text(
-                            frameTimeLabel(curFrame?.timeSec),
-                            color = Color(0xFFB6C2D2), fontSize = 11.sp,
-                            modifier = Modifier.width(54.dp),
-                        )
                     }
                 }
             }

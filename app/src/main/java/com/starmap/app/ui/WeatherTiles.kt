@@ -1,16 +1,22 @@
 package com.starmap.app.ui
 
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
+import android.graphics.Canvas
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
-import org.osmdroid.tileprovider.tilesource.OnlineTileSourceBase
-import org.osmdroid.util.MapTileIndex
 import java.net.URL
 
 /**
  * Weather radar/cloud tiles from RainViewer (free, no API key). Provides a timeline
  * of past frames so the radar can animate precipitation / clouds over the last ~2h.
+ * Frames are pre-rendered to bitmaps so playback is smooth (osmdroid's tile cache is
+ * keyed by coordinate, not frame, so swapping sources live would thrash and tear).
  * See https://www.rainviewer.com/api.html
  */
 object WeatherTiles {
@@ -24,6 +30,9 @@ object WeatherTiles {
             else -> emptyList()
         }
     }
+
+    /** Tile grid (Web-Mercator zoom [z]) covering the scope, shared by every frame. */
+    data class Grid(val z: Int, val txMin: Int, val txMax: Int, val tyMin: Int, val tyMax: Int)
 
     suspend fun fetch(): Maps? = withContext(Dispatchers.IO) {
         try {
@@ -49,23 +58,42 @@ object WeatherTiles {
     }
 
     /**
-     * osmdroid tile source for one weather frame. The source name embeds the frame
-     * path so different frames cache independently and the animation replays smoothly.
-     * [rain] picks a precipitation colour scheme; otherwise an infrared-cloud scheme.
+     * Download every tile of one frame over [grid] and composite them into a single
+     * bitmap (transparent where there's no precipitation). [rain] picks a precipitation
+     * colour scheme; otherwise an infrared-cloud scheme.
      */
-    fun tileSource(host: String, path: String, rain: Boolean): OnlineTileSourceBase {
-        val base = "$host$path/256/"
+    suspend fun loadFrameBitmap(host: String, path: String, rain: Boolean, grid: Grid): Bitmap? {
+        val wTiles = grid.txMax - grid.txMin + 1
+        val hTiles = grid.tyMax - grid.tyMin + 1
+        if (wTiles <= 0 || hTiles <= 0 || wTiles * hTiles > 80) return null
         val suffix = if (rain) "/2/1_1.png" else "/0/0_0.png"
-        // RainViewer radar/satellite data only exists up to ~zoom 7; higher zooms
-        // return empty tiles. Cap here so osmdroid upscales z7 tiles to fill the
-        // scope instead of requesting blank ones.
-        return object : OnlineTileSourceBase("rv$path", 1, 7, 256, "", arrayOf(base), "RainViewer") {
-            override fun getTileURLString(pMapTileIndex: Long): String {
-                val z = MapTileIndex.getZoom(pMapTileIndex)
-                val x = MapTileIndex.getX(pMapTileIndex)
-                val y = MapTileIndex.getY(pMapTileIndex)
-                return base + z + "/" + x + "/" + y + suffix
+        val n = 1 shl grid.z
+        return withContext(Dispatchers.IO) {
+            val bmp = Bitmap.createBitmap(wTiles * 256, hTiles * 256, Bitmap.Config.ARGB_8888)
+            val canvas = Canvas(bmp)
+            coroutineScope {
+                val jobs = ArrayList<kotlinx.coroutines.Deferred<Unit>>()
+                for (tx in grid.txMin..grid.txMax) {
+                    for (ty in grid.tyMin..grid.tyMax) {
+                        if (ty < 0 || ty >= n) continue
+                        val wx = ((tx % n) + n) % n
+                        val dx = ((tx - grid.txMin) * 256).toFloat()
+                        val dy = ((ty - grid.tyMin) * 256).toFloat()
+                        jobs += async {
+                            try {
+                                val url = "$host$path/256/${grid.z}/$wx/$ty$suffix"
+                                val bytes = URL(url).openStream().use { it.readBytes() }
+                                val tile = BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
+                                if (tile != null) synchronized(canvas) { canvas.drawBitmap(tile, dx, dy, null) }
+                            } catch (e: Exception) {
+                                // missing tile → leave transparent
+                            }
+                        }
+                    }
+                }
+                jobs.awaitAll()
             }
+            bmp
         }
     }
 }

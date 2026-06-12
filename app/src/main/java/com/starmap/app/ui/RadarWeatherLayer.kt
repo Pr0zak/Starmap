@@ -1,43 +1,45 @@
 package com.starmap.app.ui
 
-import android.graphics.Color as AndroidColor
+import android.graphics.Bitmap
+import android.graphics.Matrix
+import android.graphics.Paint
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.size
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import androidx.compose.runtime.withFrameNanos
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.alpha
-import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.layout.onSizeChanged
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.IntSize
-import androidx.compose.ui.unit.dp
-import androidx.compose.ui.viewinterop.AndroidView
-import org.osmdroid.config.Configuration
-import org.osmdroid.util.GeoPoint
-import org.osmdroid.views.CustomZoomButtonsController
-import org.osmdroid.views.MapView
+import kotlin.math.PI
 import kotlin.math.cos
+import kotlin.math.floor
+import kotlin.math.hypot
 import kotlin.math.ln
+import kotlin.math.sin
+
+private const val RV_ZOOM = 7 // RainViewer data tops out at ~z7
+
+/** Where the shared frame bitmap sits relative to the scope, plus the draw transform. */
+private data class WeatherGrid(
+    val grid: WeatherTiles.Grid,
+    val cx: Float, val cy: Float,
+    val observerX: Float, val observerY: Float, // observer's pixel inside the bitmap
+    val scaleFactor: Float,
+)
 
 /**
- * Animated weather layer (rain radar or cloud satellite) drawn over the basemap and
- * under the scope. The RainViewer frame is the map's *base* tile source — it returns
- * transparent tiles where there's no precipitation, so with a transparent loading
- * background only the weather shows, compositing over the basemap below.
- *
- * RainViewer data tops out at ~z7, so the map renders at z7 in a smaller viewport and
- * is scaled up to fill the scope (low-res, but correctly aligned with the range rings).
- * [mode] is 1 = rain, 2 = clouds.
+ * Animated weather layer. Every frame is pre-rendered to a bitmap up front (keyed by
+ * frame path) so playback is smooth and tear-free, then the current frame is drawn on a
+ * Canvas — scaled/rotated/positioned to fill the screen aligned with the range rings.
+ * [mode] is 1 = rain, 2 = clouds. [onBuffered] reports prefetch progress (loaded, total).
  */
 @Composable
 fun RadarWeatherLayer(
@@ -49,96 +51,74 @@ fun RadarWeatherLayer(
     mode: Int,
     opacity: Float,
     host: String?,
-    framePath: String?,
+    frames: List<WeatherTiles.Frame>,
+    frameIndex: Int,
+    onBuffered: (loaded: Int, total: Int) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val context = LocalContext.current
     val density = LocalDensity.current.density
     var sizePx by remember { mutableStateOf(IntSize.Zero) }
+    var wg by remember { mutableStateOf<WeatherGrid?>(null) }
+    val bitmaps = remember { mutableStateMapOf<String, Bitmap>() }
 
-    val mapView = remember {
-        Configuration.getInstance().apply {
-            userAgentValue = context.packageName
-            osmdroidBasePath = context.cacheDir
-            osmdroidTileCache = java.io.File(context.cacheDir, "osmdroid")
-        }
-        MapView(context).apply {
-            setMultiTouchControls(false)
-            zoomController.setVisibility(CustomZoomButtonsController.Visibility.NEVER)
-            setTilesScaledToDpi(false)
-            setUseDataConnection(true)
-            isHorizontalMapRepetitionEnabled = false
-            isVerticalMapRepetitionEnabled = false
-            setBackgroundColor(AndroidColor.TRANSPARENT)
-            overlayManager.tilesOverlay.loadingBackgroundColor = AndroidColor.TRANSPARENT
-            overlayManager.tilesOverlay.loadingLineColor = AndroidColor.TRANSPARENT
-            setOnTouchListener { _, _ -> true }
-        }
-    }
+    val w = sizePx.width.toFloat()
+    val h = sizePx.height.toFloat()
+    val framesKey = frames.lastOrNull()?.path ?: ""
 
-    DisposableEffect(mapView) {
-        mapView.onResume()
-        onDispose { mapView.onPause(); mapView.onDetach() }
-    }
+    LaunchedEffect(sizePx, latRound(latitude), latRound(longitude), maxRangeKm, mode, host, framesKey) {
+        bitmaps.clear()
+        wg = null
+        onBuffered(0, frames.size)
+        if (w <= 0f || h <= 0f || host == null || frames.isEmpty()) return@LaunchedEffect
 
-    // Each frame gets its own per-timestamp source so frames cache independently.
-    LaunchedEffect(host, framePath, mode) {
-        val h = host
-        val p = framePath
-        if (h != null && p != null) {
-            mapView.setTileSource(WeatherTiles.tileSource(h, p, rain = mode == 1))
-            mapView.invalidate()
-        }
-    }
-
-    LaunchedEffect(mapView, headingUp) {
-        if (!headingUp) {
-            mapView.mapOrientation = 0f
-            return@LaunchedEffect
-        }
-        var last = Float.NaN
-        while (true) {
-            val b = bearing()
-            if (last.isNaN() || kotlin.math.abs(b - last) > 0.5f) {
-                mapView.mapOrientation = b
-                last = b
-            }
-            withFrameNanos { }
-        }
-    }
-
-    Box(modifier.fillMaxSize().onSizeChanged { sizePx = it }) {
-        val w = sizePx.width.toFloat()
-        val h = sizePx.height.toFloat()
-        if (w <= 0f || h <= 0f) return@Box
         val g = radarGeometry(w, h, density)
         val metersPerPixel = maxRangeKm * 1000.0 / g.r
         val desiredZoom = (ln(156543.03392 * cos(Math.toRadians(latitude)) / metersPerPixel) / ln(2.0))
             .coerceIn(3.0, 12.0)
-        // Render at <= z7 (where RainViewer has data) in a smaller viewport, then scale
-        // it up so the real tiles fill the scope at the correct geographic scale.
-        val weatherZoom = minOf(desiredZoom, 7.0)
-        val scaleFactor = Math.pow(2.0, desiredZoom - weatherZoom).toFloat()
+        val scaleFactor = Math.pow(2.0, desiredZoom - RV_ZOOM).toFloat()
 
-        // Fill the whole screen: a square viewport (the longer screen dimension)
-        // rendered at z7 and scaled up so the real tiles cover the screen with no
-        // black borders, centred on the observer.
-        val side = maxOf(w, h)
-        Box(
-            Modifier.fillMaxSize().alpha(opacity),
-            contentAlignment = Alignment.Center,
-        ) {
-            AndroidView(
-                factory = { mapView },
-                update = { mv ->
-                    mv.controller.setZoom(weatherZoom)
-                    mv.setExpectedCenter(GeoPoint(latitude, longitude))
-                    mv.invalidate()
-                },
-                modifier = Modifier
-                    .size((side / scaleFactor / density).dp)
-                    .graphicsLayer(scaleX = scaleFactor, scaleY = scaleFactor),
-            )
+        val n = 1 shl RV_ZOOM
+        val ogx = (longitude + 180.0) / 360.0 * n * 256.0
+        val s = sin(Math.toRadians(latitude))
+        val ogy = (0.5 - ln((1 + s) / (1 - s)) / (4 * PI)) * n * 256.0
+        val half = hypot(w.toDouble(), h.toDouble()) / 2.0 / scaleFactor
+        val txMin = floor((ogx - half) / 256.0).toInt()
+        val txMax = floor((ogx + half) / 256.0).toInt()
+        val tyMin = floor((ogy - half) / 256.0).toInt()
+        val tyMax = floor((ogy + half) / 256.0).toInt()
+        val grid = WeatherTiles.Grid(RV_ZOOM, txMin, txMax, tyMin, tyMax)
+        wg = WeatherGrid(
+            grid = grid, cx = g.cx, cy = g.cy,
+            observerX = (ogx - txMin * 256).toFloat(),
+            observerY = (ogy - tyMin * 256).toFloat(),
+            scaleFactor = scaleFactor,
+        )
+
+        for (f in frames) {
+            val bmp = WeatherTiles.loadFrameBitmap(host, f.path, rain = mode == 1, grid = grid)
+            if (bmp != null) bitmaps[f.path] = bmp
+            onBuffered(bitmaps.size, frames.size)
+        }
+    }
+
+    Box(modifier.fillMaxSize().onSizeChanged { sizePx = it }) {
+        val grid = wg ?: return@Box
+        Canvas(Modifier.fillMaxSize()) {
+            val f = frames.getOrNull(frameIndex) ?: return@Canvas
+            val bmp = bitmaps[f.path] ?: return@Canvas
+            val m = Matrix().apply {
+                postTranslate(-grid.observerX, -grid.observerY)
+                postScale(grid.scaleFactor, grid.scaleFactor)
+                if (headingUp) postRotate(-bearing())
+                postTranslate(grid.cx, grid.cy)
+            }
+            val paint = Paint().apply {
+                alpha = (opacity * 255).toInt().coerceIn(0, 255)
+                isFilterBitmap = true
+            }
+            drawContext.canvas.nativeCanvas.drawBitmap(bmp, m, paint)
         }
     }
 }
+
+private fun latRound(v: Double): Double = Math.round(v * 1000.0) / 1000.0
