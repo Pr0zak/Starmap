@@ -106,17 +106,27 @@ class AircraftManager {
             }
         }
 
+    /**
+     * One end of a flight route: the short [code] (IATA, else ICAO) the user sees, plus
+     * the full airport [name] and a human [location] ("City, Country") to expand it to.
+     * [name]/[location] are blank when adsbdb doesn't know the airport.
+     */
+    data class Airport(val code: String, val name: String, val location: String)
+
     /** Flight route (origin → destination, with airline) for a callsign, from adsbdb. */
-    data class Route(val origin: String, val destination: String, val airline: String)
+    data class Route(val origin: Airport, val destination: Airport, val airline: String)
 
     suspend fun fetchRoute(callsign: String): Route? {
         val cs = callsign.trim()
         if (cs.isEmpty() || cs == "?") return null
         val resp = Http.getJson("https://api.adsbdb.com/v0/callsign/$cs", timeoutMs = 10_000) ?: return null
         val fr = resp.optJSONObject("response")?.optJSONObject("flightroute") ?: return null
-        fun airport(key: String): String {
-            val a = fr.optJSONObject(key) ?: return "?"
-            return a.optString("iata_code").ifBlank { a.optString("icao_code") }.ifBlank { "?" }
+        fun airport(key: String): Airport {
+            val a = fr.optJSONObject(key) ?: return Airport("?", "", "")
+            val code = a.optString("iata_code").ifBlank { a.optString("icao_code") }.ifBlank { "?" }
+            val location = listOf(a.optString("municipality"), a.optString("country_name"))
+                .filter { it.isNotBlank() }.joinToString(", ")
+            return Airport(code, a.optString("name"), location)
         }
         val airline = fr.optJSONObject("airline")?.optString("name", "").orEmpty()
         return Route(airport("origin"), airport("destination"), airline)

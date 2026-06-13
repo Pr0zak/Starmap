@@ -82,6 +82,7 @@ import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
@@ -884,16 +885,52 @@ internal fun AircraftInfoCard(
                 color = Color(0x99FFFFFF), fontSize = 12.sp,
             )
             route?.let {
-                if (it.origin != "?" || it.destination != "?") {
-                    Text(
-                        "${it.origin}  →  ${it.destination}",
-                        color = Color(0xFF9FE0C0), fontSize = 15.sp,
-                        modifier = Modifier.padding(top = 4.dp),
-                    )
+                if (it.origin.code != "?" || it.destination.code != "?") {
+                    AirportRoute(it.origin, it.destination)
                 }
             }
         }
     }
+}
+
+/**
+ * The flight route shown on the aircraft card: two airport codes with an arrow between.
+ * A code with known details (full name / city) is underlined and tappable, expanding to
+ * show that name and location below; tapping again collapses it.
+ */
+@Composable
+private fun AirportRoute(origin: AircraftManager.Airport, destination: AircraftManager.Airport) {
+    var expanded by remember(origin, destination) { mutableStateOf<AircraftManager.Airport?>(null) }
+    Column(modifier = Modifier.padding(top = 4.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            AirportCode(origin) { expanded = if (expanded == origin) null else origin }
+            Text("  →  ", color = Color(0xFF9FE0C0), fontSize = 15.sp)
+            AirportCode(destination) { expanded = if (expanded == destination) null else destination }
+        }
+        expanded?.let { ap ->
+            if (ap.name.isNotBlank()) {
+                Text(
+                    "${ap.code} · ${ap.name}",
+                    color = Color(0xCCFFFFFF), fontSize = 13.sp,
+                    modifier = Modifier.padding(top = 4.dp),
+                )
+            }
+            if (ap.location.isNotBlank()) {
+                Text(ap.location, color = Color(0x99FFFFFF), fontSize = 12.sp)
+            }
+        }
+    }
+}
+
+@Composable
+private fun AirportCode(airport: AircraftManager.Airport, onClick: () -> Unit) {
+    val hasDetail = airport.code != "?" && (airport.name.isNotBlank() || airport.location.isNotBlank())
+    Text(
+        airport.code,
+        color = Color(0xFF9FE0C0), fontSize = 15.sp,
+        textDecoration = if (hasDetail) TextDecoration.Underline else null,
+        modifier = if (hasDetail) Modifier.clickable(onClick = onClick) else Modifier,
+    )
 }
 
 private fun Context.findActivity(): Activity? {

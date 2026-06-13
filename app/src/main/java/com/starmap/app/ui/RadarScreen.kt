@@ -405,7 +405,7 @@ fun RadarView(
                         add("${ac.typeCode.ifBlank { "—" }}  FL${(ft / 100).roundToInt()}$vr")
                         add("${ac.groundSpeedKts.roundToInt()} kt  ·  ${(ac.rangeKm * 0.539957).roundToInt()} nm")
                         selRoute?.let {
-                            val rt = "${it.origin}→${it.destination}"
+                            val rt = "${it.origin.code}→${it.destination.code}"
                             if (rt.length > 1) add(rt)
                         }
                     }
