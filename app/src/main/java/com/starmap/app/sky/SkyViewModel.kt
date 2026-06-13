@@ -6,7 +6,6 @@ import androidx.compose.runtime.State
 import androidx.compose.runtime.mutableStateOf
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
-import com.starmap.app.BuildConfig
 import com.starmap.app.astro.Constellation
 import com.starmap.app.astro.StarCatalog
 import com.starmap.app.aircraft.AircraftManager
@@ -69,10 +68,12 @@ class SkyViewModel(app: Application) : AndroidViewModel(app) {
     private val location = LocationProvider(app)
     private val settingsRepo = SettingsRepository(app)
     val catalogManager = CatalogManager(app)
-    val satelliteManager = SatelliteManager(app)
 
     val settings: StateFlow<Settings> =
         settingsRepo.settings.stateIn(viewModelScope, SharingStarted.Eagerly, Settings())
+
+    private val satelliteController = SatelliteController(app, settings, viewModelScope)
+    val satelliteManager: SatelliteManager get() = satelliteController.manager
 
     /** Manual location overrides the sensor fix when enabled. */
     val effectiveLocation: StateFlow<LocationProvider.Fix?> =
@@ -91,8 +92,6 @@ class SkyViewModel(app: Application) : AndroidViewModel(app) {
     private var cometElements: List<com.starmap.app.astro.Comets.Element> = emptyList()
     private var messierDsos: List<com.starmap.app.astro.Messier.Dso> = emptyList()
     private var milkyWay: com.starmap.app.astro.MilkyWay? = null
-    private var issSats: List<NamedSat> = emptyList()
-    private var starlinkSats: List<NamedSat> = emptyList()
     private val aircraftManager = AircraftManager()
     private var aircraftTracks: List<AircraftTrack> = emptyList()
     private val landmarkManager = LandmarkManager()
@@ -268,23 +267,15 @@ class SkyViewModel(app: Application) : AndroidViewModel(app) {
     private val _loading = mutableStateOf(true)
     val loading: State<Boolean> = _loading
 
-    private val _updateResult = mutableStateOf<UpdateChecker.Result?>(null)
-    val updateResult: State<UpdateChecker.Result?> = _updateResult
+    private val updateController = UpdateController(app, viewModelScope)
+    val updateResult: State<UpdateChecker.Result?> get() = updateController.result
+    val checkingUpdate: State<Boolean> get() = updateController.checking
+    val updateDownload: State<ApkUpdater.State> get() = updateController.download
 
-    private val _checkingUpdate = mutableStateOf(false)
-    val checkingUpdate: State<Boolean> = _checkingUpdate
-
-    private val _updateDownload = mutableStateOf<ApkUpdater.State>(ApkUpdater.State.Idle)
-    val updateDownload: State<ApkUpdater.State> = _updateDownload
-
-    private val _issBusy = mutableStateOf(false)
-    val issBusy: State<Boolean> = _issBusy
-    private val _starlinkBusy = mutableStateOf(false)
-    val starlinkBusy: State<Boolean> = _starlinkBusy
-    private val _starlinkProgress = mutableStateOf(0f)
-    val starlinkProgress: State<Float> = _starlinkProgress
-    private val _satMessage = mutableStateOf<String?>(null)
-    val satMessage: State<String?> = _satMessage
+    val issBusy: State<Boolean> get() = satelliteController.issBusy
+    val starlinkBusy: State<Boolean> get() = satelliteController.starlinkBusy
+    val starlinkProgress: State<Float> get() = satelliteController.starlinkProgress
+    val satMessage: State<String?> get() = satelliteController.message
 
     private var searchEntries: List<SearchEntry> = emptyList()
     private val _searchTarget = mutableStateOf<SearchTarget?>(null)
@@ -329,39 +320,22 @@ class SkyViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    // --- Time machine -------------------------------------------------------
-    /** When live, the sky tracks the real clock; otherwise it shows [_simTimeMillis]. */
-    private val _liveTime = mutableStateOf(true)
-    val liveTime: State<Boolean> = _liveTime
-    private val _simTimeMillis = mutableStateOf(System.currentTimeMillis())
-    /** Simulated time-lapse rate: simulated millis advanced per real second (0 = paused). */
-    private val _timeFlowRate = mutableStateOf(0L)
-    val timeFlowRate: State<Long> = _timeFlowRate
+    // --- Time machine (see TimeMachine) -------------------------------------
+    private val timeMachine = TimeMachine(viewModelScope)
+    val liveTime: State<Boolean> get() = timeMachine.liveTime
+    val timeFlowRate: State<Long> get() = timeMachine.timeFlowRate
 
     /** The instant the sky is currently drawn for. */
-    fun currentSkyTimeMillis(): Long =
-        if (_liveTime.value) System.currentTimeMillis() else _simTimeMillis.value
+    fun currentSkyTimeMillis(): Long = timeMachine.currentSkyTimeMillis()
 
     /** Jump the simulated time by [deltaMillis] (leaves live mode). */
-    fun jumpTime(deltaMillis: Long) {
-        _simTimeMillis.value = currentSkyTimeMillis() + deltaMillis
-        _liveTime.value = false
-    }
+    fun jumpTime(deltaMillis: Long) = timeMachine.jumpTime(deltaMillis)
 
     /** Snap back to the real clock. */
-    fun goLiveTime() {
-        _liveTime.value = true
-        _timeFlowRate.value = 0L
-    }
+    fun goLiveTime() = timeMachine.goLive()
 
     /** Animate time at [rate] simulated-millis per real second (0 pauses). */
-    fun setTimeFlowRate(rate: Long) {
-        if (_liveTime.value) {
-            _simTimeMillis.value = System.currentTimeMillis()
-            _liveTime.value = false
-        }
-        _timeFlowRate.value = rate
-    }
+    fun setTimeFlowRate(rate: Long) = timeMachine.setFlowRate(rate)
 
     init {
         Log.i(TAG, "SkyViewModel init")
@@ -391,18 +365,6 @@ class SkyViewModel(app: Application) : AndroidViewModel(app) {
                     _searchTarget.value = null // star indices changed
                 }
         }
-        // Load satellite elements lazily, only while their layer is enabled.
-        viewModelScope.launch {
-            settingsRepo.settings.map { it.showIss }.distinctUntilChanged().collect { on ->
-                issSats = if (on && satelliteManager.isIssDownloaded) satelliteManager.loadIss() else emptyList()
-            }
-        }
-        viewModelScope.launch {
-            settingsRepo.settings.map { it.showStarlink }.distinctUntilChanged().collect { on ->
-                starlinkSats =
-                    if (on && satelliteManager.isStarlinkDownloaded) satelliteManager.loadStarlink() else emptyList()
-            }
-        }
         // Auto-check for updates once on launch if enabled.
         viewModelScope.launch {
             if (settings.value.autoCheckUpdates) checkForUpdates()
@@ -410,7 +372,6 @@ class SkyViewModel(app: Application) : AndroidViewModel(app) {
         startRebuildLoop()
         startAircraftLoop()
         startLandmarkLoop()
-        startTimeFlow()
     }
 
     /** Fetches nearby landmarks once enabled, refreshing when the observer moves a
@@ -477,20 +438,6 @@ class SkyViewModel(app: Application) : AndroidViewModel(app) {
         return 2.0 * 6371.0 * kotlin.math.asin(kotlin.math.sqrt(a).coerceAtMost(1.0))
     }
 
-    /** Advances simulated time while a time-lapse rate is set. */
-    private fun startTimeFlow() = viewModelScope.launch {
-        var last = System.currentTimeMillis()
-        while (isActive) {
-            kotlinx.coroutines.delay(100)
-            val now = System.currentTimeMillis()
-            val rate = _timeFlowRate.value
-            if (!_liveTime.value && rate != 0L) {
-                _simTimeMillis.value += rate * (now - last) / 1000
-            }
-            last = now
-        }
-    }
-
     private fun startAircraftLoop() = viewModelScope.launch {
         while (isActive) {
             val s = settings.value
@@ -535,10 +482,7 @@ class SkyViewModel(app: Application) : AndroidViewModel(app) {
             val s = settings.value
             if (cat != null && fix != null) {
                 try {
-                    val sats: List<NamedSat> = when {
-                        issSats.isEmpty() && starlinkSats.isEmpty() -> emptyList()
-                        else -> issSats + starlinkSats
-                    }
+                    val sats: List<NamedSat> = satelliteController.currentSats()
                     val built = withContext(Dispatchers.Default) {
                         SkyBuilder.build(
                             catalog = cat,
@@ -583,7 +527,7 @@ class SkyViewModel(app: Application) : AndroidViewModel(app) {
                 }
             }
             // Refresh faster while time-travelling so the time-lapse looks smooth.
-            kotlinx.coroutines.delay(if (!_liveTime.value && _timeFlowRate.value != 0L) 120 else 1000)
+            kotlinx.coroutines.delay(if (!timeMachine.isLive && timeMachine.flowRate != 0L) 120 else 1000)
         }
     }
 
@@ -616,74 +560,16 @@ class SkyViewModel(app: Application) : AndroidViewModel(app) {
     fun setRadarBasemap(mode: Int) = viewModelScope.launch { settingsRepo.setRadarBasemap(mode) }
     fun setRadarWeather(mode: Int) = viewModelScope.launch { settingsRepo.setRadarWeather(mode) }
 
-    // --- Updates ---
-    fun checkForUpdates() {
-        if (_checkingUpdate.value) return
-        _checkingUpdate.value = true
-        viewModelScope.launch {
-            _updateResult.value = UpdateChecker.check(BuildConfig.VERSION_NAME)
-            _checkingUpdate.value = false
-        }
-    }
+    // --- Updates (see UpdateController) ---
+    fun checkForUpdates() = updateController.checkForUpdates()
+    fun downloadUpdate(apkUrl: String) = updateController.downloadUpdate(apkUrl)
+    fun resetUpdateDownload() = updateController.resetDownload()
 
-    /** Download the new release's APK so it can be installed over the top. */
-    fun downloadUpdate(apkUrl: String) {
-        if (_updateDownload.value is ApkUpdater.State.Downloading) return
-        _updateDownload.value = ApkUpdater.State.Downloading(0f)
-        viewModelScope.launch {
-            _updateDownload.value = ApkUpdater.download(getApplication<Application>(), apkUrl) { fraction ->
-                _updateDownload.value = ApkUpdater.State.Downloading(fraction)
-            }
-        }
-    }
-
-    fun resetUpdateDownload() {
-        _updateDownload.value = ApkUpdater.State.Idle
-    }
-
-    // --- Satellite (TLE) downloads ---
-    fun downloadIss() {
-        if (_issBusy.value) return
-        _issBusy.value = true
-        viewModelScope.launch {
-            when (val r = satelliteManager.downloadIss()) {
-                is SatelliteManager.Result.Ok -> {
-                    _satMessage.value = "ISS elements updated"
-                    if (settings.value.showIss) issSats = satelliteManager.loadIss()
-                }
-                is SatelliteManager.Result.Failed -> _satMessage.value = "ISS: ${r.message}"
-            }
-            _issBusy.value = false
-        }
-    }
-
-    fun downloadStarlink() {
-        if (_starlinkBusy.value) return
-        _starlinkBusy.value = true
-        _starlinkProgress.value = 0f
-        viewModelScope.launch {
-            when (val r = satelliteManager.downloadStarlink { _starlinkProgress.value = it }) {
-                is SatelliteManager.Result.Ok -> {
-                    _satMessage.value = "Starlink: ${r.count} satellites"
-                    if (settings.value.showStarlink) starlinkSats = satelliteManager.loadStarlink()
-                }
-                is SatelliteManager.Result.Failed -> _satMessage.value = "Starlink: ${r.message}"
-            }
-            _starlinkBusy.value = false
-        }
-    }
-
-    fun deleteIss() {
-        satelliteManager.deleteIss()
-        issSats = emptyList()
-        _satMessage.value = null
-    }
-
-    fun deleteStarlink() {
-        satelliteManager.deleteStarlink()
-        starlinkSats = emptyList()
-        _satMessage.value = null
-    }
+    // --- Satellite (TLE) downloads (see SatelliteController) ---
+    fun downloadIss() = satelliteController.downloadIss(settings.value.showIss)
+    fun downloadStarlink() = satelliteController.downloadStarlink(settings.value.showStarlink)
+    fun deleteIss() = satelliteController.deleteIss()
+    fun deleteStarlink() = satelliteController.deleteStarlink()
 
     // --- Search ---
     private fun buildSearchIndex() {
