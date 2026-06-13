@@ -10,7 +10,6 @@ import com.starmap.app.astro.Constellation
 import com.starmap.app.astro.StarCatalog
 import com.starmap.app.aircraft.AircraftManager
 import com.starmap.app.catalog.CatalogManager
-import com.starmap.app.info.ObjectInfoStore
 import com.starmap.app.info.WikiManager
 import com.starmap.app.satellite.NamedSat
 import com.starmap.app.satellite.SatelliteManager
@@ -111,63 +110,18 @@ class SkyViewModel(app: Application) : AndroidViewModel(app) {
     val centerObject: State<IdentifiedObject?> = _centerObject
     fun setCenterObject(obj: IdentifiedObject?) { _centerObject.value = obj }
 
-    private val objectInfoStore = ObjectInfoStore(app)
-    private val _objectDetail = mutableStateOf<ObjectDetail?>(null)
-    val objectDetail: State<ObjectDetail?> = _objectDetail
+    private val objectInfoController = ObjectInfoController(app, viewModelScope)
+    val objectDetail: State<ObjectDetail?> get() = objectInfoController.detail
+    val offlineSync: State<OfflineSync> get() = objectInfoController.sync
+    val offlineBytes: State<Long> get() = objectInfoController.bytes
 
-    private val _offlineSync = mutableStateOf<OfflineSync>(OfflineSync.Idle)
-    val offlineSync: State<OfflineSync> = _offlineSync
-    private val _offlineBytes = mutableStateOf(0L)
-    val offlineBytes: State<Long> = _offlineBytes
-
-    /** Open the encyclopedic detail panel for [obj] and load its Wikipedia summary. */
-    fun openObjectDetail(obj: IdentifiedObject) {
-        _objectDetail.value = ObjectDetail.Loading(obj.name)
-        val query = wikiQueryFor(obj)
-        viewModelScope.launch {
-            _objectDetail.value = when (val r = objectInfoStore.get(query)) {
-                is WikiManager.Result.Ok -> ObjectDetail.Loaded(obj.name, r.info)
-                WikiManager.Result.None -> ObjectDetail.Empty(obj.name)
-                is WikiManager.Result.Error -> ObjectDetail.Failed(obj.name, r.message)
-            }
-        }
-    }
-
-    fun closeObjectDetail() { _objectDetail.value = null }
-
-    /** Recompute how much disk the offline object info (text + images) uses. */
-    fun refreshOfflineSize() = viewModelScope.launch {
-        _offlineBytes.value = objectInfoStore.usedBytes()
-    }
-
-    fun clearOfflineData() = viewModelScope.launch {
-        objectInfoStore.clear()
-        _offlineBytes.value = objectInfoStore.usedBytes()
-        _offlineSync.value = OfflineSync.Idle
-    }
+    fun openObjectDetail(obj: IdentifiedObject) = objectInfoController.openDetail(obj)
+    fun closeObjectDetail() = objectInfoController.closeDetail()
+    fun refreshOfflineSize() = objectInfoController.refreshSize()
+    fun clearOfflineData() = objectInfoController.clear()
 
     /** Pre-download Wikipedia text + images for every catalogued object, for offline use. */
-    fun syncOfflineData() {
-        if (_offlineSync.value is OfflineSync.Running) return
-        viewModelScope.launch {
-            val objs = offlineSyncObjects()
-            _offlineSync.value = OfflineSync.Running(0, objs.size)
-            var cached = 0
-            objs.forEachIndexed { i, obj ->
-                when (val r = objectInfoStore.get(wikiQueryFor(obj))) {
-                    is WikiManager.Result.Ok -> {
-                        cached++
-                        r.info.imageUrl?.let { objectInfoStore.prewarmImage(it) }
-                    }
-                    else -> {}
-                }
-                _offlineSync.value = OfflineSync.Running(i + 1, objs.size)
-                kotlinx.coroutines.delay(120) // be polite to Wikipedia
-            }
-            _offlineBytes.value = objectInfoStore.usedBytes()
-            _offlineSync.value = OfflineSync.Done(cached)
-        }
-    }
+    fun syncOfflineData() = objectInfoController.syncOfflineData(offlineSyncObjects())
 
     private fun offlineSyncObjects(): List<IdentifiedObject> {
         val list = ArrayList<IdentifiedObject>()
@@ -192,25 +146,6 @@ class SkyViewModel(app: Application) : AndroidViewModel(app) {
             }
         }
         return list
-    }
-
-    private fun wikiQueryFor(obj: IdentifiedObject): String {
-        val n = obj.name
-        return when (obj.kind) {
-            "Planet" -> "$n planet"
-            "Asteroid" -> "$n asteroid"
-            "Comet" -> "$n comet"
-            "Moon" -> "Moon"
-            "Star" -> if (n == "Sun") "Sun" else "$n star"
-            "Constellation" -> "$n constellation"
-            "Satellite" ->
-                if (n.contains("ISS", ignoreCase = true)) "International Space Station" else "$n satellite"
-            else -> when { // Messier / deep-sky: prefer the common name, else "Messier NN"
-                n.contains(" · ") -> n.substringAfter(" · ")
-                Regex("^M\\d+$").matches(n.trim()) -> "Messier ${n.trim().drop(1)}"
-                else -> n
-            }
-        }
     }
 
     /** Show the info card for a tapped sky object (clears any selected aircraft). */
@@ -265,7 +200,7 @@ class SkyViewModel(app: Application) : AndroidViewModel(app) {
     val starlinkProgress: State<Float> get() = satelliteController.starlinkProgress
     val satMessage: State<String?> get() = satelliteController.message
 
-    private var searchEntries: List<SearchEntry> = emptyList()
+    private val searchIndex = SearchIndex()
     private val _searchTarget = mutableStateOf<SearchTarget?>(null)
     val searchTarget: State<SearchTarget?> = _searchTarget
 
@@ -336,7 +271,7 @@ class SkyViewModel(app: Application) : AndroidViewModel(app) {
                 messierDsos = catalogManager.loadMessier()
                 milkyWay = catalogManager.loadMilkyWay()
                 catalog = catalogManager.loadStars(settings.value.useExtendedCatalog)
-                buildSearchIndex()
+                rebuildSearchIndex()
                 Log.i(TAG, "Catalog loaded: ${catalog?.count ?: 0} stars, ${constellations.size} constellations")
             } catch (t: Throwable) {
                 Log.e(TAG, "Failed to load catalog", t)
@@ -349,7 +284,7 @@ class SkyViewModel(app: Application) : AndroidViewModel(app) {
             settingsRepo.settings.map { it.useExtendedCatalog }.distinctUntilChanged()
                 .collect { useExtended ->
                     catalog = catalogManager.loadStars(useExtended)
-                    buildSearchIndex()
+                    rebuildSearchIndex()
                     _searchTarget.value = null // star indices changed
                 }
         }
@@ -456,57 +391,13 @@ class SkyViewModel(app: Application) : AndroidViewModel(app) {
     fun deleteIss() = satelliteController.deleteIss()
     fun deleteStarlink() = satelliteController.deleteStarlink()
 
-    // --- Search ---
-    private fun buildSearchIndex() {
+    // --- Search (index in SearchIndex; target state stays here, coupled with follow) ---
+    private fun rebuildSearchIndex() {
         val cat = catalog ?: return
-        val cons = constellations
-        val abbrToName = cons.associate { it.abbr.lowercase() to it.name }
-        val entries = ArrayList<SearchEntry>(cat.labels.size + cons.size + 16)
-        for ((idx, label) in cat.labels) {
-            val tokens = label.split(' ')
-            val last = tokens.lastOrNull()?.lowercase()
-            // Bayer labels ("α CMa") get the full constellation name added to the key.
-            val extra = if (tokens.size >= 2 && last != null && abbrToName.containsKey(last)) {
-                " " + abbrToName.getValue(last)
-            } else {
-                ""
-            }
-            entries.add(SearchEntry(SearchTarget.StarT(idx, label), label, "Star", FuzzySearch.normalize(label + extra)))
-        }
-        for (p in listOf("Mercury", "Venus", "Mars", "Jupiter", "Saturn", "Uranus", "Neptune")) {
-            entries.add(SearchEntry(SearchTarget.PlanetT(p), p, "Planet", FuzzySearch.normalize(p)))
-        }
-        for (a in asteroidElements) {
-            entries.add(SearchEntry(SearchTarget.AsteroidT(a.name), a.name, "Asteroid", FuzzySearch.normalize(a.name)))
-        }
-        for (c in cometElements) {
-            entries.add(SearchEntry(SearchTarget.CometT(c.name), c.name, "Comet", FuzzySearch.normalize(c.name)))
-        }
-        for (d in messierDsos) {
-            val display = if (d.common.isBlank()) d.name else "${d.name} · ${d.common}"
-            entries.add(
-                SearchEntry(
-                    SearchTarget.MessierT(d.name), display, d.type,
-                    FuzzySearch.normalize("${d.name} ${d.common} ${d.type}"),
-                ),
-            )
-        }
-        entries.add(SearchEntry(SearchTarget.SpecialT("Sun"), "Sun", "Solar System", "sun"))
-        entries.add(SearchEntry(SearchTarget.SpecialT("Moon"), "Moon", "Solar System", "moon"))
-        entries.add(SearchEntry(SearchTarget.SpecialT("ISS"), "ISS (Space Station)", "Satellite", "iss space station"))
-        for (c in cons) {
-            val alias = constellationAliases[c.abbr.lowercase()] ?: ""
-            entries.add(
-                SearchEntry(
-                    SearchTarget.ConstellationT(c.name), c.name, "Constellation",
-                    FuzzySearch.normalize("${c.name} ${c.abbr} $alias"),
-                ),
-            )
-        }
-        searchEntries = entries
+        searchIndex.build(cat, constellations, asteroidElements, cometElements, messierDsos)
     }
 
-    fun search(query: String): List<SearchResult> = FuzzySearch.search(query, searchEntries)
+    fun search(query: String): List<SearchResult> = searchIndex.search(query)
 
     fun selectSearchTarget(target: SearchTarget?) {
         _searchTarget.value = target
