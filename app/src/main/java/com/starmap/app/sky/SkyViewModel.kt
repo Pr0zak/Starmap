@@ -9,12 +9,9 @@ import androidx.lifecycle.viewModelScope
 import com.starmap.app.astro.Constellation
 import com.starmap.app.astro.StarCatalog
 import com.starmap.app.aircraft.AircraftManager
-import com.starmap.app.aircraft.AircraftTrack
 import com.starmap.app.catalog.CatalogManager
 import com.starmap.app.info.ObjectInfoStore
 import com.starmap.app.info.WikiManager
-import com.starmap.app.landmark.Landmark
-import com.starmap.app.landmark.LandmarkManager
 import com.starmap.app.satellite.NamedSat
 import com.starmap.app.satellite.SatelliteManager
 import com.starmap.app.sensors.LocationProvider
@@ -22,7 +19,6 @@ import com.starmap.app.sensors.OrientationProvider
 import com.starmap.app.settings.Settings
 import com.starmap.app.settings.SettingsRepository
 import com.starmap.app.update.ApkUpdater
-import com.starmap.app.update.DiagLog
 import com.starmap.app.update.UpdateChecker
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.SharingStarted
@@ -92,18 +88,10 @@ class SkyViewModel(app: Application) : AndroidViewModel(app) {
     private var cometElements: List<com.starmap.app.astro.Comets.Element> = emptyList()
     private var messierDsos: List<com.starmap.app.astro.Messier.Dso> = emptyList()
     private var milkyWay: com.starmap.app.astro.MilkyWay? = null
-    private val aircraftManager = AircraftManager()
-    private var aircraftTracks: List<AircraftTrack> = emptyList()
-    private val landmarkManager = LandmarkManager()
-    private var landmarks: List<Landmark> = emptyList()
-    private var landmarkFetchLat = Double.NaN
-    private var landmarkFetchLon = Double.NaN
-    private var landmarkFetchRangeKm = Float.NaN
-    private var landmarkLastAttemptMs = 0L
-    private var landmarkAwaitLogged = false
-    private val _landmarkMessage = mutableStateOf<String?>(null)
-    val landmarkMessage: State<String?> = _landmarkMessage
-    private val aircraftHistory = HashMap<String, ArrayDeque<DoubleArray>>()
+
+    private val aircraftController = AircraftController(settings, effectiveLocation, viewModelScope)
+    private val landmarkController = LandmarkController(settings, effectiveLocation, viewModelScope)
+    val landmarkMessage: State<String?> get() = landmarkController.message
 
     private val _selectedAircraft = mutableStateOf<AircraftRender?>(null)
     val selectedAircraft: State<AircraftRender?> = _selectedAircraft
@@ -239,12 +227,12 @@ class SkyViewModel(app: Application) : AndroidViewModel(app) {
         if (ac != null) _selectedObject.value = null
         if (ac != null) {
             if (ac.callsign.isNotBlank() && ac.callsign != "?") {
-                viewModelScope.launch { _selectedRoute.value = aircraftManager.fetchRoute(ac.callsign) }
+                viewModelScope.launch { _selectedRoute.value = aircraftController.manager.fetchRoute(ac.callsign) }
             }
             if (ac.icaoHex.isNotBlank() || ac.registration.isNotBlank()) {
                 _photoStatus.value = "Finding a photo…"
                 viewModelScope.launch {
-                    when (val r = aircraftManager.fetchPhoto(ac.icaoHex, ac.registration)) {
+                    when (val r = aircraftController.manager.fetchPhoto(ac.icaoHex, ac.registration)) {
                         is AircraftManager.PhotoResult.Ok -> {
                             _selectedPhoto.value = r.photo
                             _photoStatus.value = null
@@ -370,109 +358,6 @@ class SkyViewModel(app: Application) : AndroidViewModel(app) {
             if (settings.value.autoCheckUpdates) checkForUpdates()
         }
         startRebuildLoop()
-        startAircraftLoop()
-        startLandmarkLoop()
-    }
-
-    /** Fetches nearby landmarks once enabled, refreshing when the observer moves a
-     *  few km or the range slider changes. Polls often but only hits the network
-     *  when something changed, with a short backoff so dragging the slider or a
-     *  failing server doesn't hammer Overpass. */
-    private fun startLandmarkLoop() = viewModelScope.launch {
-        while (isActive) {
-            val s = settings.value
-            val fix = effectiveLocation.value
-            if ((s.showLandmarks || (s.radarMode && s.radarLandmarks)) && fix != null) {
-                landmarkAwaitLogged = false
-                val rangeKm = s.landmarkRangeKm
-                val changed = landmarkFetchLat.isNaN() ||
-                    haversineKm(landmarkFetchLat, landmarkFetchLon, fix.latitude, fix.longitude) > 5.0 ||
-                    kotlin.math.abs(rangeKm - landmarkFetchRangeKm) > 0.5f
-                val sinceAttempt = System.currentTimeMillis() - landmarkLastAttemptMs
-                if (changed && sinceAttempt > 8_000) {
-                    landmarkLastAttemptMs = System.currentTimeMillis()
-                    DiagLog.log(
-                        "Landmarks loop: fix=%.4f,%.4f %s range=%dkm — fetching".format(
-                            fix.latitude, fix.longitude, if (fix.fromGps) "gps" else "manual", rangeKm.toInt(),
-                        ),
-                    )
-                    val km = rangeKm.toInt()
-                    when (val r = landmarkManager.fetch(fix.latitude, fix.longitude, (rangeKm * 1000).toInt())) {
-                        is LandmarkManager.Result.Ok -> {
-                            landmarks = r.landmarks
-                            landmarkFetchLat = fix.latitude
-                            landmarkFetchLon = fix.longitude
-                            landmarkFetchRangeKm = rangeKm
-                            _landmarkMessage.value = if (r.landmarks.isEmpty()) {
-                                "No mapped landmarks within $km km"
-                            } else {
-                                "${r.landmarks.size} landmarks within $km km — look toward the horizon"
-                            }
-                        }
-                        is LandmarkManager.Result.Failed ->
-                            _landmarkMessage.value = "Landmarks unavailable · ${r.message}"
-                    }
-                }
-                kotlinx.coroutines.delay(3_000)
-            } else {
-                if ((s.showLandmarks || (s.radarMode && s.radarLandmarks)) && fix == null && !landmarkAwaitLogged) {
-                    DiagLog.log("Landmarks loop: enabled but no location fix yet")
-                    landmarkAwaitLogged = true
-                }
-                if (landmarks.isNotEmpty() || _landmarkMessage.value != null) {
-                    landmarks = emptyList()
-                    landmarkFetchLat = Double.NaN
-                    landmarkFetchRangeKm = Float.NaN
-                    _landmarkMessage.value = null
-                }
-                kotlinx.coroutines.delay(3_000)
-            }
-        }
-    }
-
-    private fun haversineKm(lat1: Double, lon1: Double, lat2: Double, lon2: Double): Double {
-        val sl = kotlin.math.sin(Math.toRadians(lat2 - lat1) / 2)
-        val so = kotlin.math.sin(Math.toRadians(lon2 - lon1) / 2)
-        val a = sl * sl + kotlin.math.cos(Math.toRadians(lat1)) *
-            kotlin.math.cos(Math.toRadians(lat2)) * so * so
-        return 2.0 * 6371.0 * kotlin.math.asin(kotlin.math.sqrt(a).coerceAtMost(1.0))
-    }
-
-    private fun startAircraftLoop() = viewModelScope.launch {
-        while (isActive) {
-            val s = settings.value
-            val fix = effectiveLocation.value
-            if ((s.showAircraft || s.radarMode) && fix != null) {
-                val acRange = if (s.radarMode) s.radarRangeNm.toInt() else s.aircraftRangeNm.toInt()
-                when (val r = aircraftManager.fetch(fix.latitude, fix.longitude, acRange)) {
-                    is AircraftManager.Result.Ok -> {
-                        val seen = HashSet<String>()
-                        val now = System.currentTimeMillis()
-                        aircraftTracks = r.aircraft.map { ac ->
-                            seen.add(ac.id)
-                            val dq = aircraftHistory.getOrPut(ac.id) { ArrayDeque() }
-                            dq.addLast(doubleArrayOf(ac.latitude, ac.longitude, ac.altitudeMeters))
-                            while (dq.size > 30) dq.removeFirst()
-                            AircraftTrack(
-                                ac.id, ac.callsign, ac.isHelicopter, ac.latitude, ac.longitude,
-                                ac.altitudeMeters, ac.typeCode, ac.groundSpeedKts, ac.trackDeg,
-                                ac.registration, ac.verticalRateFpm, ac.squawk, ac.isEmergency,
-                                ac.emergencyText, dq.dropLast(1).toList(), now,
-                            )
-                        }
-                        aircraftHistory.keys.retainAll(seen)
-                    }
-                    is AircraftManager.Result.Failed -> Log.w(TAG, "Aircraft fetch: ${r.message}")
-                }
-                kotlinx.coroutines.delay(12_000)
-            } else {
-                if (aircraftTracks.isNotEmpty()) {
-                    aircraftTracks = emptyList()
-                    aircraftHistory.clear()
-                }
-                kotlinx.coroutines.delay(2_000)
-            }
-        }
     }
 
     private fun startRebuildLoop() = viewModelScope.launch {
@@ -509,9 +394,9 @@ class SkyViewModel(app: Application) : AndroidViewModel(app) {
                             milkyWay = milkyWay,
                             includeRefraction = s.applyRefraction,
                             satellites = sats,
-                            aircraft = aircraftTracks,
+                            aircraft = aircraftController.currentTracks(),
                             includeLandmarks = s.showLandmarks || (s.radarMode && s.radarLandmarks),
-                            landmarks = landmarks.filter {
+                            landmarks = landmarkController.currentLandmarks().filter {
                                 when (it.type) {
                                     "airport" -> s.landmarkAirports
                                     "tower" -> s.landmarkTowers
