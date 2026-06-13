@@ -35,7 +35,6 @@ import kotlin.math.sin
 import kotlin.math.sqrt
 import kotlin.math.tan
 
-private const val MIN_DEPTH = 0.15f
 private const val ART_MESH = 8 // grid subdivisions per constellation figure
 private const val MAX_LANDMARK_LABELS = 14 // cap horizon labels so they stay readable
 
@@ -98,7 +97,7 @@ fun SkyCanvas(viewModel: SkyViewModel, settings: Settings, modifier: Modifier = 
     // Tappable aircraft hit-boxes, refreshed each frame by the draw pass.
     val aircraftHits = remember { mutableListOf<AircraftHit>() }
     // Latest projection basis, so a tap (or the centre reticle) can identify objects.
-    val projState = remember { ProjState() }
+    val projState = remember { Projector() }
 
     // Live "what's under the centre reticle" identification.
     androidx.compose.runtime.LaunchedEffect(settings.centerIdentify, density) {
@@ -213,27 +212,18 @@ fun SkyCanvas(viewModel: SkyViewModel, settings: Settings, modifier: Modifier = 
         val focal = (size.height / 2f) / tan(Math.toRadians(fov.toDouble() / 2.0)).toFloat()
         val margin = 64f * density
 
-        // Returns screen x/y in [out], or null if behind / off screen.
-        fun project(v: FloatArray, out: FloatArray): Boolean {
-            val depth = v[0] * look[0] + v[1] * look[1] + v[2] * look[2]
-            if (depth < MIN_DEPTH) return false
-            val xc = v[0] * right[0] + v[1] * right[1] + v[2] * right[2]
-            val yc = v[0] * up[0] + v[1] * up[1] + v[2] * up[2]
-            val sx = cx + (xc / depth) * focal
-            val sy = cy - (yc / depth) * focal
-            out[0] = sx; out[1] = sy
-            return sx >= -margin && sx <= size.width + margin &&
-                sy >= -margin && sy <= size.height + margin
-        }
-
         val p = FloatArray(2)
         val q = FloatArray(2)
 
-        // Record this frame's projection so taps can identify objects (see tap handler).
+        // Record this frame's camera so the per-object draws and taps project through
+        // the same Projector (see tap handler / nearestObject).
         projState.look = look; projState.right = right; projState.up = up
         projState.cx = cx; projState.cy = cy; projState.focal = focal
         projState.width = size.width; projState.height = size.height; projState.margin = margin
         projState.showBelow = settings.showBelowHorizon
+
+        // Returns screen x/y in [out], or false if behind / off screen.
+        fun project(v: FloatArray, out: FloatArray): Boolean = projState.projectVec(v, out)
 
         fun drawEnuPolyline(line: FloatArray, color: Color, width: Float) {
             var hasPrev = false; var px = 0f; var py = 0f
@@ -1009,33 +999,6 @@ private fun LaunchedPersistFov(viewModel: SkyViewModel, fovProvider: () -> Float
 /** A tappable aircraft position recorded during the draw pass. */
 private class AircraftHit(val x: Float, val y: Float, val render: AircraftRender)
 
-/** The last frame's projection basis, captured so a tap can re-project sky objects. */
-private class ProjState {
-    var look: FloatArray? = null
-    var right: FloatArray? = null
-    var up: FloatArray? = null
-    var cx = 0f
-    var cy = 0f
-    var focal = 0f
-    var width = 0f
-    var height = 0f
-    var margin = 0f
-    var showBelow = false
-
-    fun projectAt(arr: FloatArray, base: Int, out: FloatArray): Boolean {
-        val lk = look ?: return false
-        val rt = right ?: return false
-        val u = up ?: return false
-        val x = arr[base]; val y = arr[base + 1]; val z = arr[base + 2]
-        val depth = x * lk[0] + y * lk[1] + z * lk[2]
-        if (depth < MIN_DEPTH) return false
-        out[0] = cx + ((x * rt[0] + y * rt[1] + z * rt[2]) / depth) * focal
-        out[1] = cy - ((x * u[0] + y * u[1] + z * u[2]) / depth) * focal
-        return out[0] >= -margin && out[0] <= width + margin &&
-            out[1] >= -margin && out[1] <= height + margin
-    }
-}
-
 /**
  * Finds the nearest identifiable sky object within [thresh] px of ([ox],[oy]).
  * Index-based so it allocates nothing per candidate (it runs every frame for
@@ -1043,7 +1006,7 @@ private class ProjState {
  */
 private fun nearestObject(
     m: SkyModel,
-    ps: ProjState,
+    ps: Projector,
     ox: Float,
     oy: Float,
     thresh: Float,
