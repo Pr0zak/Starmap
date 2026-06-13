@@ -21,6 +21,9 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
+import androidx.compose.material3.SegmentedButton
+import androidx.compose.material3.SegmentedButtonDefaults
+import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Slider
@@ -138,6 +141,28 @@ fun CleanSlider(
             )
         },
     )
+}
+
+/** A modern single-choice segmented button row. */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun SegmentedChoice(
+    options: List<String>,
+    selected: Int,
+    modifier: Modifier = Modifier,
+    onSelect: (Int) -> Unit,
+) {
+    SingleChoiceSegmentedButtonRow(modifier = modifier.fillMaxWidth()) {
+        options.forEachIndexed { i, label ->
+            SegmentedButton(
+                selected = selected == i,
+                onClick = { onSelect(i) },
+                shape = SegmentedButtonDefaults.itemShape(i, options.size),
+                icon = {},
+                label = { Text(label, fontSize = 13.sp, maxLines = 1) },
+            )
+        }
+    }
 }
 
 /** Groups a settings section's rows in a rounded, slightly-tinted card. */
