@@ -10,6 +10,8 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
@@ -49,7 +51,10 @@ fun DetailScaffold(title: String, onBack: () -> Unit, content: @Composable () ->
             Text(title, fontSize = 20.sp, fontWeight = FontWeight.SemiBold,
                 modifier = Modifier.padding(start = 4.dp))
         }
-        content()
+        // Keep content clear of the gesture/navigation bar and the keyboard.
+        Box(modifier = Modifier.weight(1f).fillMaxWidth().navigationBarsPadding().imePadding()) {
+            content()
+        }
     }
 }
 

@@ -9,6 +9,7 @@ import android.content.pm.ActivityInfo
 import android.content.pm.PackageManager
 import android.content.res.Configuration
 import android.net.Uri
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
@@ -170,6 +171,9 @@ fun MainScreen(viewModel: SkyViewModel = viewModel()) {
         hasCameraPermission = granted
         if (granted) viewModel.setBool(BoolSetting.ArMode, true)
     }
+
+    // System back returns to the sky from any detail screen (instead of exiting).
+    BackHandler(enabled = screen != Screen.Sky) { screen = Screen.Sky }
 
     when (screen) {
         Screen.Sky -> SkyScreen(
