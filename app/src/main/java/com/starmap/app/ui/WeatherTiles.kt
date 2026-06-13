@@ -3,13 +3,13 @@ package com.starmap.app.ui
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.Canvas
+import com.starmap.app.net.Http
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
-import org.json.JSONObject
 import java.net.URL
 
 /**
@@ -34,11 +34,9 @@ object WeatherTiles {
      *  across the ~13 cached frames. Weather radar is low-res, so it still reads fine. */
     const val TILE_OUT_PX = 128
 
-    suspend fun fetch(): Maps? = withContext(Dispatchers.IO) {
-        try {
-            val text = URL("https://api.rainviewer.com/public/weather-maps.json")
-                .openStream().bufferedReader().use { it.readText() }
-            val root = JSONObject(text)
+    suspend fun fetch(): Maps? {
+        val root = Http.getJson("https://api.rainviewer.com/public/weather-maps.json") ?: return null
+        return try {
             val host = root.getString("host")
             val radar = root.optJSONObject("radar")
             val rain = parse(radar?.optJSONArray("past")) + parse(radar?.optJSONArray("nowcast"))

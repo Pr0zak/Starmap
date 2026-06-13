@@ -5,11 +5,8 @@ import android.content.Intent
 import android.net.Uri
 import android.provider.Settings
 import androidx.core.content.FileProvider
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
+import com.starmap.app.net.Http
 import java.io.File
-import java.net.HttpURLConnection
-import java.net.URL
 
 /**
  * Downloads a release APK from GitHub and hands it to the system package
@@ -34,44 +31,12 @@ object ApkUpdater {
         context: Context,
         url: String,
         onProgress: (Float) -> Unit,
-    ): State = withContext(Dispatchers.IO) {
-        try {
-            val dir = updatesDir(context)
-            val out = File(dir, "starmap-update.apk")
-            val tmp = File(dir, "starmap-update.tmp")
-            val conn = (URL(url).openConnection() as HttpURLConnection).apply {
-                instanceFollowRedirects = true
-                setRequestProperty("User-Agent", "Starmap-Android")
-                setRequestProperty("Accept", "application/octet-stream")
-                connectTimeout = 15_000
-                readTimeout = 60_000
-            }
-            val code = conn.responseCode
-            if (code !in 200..299) {
-                return@withContext State.Failed("Server returned HTTP $code")
-            }
-            val total = conn.contentLengthLong
-            conn.inputStream.use { input ->
-                tmp.outputStream().use { output ->
-                    val buffer = ByteArray(32 * 1024)
-                    var downloaded = 0L
-                    var read: Int
-                    while (input.read(buffer).also { read = it } != -1) {
-                        output.write(buffer, 0, read)
-                        downloaded += read
-                        if (total > 0) onProgress((downloaded.toFloat() / total).coerceIn(0f, 1f))
-                    }
-                }
-            }
-            if (out.exists()) out.delete()
-            if (!tmp.renameTo(out)) {
-                tmp.copyTo(out, overwrite = true)
-                tmp.delete()
-            }
-            State.ReadyToInstall(out)
-        } catch (e: Exception) {
-            State.Failed(e.message ?: "Download failed")
-        }
+    ): State {
+        val out = File(updatesDir(context), "starmap-update.apk")
+        val error = Http.downloadToFile(
+            url, out, accept = "application/octet-stream", timeoutMs = 60_000, onProgress = onProgress,
+        )
+        return if (error == null) State.ReadyToInstall(out) else State.Failed(error)
     }
 
     /** Whether the user has allowed this app to install packages. */

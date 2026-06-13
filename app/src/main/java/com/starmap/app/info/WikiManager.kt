@@ -1,10 +1,7 @@
 package com.starmap.app.info
 
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
-import org.json.JSONObject
-import java.net.HttpURLConnection
-import java.net.URL
+import com.starmap.app.net.Http
+import kotlinx.coroutines.CancellationException
 import java.net.URLEncoder
 
 /**
@@ -28,29 +25,33 @@ class WikiManager {
         data class Error(val message: String) : Result
     }
 
-    suspend fun fetch(query: String): Result = withContext(Dispatchers.IO) {
+    suspend fun fetch(query: String): Result {
         val q = query.trim()
-        if (q.isEmpty()) return@withContext Result.None
-        try {
-            val title = searchTopTitle(q) ?: return@withContext Result.None
+        if (q.isEmpty()) return Result.None
+        return try {
+            val title = searchTopTitle(q) ?: return Result.None
             summaryFor(title)
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             Result.Error(e.message ?: "network error")
         }
     }
 
     /** Best-matching article title for a free-text query, or null if none. */
-    private fun searchTopTitle(query: String): String? {
-        val url = "https://en.wikipedia.org/w/rest.php/v1/search/page?q=${enc(query)}&limit=1"
-        val o = getJson(url) ?: return null
+    private suspend fun searchTopTitle(query: String): String? {
+        val o = Http.getJson(
+            "https://en.wikipedia.org/w/rest.php/v1/search/page?q=${enc(query)}&limit=1", timeoutMs = 10_000,
+        ) ?: return null
         val pages = o.optJSONArray("pages") ?: return null
         if (pages.length() == 0) return null
         return pages.getJSONObject(0).optString("title").takeIf { it.isNotBlank() }
     }
 
-    private fun summaryFor(title: String): Result {
-        val url = "https://en.wikipedia.org/api/rest_v1/page/summary/${enc(title)}"
-        val o = getJson(url) ?: return Result.None
+    private suspend fun summaryFor(title: String): Result {
+        val o = Http.getJson(
+            "https://en.wikipedia.org/api/rest_v1/page/summary/${enc(title)}", timeoutMs = 10_000,
+        ) ?: return Result.None
         if (o.optString("type") == "disambiguation") return Result.None
         val extract = o.optString("extract")
         if (extract.isBlank()) return Result.None
@@ -59,19 +60,6 @@ class WikiManager {
         val page = o.optJSONObject("content_urls")?.optJSONObject("desktop")?.optString("page")
             ?.takeIf { it.isNotBlank() }
         return Result.Ok(Info(o.optString("title", title), extract, img, page))
-    }
-
-    private fun getJson(url: String): JSONObject? {
-        val conn = (URL(url).openConnection() as HttpURLConnection).apply {
-            requestMethod = "GET"
-            setRequestProperty("User-Agent", USER_AGENT)
-            setRequestProperty("Accept", "application/json")
-            connectTimeout = 10_000
-            readTimeout = 10_000
-            instanceFollowRedirects = true
-        }
-        if (conn.responseCode !in 200..299) return null
-        return JSONObject(conn.inputStream.bufferedReader().use { it.readText() })
     }
 
     private fun enc(s: String) = URLEncoder.encode(s, "UTF-8").replace("+", "%20")

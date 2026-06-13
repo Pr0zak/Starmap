@@ -1,10 +1,9 @@
 package com.starmap.app.aircraft
 
+import com.starmap.app.net.Http
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import org.json.JSONObject
-import java.net.HttpURLConnection
-import java.net.URL
 import java.util.Locale
 
 /** A live aircraft position from ADS-B. */
@@ -59,20 +58,10 @@ class AircraftManager {
     suspend fun fetch(latitude: Double, longitude: Double, distanceNm: Int = 120): Result =
         withContext(Dispatchers.IO) {
             try {
-                val url = URL(
+                val json = Http.getJson(
                     "https://api.adsb.lol/v2/lat/%.4f/lon/%.4f/dist/%d"
                         .format(Locale.US, latitude, longitude, distanceNm.coerceIn(1, 250)),
-                )
-                val conn = (url.openConnection() as HttpURLConnection).apply {
-                    requestMethod = "GET"
-                    setRequestProperty("User-Agent", "Starmap-Android")
-                    setRequestProperty("Accept", "application/json")
-                    connectTimeout = 12_000
-                    readTimeout = 12_000
-                }
-                val code = conn.responseCode
-                if (code !in 200..299) return@withContext Result.Failed("HTTP $code")
-                val json = JSONObject(conn.inputStream.bufferedReader().use { it.readText() })
+                ) ?: return@withContext Result.Failed("Network error")
                 val arr = json.optJSONArray("ac") ?: json.optJSONArray("aircraft")
                 val out = ArrayList<Aircraft>()
                 if (arr != null) {
@@ -110,6 +99,8 @@ class AircraftManager {
                     }
                 }
                 Result.Ok(out)
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 Result.Failed(e.message ?: "Network error")
             }
@@ -118,29 +109,17 @@ class AircraftManager {
     /** Flight route (origin → destination, with airline) for a callsign, from adsbdb. */
     data class Route(val origin: String, val destination: String, val airline: String)
 
-    suspend fun fetchRoute(callsign: String): Route? = withContext(Dispatchers.IO) {
+    suspend fun fetchRoute(callsign: String): Route? {
         val cs = callsign.trim()
-        if (cs.isEmpty() || cs == "?") return@withContext null
-        try {
-            val conn = (URL("https://api.adsbdb.com/v0/callsign/$cs").openConnection() as HttpURLConnection).apply {
-                requestMethod = "GET"
-                setRequestProperty("User-Agent", "Starmap-Android")
-                connectTimeout = 10_000
-                readTimeout = 10_000
-            }
-            if (conn.responseCode !in 200..299) return@withContext null
-            val resp = JSONObject(conn.inputStream.bufferedReader().use { it.readText() })
-            val fr = resp.optJSONObject("response")?.optJSONObject("flightroute") ?: return@withContext null
-            fun airport(key: String): String {
-                val a = fr.optJSONObject(key) ?: return "?"
-                return a.optString("iata_code").ifBlank { a.optString("icao_code") }
-                    .ifBlank { "?" }
-            }
-            val airline = fr.optJSONObject("airline")?.optString("name", "").orEmpty()
-            Route(airport("origin"), airport("destination"), airline)
-        } catch (e: Exception) {
-            null
+        if (cs.isEmpty() || cs == "?") return null
+        val resp = Http.getJson("https://api.adsbdb.com/v0/callsign/$cs", timeoutMs = 10_000) ?: return null
+        val fr = resp.optJSONObject("response")?.optJSONObject("flightroute") ?: return null
+        fun airport(key: String): String {
+            val a = fr.optJSONObject(key) ?: return "?"
+            return a.optString("iata_code").ifBlank { a.optString("icao_code") }.ifBlank { "?" }
         }
+        val airline = fr.optJSONObject("airline")?.optString("name", "").orEmpty()
+        return Route(airport("origin"), airport("destination"), airline)
     }
 
     /** A photo of the aircraft (thumbnail URL + credit), from planespotters.net. */
@@ -158,11 +137,11 @@ class AircraftManager {
      * always present in ADS-B) and falls back to the registration — many feeds
      * omit the registration, so the hex lookup is what makes photos reliable.
      */
-    suspend fun fetchPhoto(icaoHex: String, registration: String): PhotoResult = withContext(Dispatchers.IO) {
+    suspend fun fetchPhoto(icaoHex: String, registration: String): PhotoResult {
         val byHex = photoFrom("hex", icaoHex.trim())
-        if (byHex is PhotoResult.Ok) return@withContext byHex
+        if (byHex is PhotoResult.Ok) return byHex
         val byReg = photoFrom("reg", registration.trim())
-        when {
+        return when {
             byReg is PhotoResult.Ok -> byReg
             byReg is PhotoResult.Error -> byReg
             byHex is PhotoResult.Error -> byHex
@@ -170,30 +149,18 @@ class AircraftManager {
         }
     }
 
-    private fun photoFrom(kind: String, key: String): PhotoResult {
+    private suspend fun photoFrom(kind: String, key: String): PhotoResult {
         if (key.isEmpty() || key == "?") return PhotoResult.None
-        return try {
-            val conn = (URL("https://api.planespotters.net/pub/photos/$kind/$key").openConnection() as HttpURLConnection).apply {
-                requestMethod = "GET"
-                setRequestProperty("User-Agent", "Starmap/1.0 (Android; +https://github.com/pr0zak/starmap)")
-                setRequestProperty("Accept", "application/json")
-                connectTimeout = 10_000
-                readTimeout = 10_000
-            }
-            val code = conn.responseCode
-            if (code !in 200..299) return PhotoResult.Error("HTTP $code")
-            val resp = JSONObject(conn.inputStream.bufferedReader().use { it.readText() })
-            val photos = resp.optJSONArray("photos") ?: return PhotoResult.None
-            if (photos.length() == 0) return PhotoResult.None
-            val ph = photos.getJSONObject(0)
-            val thumb = ph.optJSONObject("thumbnail_large") ?: ph.optJSONObject("thumbnail")
-            var url = thumb?.optString("src").orEmpty()
-            if (url.startsWith("http://")) url = "https://" + url.removePrefix("http://")
-            if (url.isBlank()) return PhotoResult.None
-            PhotoResult.Ok(Photo(url, ph.optString("link"), ph.optString("photographer")))
-        } catch (e: Exception) {
-            PhotoResult.Error(e.message ?: "network error")
-        }
+        val resp = Http.getJson("https://api.planespotters.net/pub/photos/$kind/$key", timeoutMs = 10_000)
+            ?: return PhotoResult.Error("network error")
+        val photos = resp.optJSONArray("photos") ?: return PhotoResult.None
+        if (photos.length() == 0) return PhotoResult.None
+        val ph = photos.getJSONObject(0)
+        val thumb = ph.optJSONObject("thumbnail_large") ?: ph.optJSONObject("thumbnail")
+        var url = thumb?.optString("src").orEmpty()
+        if (url.startsWith("http://")) url = "https://" + url.removePrefix("http://")
+        if (url.isBlank()) return PhotoResult.None
+        return PhotoResult.Ok(Photo(url, ph.optString("link"), ph.optString("photographer")))
     }
 
     private fun numberOrNull(v: Any?): Double? = (v as? Number)?.toDouble()
