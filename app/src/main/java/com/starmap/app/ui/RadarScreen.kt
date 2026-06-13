@@ -38,6 +38,7 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -710,16 +711,20 @@ private fun WeatherLegend(modifier: Modifier = Modifier) {
 
 @Composable
 private fun BasemapChip(label: String, selected: Boolean, onClick: () -> Unit) {
-    Text(
-        label,
-        color = if (selected) Color(0xFF101418) else Color(0xFFD8E0F0),
-        fontSize = 12.sp,
-        modifier = Modifier
-            .clip(RoundedCornerShape(8.dp))
-            .background(if (selected) Color(0xFFFFD54F) else Color(0x22FFFFFF))
-            .clickable(onClick = onClick)
-            .padding(horizontal = 12.dp, vertical = 6.dp),
-    )
+    Box(
+        modifier = Modifier.minimumInteractiveComponentSize().clickable(onClick = onClick),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(
+            label,
+            color = if (selected) Color(0xFF101418) else Color(0xFFD8E0F0),
+            fontSize = 12.sp,
+            modifier = Modifier
+                .clip(RoundedCornerShape(8.dp))
+                .background(if (selected) Color(0xFFFFD54F) else Color(0x22FFFFFF))
+                .padding(horizontal = 12.dp, vertical = 6.dp),
+        )
+    }
 }
 
 /**

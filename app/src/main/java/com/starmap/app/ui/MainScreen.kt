@@ -58,6 +58,7 @@ import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -679,15 +680,19 @@ private fun TimeBar(viewModel: SkyViewModel, model: SkyModel?) {
 
 @Composable
 private fun TimeChip(label: String, highlight: Boolean = false, onClick: () -> Unit) {
-    Surface(
-        color = if (highlight) Color(0xFF2E5C8A) else Color(0x33FFFFFF),
-        shape = RoundedCornerShape(8.dp),
-        modifier = Modifier.clickable(onClick = onClick),
+    Box(
+        modifier = Modifier.minimumInteractiveComponentSize().clickable(onClick = onClick),
+        contentAlignment = Alignment.Center,
     ) {
-        Text(
-            label, color = Color(0xFFE8ECF6), fontSize = 13.sp,
-            modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
-        )
+        Surface(
+            color = if (highlight) Color(0xFF2E5C8A) else Color(0x33FFFFFF),
+            shape = RoundedCornerShape(8.dp),
+        ) {
+            Text(
+                label, color = Color(0xFFE8ECF6), fontSize = 13.sp,
+                modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+            )
+        }
     }
 }
 
