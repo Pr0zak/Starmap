@@ -88,7 +88,6 @@ fun RadarWeatherLayer(
         // blank — at large ranges), then scale to the exact scope zoom.
         val tileZoom = floor(desiredZoom).toInt().coerceIn(2, 7)
         val nativeScale = Math.pow(2.0, desiredZoom - tileZoom).toFloat()
-        val ratio = WeatherTiles.TILE_OUT_PX / 256.0 // composited tiles are downsampled
 
         val n = 1 shl tileZoom
         val ogx = (longitude + 180.0) / 360.0 * n * 256.0
@@ -100,6 +99,11 @@ fun RadarWeatherLayer(
         val txMax = floor((ogx + halfX) / 256.0).toInt()
         val tyMin = floor((ogy - halfY) / 256.0).toInt()
         val tyMax = floor((ogy + halfY) / 256.0).toInt()
+        // Composite at full 256 px for the common (small-grid) case so it's sharp; only
+        // downsample to 128 px when the grid is large, to bound memory across 13 frames.
+        val tileCount = (txMax - txMin + 1) * (tyMax - tyMin + 1)
+        val outPx = if (tileCount <= 24) 256 else WeatherTiles.TILE_OUT_PX
+        val ratio = outPx / 256.0
         val grid = WeatherTiles.Grid(tileZoom, txMin, txMax, tyMin, tyMax)
         wg = WeatherGrid(
             grid = grid, cx = g.cx, cy = g.cy,
@@ -110,29 +114,30 @@ fun RadarWeatherLayer(
 
         var done = 0
         for (f in frames) {
-            val bmp = WeatherTiles.loadFrameBitmap(host, f.path, rain = mode == 1, grid = grid)
+            val bmp = WeatherTiles.loadFrameBitmap(host, f.path, rain = mode == 1, grid = grid, outPx = outPx)
             if (bmp != null) bitmaps[f.path] = bmp
             done++
             onBuffered(done, frames.size) // count attempts so a failed tile can't stall buffering
         }
     }
 
+    // Reused across frames instead of allocating a Matrix/Paint every draw.
+    val drawMatrix = remember { Matrix() }
+    val drawPaint = remember { Paint().apply { isFilterBitmap = true } }
+
     Box(modifier.fillMaxSize().onSizeChanged { sizePx = it }) {
         val grid = wg ?: return@Box
         Canvas(Modifier.fillMaxSize()) {
             val f = frames.getOrNull(frameIndex) ?: return@Canvas
             val bmp = bitmaps[f.path] ?: return@Canvas
-            val m = Matrix().apply {
-                postTranslate(-grid.observerX, -grid.observerY)
-                postScale(grid.scaleFactor, grid.scaleFactor)
-                if (headingUp) postRotate(-bearing())
-                postTranslate(grid.cx, grid.cy)
-            }
-            val paint = Paint().apply {
-                alpha = (opacity * 255).toInt().coerceIn(0, 255)
-                isFilterBitmap = true
-            }
-            drawContext.canvas.nativeCanvas.drawBitmap(bmp, m, paint)
+            if (bmp.isRecycled) return@Canvas
+            drawMatrix.reset()
+            drawMatrix.postTranslate(-grid.observerX, -grid.observerY)
+            drawMatrix.postScale(grid.scaleFactor, grid.scaleFactor)
+            if (headingUp) drawMatrix.postRotate(-bearing())
+            drawMatrix.postTranslate(grid.cx, grid.cy)
+            drawPaint.alpha = (opacity * 255).toInt().coerceIn(0, 255)
+            drawContext.canvas.nativeCanvas.drawBitmap(bmp, drawMatrix, drawPaint)
         }
     }
 }

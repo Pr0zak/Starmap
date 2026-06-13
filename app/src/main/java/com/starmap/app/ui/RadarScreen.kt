@@ -171,6 +171,10 @@ fun RadarView(
     }
 
     val aircraft = model?.aircraft ?: emptyList()
+    // Sort once per aircraft-list change rather than every frame (rangeKm is stable
+    // between fetches); reuse one Path for the chevrons.
+    val sortedAircraft = remember(aircraft) { aircraft.sortedBy { it.rangeKm } }
+    val acPath = remember { Path() }
     val landmarks = model?.landmarks ?: emptyList()
     val selAc by viewModel.selectedAircraft
     val selectedHex = selAc?.icaoHex
@@ -334,7 +338,7 @@ fun RadarView(
             val acNow = System.currentTimeMillis()
             val taken = ArrayList<android.graphics.RectF>(48)
             val selRoute = viewModel.selectedRoute.value
-            for (ac in if (showAircraft) aircraft.sortedBy { it.rangeKm } else emptyList()) {
+            for (ac in if (showAircraft) sortedAircraft else emptyList()) {
                 val ft = ac.altitudeMeters / 0.3048
                 if (ft < altMin || ft > altMax) continue
                 ac.positionInto(acNow, acPos)
@@ -378,10 +382,9 @@ fun RadarView(
                 val tip = dir(theta, s)
                 val bl = dir(theta + 2.6, s * 0.85f)
                 val brr = dir(theta - 2.6, s * 0.85f)
-                val path = Path().apply {
-                    moveTo(tip.x, tip.y); lineTo(bl.x, bl.y); lineTo(brr.x, brr.y); close()
-                }
-                drawPath(path, col)
+                acPath.rewind()
+                acPath.moveTo(tip.x, tip.y); acPath.lineTo(bl.x, bl.y); acPath.lineTo(brr.x, brr.y); acPath.close()
+                drawPath(acPath, col)
                 if (ac.icaoHex == selectedHex) {
                     val pulse = (sin(acNow / 280.0) * 0.5 + 0.5).toFloat()
                     drawCircle(

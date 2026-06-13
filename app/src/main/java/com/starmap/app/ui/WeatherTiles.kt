@@ -61,13 +61,13 @@ object WeatherTiles {
      * bitmap (transparent where there's no precipitation). [rain] picks a precipitation
      * colour scheme; otherwise an infrared-cloud scheme.
      */
-    suspend fun loadFrameBitmap(host: String, path: String, rain: Boolean, grid: Grid): Bitmap? {
+    suspend fun loadFrameBitmap(host: String, path: String, rain: Boolean, grid: Grid, outPx: Int = TILE_OUT_PX): Bitmap? {
         val wTiles = grid.txMax - grid.txMin + 1
         val hTiles = grid.tyMax - grid.tyMin + 1
         if (wTiles <= 0 || hTiles <= 0 || wTiles * hTiles > 120) return null
         val suffix = if (rain) "/2/1_1.png" else "/0/0_0.png"
         val n = 1 shl grid.z
-        val out = TILE_OUT_PX
+        val out = outPx
         return withContext(Dispatchers.IO) {
             val bmp = Bitmap.createBitmap(wTiles * out, hTiles * out, Bitmap.Config.ARGB_8888)
             val canvas = Canvas(bmp)

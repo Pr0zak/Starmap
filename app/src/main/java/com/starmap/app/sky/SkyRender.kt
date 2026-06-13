@@ -71,13 +71,16 @@ object SkyRender {
      * so its azimuth becomes true-north referenced. Returns a new array.
      */
     fun toTrueNorth(v: FloatArray, declinationDeg: Float): FloatArray {
+        val out = FloatArray(3)
         val d = Math.toRadians(declinationDeg.toDouble())
-        val cd = cos(d).toFloat()
-        val sd = sin(d).toFloat()
-        return floatArrayOf(
-            v[0] * cd + v[1] * sd,
-            -v[0] * sd + v[1] * cd,
-            v[2],
-        )
+        toTrueNorthInto(v, cos(d).toFloat(), sin(d).toFloat(), out)
+        return out
+    }
+
+    /** Allocation-free [toTrueNorth] writing into [out], with precomputed cos/sin. */
+    fun toTrueNorthInto(v: FloatArray, cosDecl: Float, sinDecl: Float, out: FloatArray) {
+        out[0] = v[0] * cosDecl + v[1] * sinDecl
+        out[1] = -v[0] * sinDecl + v[1] * cosDecl
+        out[2] = v[2]
     }
 }

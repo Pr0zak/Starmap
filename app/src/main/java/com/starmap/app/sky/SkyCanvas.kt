@@ -130,6 +130,11 @@ fun SkyCanvas(viewModel: SkyViewModel, settings: Settings, modifier: Modifier = 
         }
     }
 
+    // Reusable camera-basis buffers (avoid 3 FloatArray allocs every frame).
+    val lookBuf = remember { FloatArray(3) }
+    val rightBuf = remember { FloatArray(3) }
+    val upBuf = remember { FloatArray(3) }
+
     // Constellation artwork: a lazily-decoded bitmap cache and reusable mesh buffers.
     val appContext = androidx.compose.ui.platform.LocalContext.current
     val artCache = remember { HashMap<String, android.graphics.Bitmap?>() }
@@ -194,9 +199,13 @@ fun SkyCanvas(viewModel: SkyViewModel, settings: Settings, modifier: Modifier = 
             look = basis[0]; right = basis[1]; up = basis[2]
         } else {
             val b = viewModel.orientation.basis
-            look = SkyRender.toTrueNorth(b.look, m.declinationDeg)
-            right = SkyRender.toTrueNorth(b.right, m.declinationDeg)
-            up = SkyRender.toTrueNorth(b.up, m.declinationDeg)
+            val dRad = Math.toRadians(m.declinationDeg.toDouble())
+            val cd = cos(dRad).toFloat()
+            val sd = sin(dRad).toFloat()
+            SkyRender.toTrueNorthInto(b.look, cd, sd, lookBuf)
+            SkyRender.toTrueNorthInto(b.right, cd, sd, rightBuf)
+            SkyRender.toTrueNorthInto(b.up, cd, sd, upBuf)
+            look = lookBuf; right = rightBuf; up = upBuf
         }
 
         val cx = size.width / 2f
