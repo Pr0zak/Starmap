@@ -210,7 +210,9 @@ object SunMoon {
         var prevRaw = d0
         ts.add(0.0); cums.add(cum)
         var t = 0.25
-        while (t <= 40.0) {
+        // ~45-day window: enough cumulative phase angle (>540°) that every one of the
+        // four upcoming phases is bracketed even after the "skip current" target bump.
+        while (t <= 45.0) {
             val raw = dAt(t)
             var delta = raw - prevRaw
             if (delta < 0) delta += 360.0

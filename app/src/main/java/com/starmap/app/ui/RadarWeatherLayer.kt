@@ -7,6 +7,7 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateMapOf
@@ -62,8 +63,17 @@ fun RadarWeatherLayer(
     val h = sizePx.height.toFloat()
     val framesKey = frames.lastOrNull()?.path ?: ""
 
+    // Free the previous generation's bitmaps when the layer leaves composition.
+    DisposableEffect(Unit) {
+        onDispose {
+            bitmaps.values.forEach { if (!it.isRecycled) it.recycle() }
+            bitmaps.clear()
+        }
+    }
+
     // Round the centre to ~1 km so GPS jitter doesn't keep restarting the prefetch.
     LaunchedEffect(sizePx, keyRound(latitude), keyRound(longitude), maxRangeKm, mode, host, framesKey) {
+        bitmaps.values.forEach { if (!it.isRecycled) it.recycle() }
         bitmaps.clear()
         wg = null
         onBuffered(0, frames.size)

@@ -88,6 +88,7 @@ object WeatherTiles {
                                 if (tile != null) {
                                     val dst = android.graphics.Rect(dstX, dstY, dstX + out, dstY + out)
                                     synchronized(canvas) { canvas.drawBitmap(tile, null, dst, paint) }
+                                    tile.recycle()
                                 }
                             } catch (e: Exception) {
                                 // missing tile → leave transparent

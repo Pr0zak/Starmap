@@ -156,11 +156,15 @@ object Comets {
         var hi = if (dt > 0) 1.0 else -1.0
         var gHi = gAndR(hi)[0]
         var guard = 0
-        while (gHi * (-target) > 0.0 && guard < 200) { // same sign as G(0) ⇒ widen
+        // Widen while same sign as G(0). Stop if the Stumpff terms overflow to a
+        // non-finite value (strongly hyperbolic orbits far from perihelion) so we
+        // don't fall through with hi = ±Inf and produce NaN RA/Dec.
+        while (gHi.isFinite() && gHi * (-target) > 0.0 && guard < 200) {
             hi *= 2.0
             gHi = gAndR(hi)[0]
             guard++
         }
+        if (!hi.isFinite()) hi = if (dt > 0) 1e6 else -1e6
         if (hi < lo) { val t = lo; lo = hi; hi = t }
         // Safeguarded Newton ("rtsafe").
         var chi = 0.5 * (lo + hi)
