@@ -111,7 +111,13 @@ class AircraftManager {
      * the full airport [name] and a human [location] ("City, Country") to expand it to.
      * [name]/[location] are blank when adsbdb doesn't know the airport.
      */
-    data class Airport(val code: String, val name: String, val location: String)
+    data class Airport(
+        val code: String,
+        val name: String,
+        val location: String,
+        val lat: Double = Double.NaN,
+        val lon: Double = Double.NaN,
+    )
 
     /** Flight route (origin → destination, with airline) for a callsign, from adsbdb. */
     data class Route(val origin: Airport, val destination: Airport, val airline: String)
@@ -126,7 +132,10 @@ class AircraftManager {
             val code = a.optString("iata_code").ifBlank { a.optString("icao_code") }.ifBlank { "?" }
             val location = listOf(a.optString("municipality"), a.optString("country_name"))
                 .filter { it.isNotBlank() }.joinToString(", ")
-            return Airport(code, a.optString("name"), location)
+            return Airport(
+                code, a.optString("name"), location,
+                a.optDouble("latitude", Double.NaN), a.optDouble("longitude", Double.NaN),
+            )
         }
         val airline = fr.optJSONObject("airline")?.optString("name", "").orEmpty()
         return Route(airport("origin"), airport("destination"), airline)

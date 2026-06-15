@@ -78,10 +78,14 @@ import kotlinx.coroutines.android.awaitFrame
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collectLatest
 import kotlin.math.abs
+import kotlin.math.asin
+import kotlin.math.atan2
 import kotlin.math.cos
 import kotlin.math.hypot
+import kotlin.math.pow
 import kotlin.math.roundToInt
 import kotlin.math.sin
+import kotlin.math.sqrt
 
 /**
  * Top-down "radar" scope: the observer sits at the centre with concentric range
@@ -339,6 +343,30 @@ fun RadarView(
             val acNow = System.currentTimeMillis()
             val taken = ArrayList<android.graphics.RectF>(48)
             val selRoute = viewModel.selectedRoute.value
+
+            // Selected flight's great-circle route, the part near the scope.
+            if (selRoute != null && fix != null &&
+                !selRoute.origin.lat.isNaN() && !selRoute.destination.lat.isNaN()
+            ) {
+                var prevA: Offset? = null
+                var i = 0
+                while (i <= 96) {
+                    val (plat, plon) = gcPoint(
+                        selRoute.origin.lat, selRoute.origin.lon,
+                        selRoute.destination.lat, selRoute.destination.lon, i / 96.0,
+                    )
+                    val (e, n) = groundEnu(fix.latitude, fix.longitude, plat, plon)
+                    if (hypot(e, n) < maxRangeKm * 2.4f) {
+                        val oa = proj(e, n)
+                        prevA?.let { drawLine(Color(0x55FFD54F), it, oa, strokeWidth = 1.4f * density) }
+                        prevA = oa
+                    } else {
+                        prevA = null
+                    }
+                    i++
+                }
+            }
+
             for (ac in if (showAircraft) sortedAircraft else emptyList()) {
                 val ft = ac.altitudeMeters / 0.3048
                 if (ft < altMin || ft > altMax) continue
@@ -912,6 +940,37 @@ private fun altColor(ft: Double): Color {
         if (f <= b) return lerp(ca, cb, ((f - a) / (b - a)).coerceIn(0f, 1f))
     }
     return ALT_STOPS.last().second
+}
+
+/** (East, North) kilometres of (lat,lon) relative to the observer. */
+private fun groundEnu(obsLat: Double, obsLon: Double, lat: Double, lon: Double): Pair<Float, Float> {
+    val la1 = Math.toRadians(obsLat)
+    val la2 = Math.toRadians(lat)
+    val dLon = Math.toRadians(lon - obsLon)
+    val y = sin(dLon) * cos(la2)
+    val x = cos(la1) * sin(la2) - sin(la1) * cos(la2) * cos(dLon)
+    val bearing = atan2(y, x)
+    val hav = sin((la2 - la1) / 2).pow(2) + cos(la1) * cos(la2) * sin(dLon / 2).pow(2)
+    val dist = 2.0 * 6371.0 * asin(sqrt(hav).coerceIn(0.0, 1.0))
+    return (dist * sin(bearing)).toFloat() to (dist * cos(bearing)).toFloat()
+}
+
+/** A point fraction [f] along the great circle between two lat/lon points (degrees). */
+private fun gcPoint(lat1: Double, lon1: Double, lat2: Double, lon2: Double, f: Double): Pair<Double, Double> {
+    val p1 = Math.toRadians(lat1)
+    val l1 = Math.toRadians(lon1)
+    val p2 = Math.toRadians(lat2)
+    val l2 = Math.toRadians(lon2)
+    val d = 2.0 * asin(
+        sqrt(sin((p2 - p1) / 2).pow(2) + cos(p1) * cos(p2) * sin((l2 - l1) / 2).pow(2)).coerceIn(0.0, 1.0),
+    )
+    if (d == 0.0) return lat1 to lon1
+    val a = sin((1 - f) * d) / sin(d)
+    val b = sin(f * d) / sin(d)
+    val x = a * cos(p1) * cos(l1) + b * cos(p2) * cos(l2)
+    val y = a * cos(p1) * sin(l1) + b * cos(p2) * sin(l2)
+    val z = a * sin(p1) + b * sin(p2)
+    return Math.toDegrees(atan2(z, sqrt(x * x + y * y))) to Math.toDegrees(atan2(y, x))
 }
 
 /** Blip/row colour: emergency red, gray on the ground, else the altitude ramp. */
