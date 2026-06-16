@@ -62,6 +62,8 @@ data class Settings(
     val applyRefraction: Boolean = true,
     val centerIdentify: Boolean = true,
     val arMode: Boolean = false,
+    /** AR camera dimming: 0 = camera fully visible, 1 = fully black behind the sky overlay. */
+    val arDim: Float = 0f,
     val nightMode: Boolean = false,
     /** 0 = follow system auto-rotate, 1 = portrait, 2 = landscape. */
     val orientationMode: Int = 0,
@@ -121,6 +123,7 @@ class SettingsRepository(private val context: Context) {
         val applyRefraction = booleanPreferencesKey("apply_refraction")
         val centerIdentify = booleanPreferencesKey("center_identify")
         val arMode = booleanPreferencesKey("ar_mode")
+        val arDim = floatPreferencesKey("ar_dim")
         val nightMode = booleanPreferencesKey("night_mode")
         val radarBasemap = intPreferencesKey("radar_basemap")
         val radarBasemapOpacity = floatPreferencesKey("radar_basemap_opacity")
@@ -183,6 +186,7 @@ class SettingsRepository(private val context: Context) {
             applyRefraction = p[Keys.applyRefraction] ?: true,
             centerIdentify = p[Keys.centerIdentify] ?: true,
             arMode = p[Keys.arMode] ?: false,
+            arDim = (p[Keys.arDim] ?: 0f).coerceIn(0f, 1f),
             nightMode = p[Keys.nightMode] ?: false,
             orientationMode = p[Keys.orientationMode] ?: 0,
             fovCirclesMode = p[Keys.fovCirclesMode] ?: 0,
@@ -226,6 +230,7 @@ class SettingsRepository(private val context: Context) {
         AircraftRange(Keys.aircraftRangeNm),
         LandmarkRange(Keys.landmarkRangeKm),
         RadarRange(Keys.radarRangeNm),
+        ArDim(Keys.arDim),
         RadarBasemapOpacity(Keys.radarBasemapOpacity),
         RadarWeatherOpacity(Keys.radarWeatherOpacity),
     }

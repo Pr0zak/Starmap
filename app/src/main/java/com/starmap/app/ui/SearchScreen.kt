@@ -34,39 +34,43 @@ fun SearchScreen(viewModel: SkyViewModel, onDone: () -> Unit) {
     LaunchedEffect(Unit) { focus.requestFocus() }
 
     DetailScaffold(title = "Search the sky", onBack = onDone) {
-        OutlinedTextField(
-            value = query,
-            onValueChange = { query = it },
-            placeholder = { Text("Star, planet, constellation…") },
-            singleLine = true,
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 16.dp)
-                .focusRequester(focus),
-        )
+        // A Column so the field and the results/hint stack vertically — the scaffold
+        // hosts content in a Box, so bare siblings would otherwise overlap.
+        Column(modifier = Modifier.fillMaxSize()) {
+            OutlinedTextField(
+                value = query,
+                onValueChange = { query = it },
+                placeholder = { Text("Star, planet, constellation…") },
+                singleLine = true,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp)
+                    .focusRequester(focus),
+            )
 
-        when {
-            query.isBlank() -> Hint("Try “Orion”, “Jupiter”, “Betelgeuse”, “Andromeda”, “ISS”…")
-            results.isEmpty() -> Hint("No matches for “$query”")
-            else -> LazyColumn(modifier = Modifier.fillMaxSize()) {
-                items(results) { r ->
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable {
-                                viewModel.selectSearchTarget(r.target)
-                                onDone()
-                            }
-                            .padding(horizontal = 16.dp, vertical = 12.dp),
-                    ) {
-                        Text(r.display, fontSize = 16.sp, fontWeight = FontWeight.Medium)
-                        Text(
-                            r.kind + (if (r.target is SearchTarget.StarT) " · star" else ""),
-                            fontSize = 12.sp,
-                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
-                        )
+            when {
+                query.isBlank() -> Hint("Try “Orion”, “Jupiter”, “Betelgeuse”, “Andromeda”, “ISS”…")
+                results.isEmpty() -> Hint("No matches for “$query”")
+                else -> LazyColumn(modifier = Modifier.fillMaxSize()) {
+                    items(results) { r ->
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable {
+                                    viewModel.selectSearchTarget(r.target)
+                                    onDone()
+                                }
+                                .padding(horizontal = 16.dp, vertical = 12.dp),
+                        ) {
+                            Text(r.display, fontSize = 16.sp, fontWeight = FontWeight.Medium)
+                            Text(
+                                r.kind + (if (r.target is SearchTarget.StarT) " · star" else ""),
+                                fontSize = 12.sp,
+                                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+                            )
+                        }
+                        HorizontalDivider(color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f))
                     }
-                    HorizontalDivider(color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f))
                 }
             }
         }

@@ -14,6 +14,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.clipPath
 import androidx.compose.ui.graphics.nativeCanvas
@@ -182,14 +183,20 @@ fun SkyCanvas(viewModel: SkyViewModel, settings: Settings, modifier: Modifier = 
         frame // subscribe to the frame clock
         val night = settings.nightMode
         val arMode = settings.arMode // transparent background: the camera shows through
+        val arDim = settings.arDim // optional black scrim over the camera (0 = none)
+        val skyColor = if (night) Color.Black else Color(0xFF05070D)
+        // In AR the camera shows through; an adjustable scrim dims it so the overlay reads.
+        fun DrawScope.drawSky() {
+            if (!arMode) drawRect(skyColor)
+            else if (arDim > 0f) drawRect(Color.Black, alpha = arDim)
+        }
         val m = model
         if (m == null) {
-            if (!arMode) drawRect(if (night) Color.Black else Color(0xFF05070D))
+            drawSky()
             return@Canvas
         }
 
-        val skyColor = if (night) Color.Black else Color(0xFF05070D)
-        if (!arMode) drawRect(skyColor)
+        drawSky()
         val look: FloatArray
         val right: FloatArray
         val up: FloatArray

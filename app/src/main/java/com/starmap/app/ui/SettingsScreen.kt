@@ -30,6 +30,7 @@ import com.starmap.app.settings.SettingsRepository.BoolSetting
 import com.starmap.app.settings.SettingsRepository.FloatSetting
 import com.starmap.app.sky.OfflineSync
 import com.starmap.app.sky.SkyViewModel
+import kotlin.math.roundToInt
 
 @Composable
 fun SettingsScreen(viewModel: SkyViewModel, settings: Settings, onBack: () -> Unit) {
@@ -230,6 +231,13 @@ fun SettingsScreen(viewModel: SkyViewModel, settings: Settings, onBack: () -> Un
             }
             OrientationRow(settings.orientationMode) { viewModel.setOrientation(it) }
             FovCirclesRow(settings.fovCirclesMode) { viewModel.setFovCircles(it) }
+            SettingSlider(
+                label = "AR camera dimming",
+                value = settings.arDim,
+                valueText = if (settings.arDim <= 0f) "Off" else "${(settings.arDim * 100).roundToInt()}%",
+                range = 0f..1f,
+                onChange = { viewModel.setFloat(FloatSetting.ArDim, it) },
+            )
             }
 
             SectionHeader("Catalog")
