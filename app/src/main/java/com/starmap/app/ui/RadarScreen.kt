@@ -1,11 +1,11 @@
 package com.starmap.app.ui
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
-import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.foundation.layout.Box
@@ -27,7 +27,6 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.draw.clip
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Explore
 import androidx.compose.material.icons.filled.Flight
 import androidx.compose.material.icons.filled.Layers
@@ -99,9 +98,13 @@ fun RadarView(
     viewModel: SkyViewModel,
     settings: Settings,
     model: SkyModel?,
+    onSelectMode: (SkyMode) -> Unit,
     onExit: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    // System back leaves radar for the sky view (the old Close button is now the mode switcher).
+    BackHandler { onExit() }
+
     val density = LocalDensity.current.density
     val headingUp = settings.radarHeadingUp
     val showPois = settings.radarLandmarks
@@ -165,16 +168,6 @@ fun RadarView(
             viewModel.setFloat(FloatSetting.RadarRange, it)
         }
     }
-    var altMin by remember { mutableFloatStateOf(settings.radarAltMinFt) }
-    var altMax by remember { mutableFloatStateOf(settings.radarAltMaxFt) }
-    LaunchedEffect(Unit) {
-        snapshotFlow { altMin to altMax }.collectLatest { (lo, hi) ->
-            delay(400)
-            viewModel.setFloat(FloatSetting.RadarAltMin, lo)
-            viewModel.setFloat(FloatSetting.RadarAltMax, hi)
-        }
-    }
-
     val aircraft = model?.aircraft ?: emptyList()
     // Sort once per aircraft-list change rather than every frame (rangeKm is stable
     // between fetches); reuse one Path for the chevrons.
@@ -369,7 +362,6 @@ fun RadarView(
 
             for (ac in if (showAircraft) sortedAircraft else emptyList()) {
                 val ft = ac.altitudeMeters / 0.3048
-                if (ft < altMin || ft > altMax) continue
                 ac.positionInto(acNow, acPos)
                 val eKm = acPos[0]
                 val nKm = acPos[1]
@@ -493,10 +485,7 @@ fun RadarView(
             modifier = Modifier.align(Alignment.TopStart).fillMaxWidth().statusBarsPadding().padding(8.dp),
         ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                IconButton(onClick = onExit) {
-                    Icon(Icons.Filled.Close, contentDescription = "Exit radar", tint = Color(0xFFD8E0F0))
-                }
-                Text("RADAR", color = Color(0xFFB6C2D2), fontSize = 14.sp)
+                ModeSwitcher(current = SkyMode.Radar, onSelect = onSelectMode)
                 Spacer(Modifier.weight(1f))
                 IconButton(onClick = { showBasemapMenu = !showBasemapMenu }) {
                     Icon(
@@ -617,10 +606,8 @@ fun RadarView(
             }
         }
 
-        AltitudeTape(
-            altMin = altMin, altMax = altMax, valueRange = 0f..60000f,
-            onChange = { lo, hi -> altMin = lo; altMax = hi },
-            modifier = Modifier.align(Alignment.CenterEnd).fillMaxHeight(0.6f).padding(end = 2.dp),
+        AltitudeLegend(
+            modifier = Modifier.align(Alignment.CenterEnd).fillMaxHeight(0.55f).padding(end = 2.dp),
         )
 
         Column(modifier = Modifier.align(Alignment.BottomCenter).fillMaxWidth()) {
@@ -695,7 +682,7 @@ fun RadarView(
                 }
             }
             RadarDrawer(
-                viewModel, aircraft, altMin, altMax, selectedHex,
+                viewModel, aircraft, selectedHex,
                 modifier = Modifier.fillMaxWidth(),
             )
         }
@@ -756,49 +743,23 @@ private fun BasemapChip(label: String, selected: Boolean, onClick: () -> Unit) {
 }
 
 /**
- * Altimeter-style vertical tape on the right edge: a gradient bar (the altitude
- * colour legend) with two handles bracketing the visible altitude band. Drag a
- * handle to filter; the band brightens, everything outside dims.
+ * Static altitude colour legend on the right edge: a gradient bar keyed to the blip
+ * colours (ground green → high-altitude pink) with a few "ft" labels. Purely a key —
+ * altitude is no longer used to filter which aircraft are shown.
  */
 @Composable
-private fun AltitudeTape(
-    altMin: Float,
-    altMax: Float,
-    valueRange: ClosedFloatingPointRange<Float>,
-    onChange: (Float, Float) -> Unit,
-    modifier: Modifier = Modifier,
-) {
+private fun AltitudeLegend(modifier: Modifier = Modifier) {
     val density = LocalDensity.current.density
-    var dragMin by remember { mutableStateOf(true) }
-    val lo = valueRange.start
-    val span = (valueRange.endInclusive - lo).coerceAtLeast(1f)
-    fun frac(v: Float) = ((v - lo) / span).coerceIn(0f, 1f)
-    val valPaint = remember {
+    val maxFt = 60000.0
+    val labelPaint = remember {
         android.graphics.Paint().apply {
             isAntiAlias = true
             textSize = 9f * density
             textAlign = android.graphics.Paint.Align.RIGHT
-            color = android.graphics.Color.argb(255, 255, 213, 79)
+            color = android.graphics.Color.argb(220, 182, 194, 210)
         }
     }
-    Box(
-        modifier = modifier.width(46.dp).pointerInput(Unit) {
-            detectDragGestures(
-                onDragStart = { off ->
-                    val h = size.height.toFloat()
-                    val yMin = (1f - frac(altMin)) * h
-                    val yMax = (1f - frac(altMax)) * h
-                    dragMin = abs(off.y - yMin) <= abs(off.y - yMax)
-                },
-            ) { change, _ ->
-                change.consume()
-                val h = size.height.toFloat().coerceAtLeast(1f)
-                val v = lo + (1f - (change.position.y / h).coerceIn(0f, 1f)) * span
-                if (dragMin) onChange(v.coerceAtMost(altMax), altMax)
-                else onChange(altMin, v.coerceAtLeast(altMin))
-            }
-        },
-    ) {
+    Box(modifier = modifier.width(46.dp)) {
         Canvas(Modifier.fillMaxSize()) {
             val h = size.height
             val barW = 9f * density
@@ -806,29 +767,25 @@ private fun AltitudeTape(
             val radius = CornerRadius(barW / 2f, barW / 2f)
             val brush = Brush.verticalGradient(
                 colors = listOf(
-                    altColor(valueRange.endInclusive.toDouble()),
-                    altColor((lo + span * 0.75f).toDouble()),
-                    altColor((lo + span * 0.5f).toDouble()),
-                    altColor((lo + span * 0.25f).toDouble()),
-                    altColor(lo.toDouble()),
+                    altColor(maxFt),
+                    altColor(maxFt * 0.75),
+                    altColor(maxFt * 0.5),
+                    altColor(maxFt * 0.25),
+                    altColor(0.0),
                 ),
                 startY = 0f, endY = h,
             )
-            // Dim full bar = the legend / out-of-band region.
-            drawRoundRect(brush, Offset(barLeft, 0f), Size(barW, h), radius, alpha = 0.22f)
-            // Bright active band between the handles.
-            val yTop = (1f - frac(altMax)) * h
-            val yBot = (1f - frac(altMin)) * h
-            drawRoundRect(brush, Offset(barLeft, yTop), Size(barW, (yBot - yTop).coerceAtLeast(2f)), radius)
-            // Handles + value labels.
-            for ((y, v) in listOf(yTop to altMax, yBot to altMin)) {
+            drawRoundRect(brush, Offset(barLeft, 0f), Size(barW, h), radius)
+            // Altitude tick labels alongside the bar (top = high, bottom = ground).
+            for (ft in listOf(0, 20000, 40000, 60000)) {
+                val y = ((1f - (ft / maxFt).toFloat()) * h).coerceIn(7f * density, h - 1f * density)
                 drawLine(
-                    Color(0xFFFFD54F), Offset(barLeft - 4f * density, y),
-                    Offset(barLeft + barW + 3f * density, y), strokeWidth = 2f * density,
+                    Color(0x55B6C2D2), Offset(barLeft - 2f * density, y),
+                    Offset(barLeft + barW + 2f * density, y), strokeWidth = 1f * density,
                 )
-                drawCircle(Color(0xFFFFD54F), 3.5f * density, Offset(barLeft - 4f * density, y))
                 drawContext.canvas.nativeCanvas.drawText(
-                    "${(v / 1000).roundToInt()}k", barLeft - 9f * density, y + 3.5f * density, valPaint,
+                    if (ft == 0) "GND" else "${ft / 1000}k",
+                    barLeft - 5f * density, y + 3f * density, labelPaint,
                 )
             }
         }
@@ -840,15 +797,11 @@ private fun AltitudeTape(
 private fun RadarDrawer(
     viewModel: SkyViewModel,
     aircraft: List<AircraftRender>,
-    altMin: Float,
-    altMax: Float,
     selectedHex: String?,
     modifier: Modifier = Modifier,
 ) {
     var expanded by remember { mutableStateOf(false) }
-    val sorted = aircraft
-        .filter { val f = it.altitudeMeters / 0.3048; f >= altMin && f <= altMax }
-        .sortedBy { it.rangeKm }
+    val sorted = aircraft.sortedBy { it.rangeKm }
     Surface(
         color = Color(0xF20B0F15),
         shape = RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp),

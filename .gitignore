@@ -30,3 +30,4 @@ Thumbs.db
 # Catalog build inputs (large; downloaded by tools/build_catalog.py).
 # The *generated* catalogs under app/src/main/assets and /catalog ARE committed.
 /tools/data/
+.stitch-mockups/

@@ -673,6 +673,7 @@ fun SkyCanvas(viewModel: SkyViewModel, settings: Settings, modifier: Modifier = 
             val heliColor = if (night) Color(0xFFAA6699) else Color(0xFF55E0D0)
             bodyPaint.textSize = 11f * density
             val acPos = FloatArray(3)
+            val acFut = FloatArray(3)
             val acNow = System.currentTimeMillis()
             for (ac in m.aircraft) {
                 ac.positionInto(acNow, acPos)
@@ -735,10 +736,18 @@ fun SkyCanvas(viewModel: SkyViewModel, settings: Settings, modifier: Modifier = 
                     drawLine(color, androidx.compose.ui.geometry.Offset(sx - s, sy - s),
                         androidx.compose.ui.geometry.Offset(sx + s, sy - s), strokeWidth = 1.6f * density)
                 } else {
-                    val marker = Path().apply {
-                        moveTo(sx, sy - s); lineTo(sx + s, sy); lineTo(sx, sy + s); lineTo(sx - s, sy); close()
+                    // Plane silhouette aimed along its (dead-reckoned) direction of travel;
+                    // falls back to nose-up when the motion vector can't be resolved.
+                    var angle = -1.5707964f // nose up
+                    ac.positionInto(acNow + 12_000L, acFut)
+                    val fd = acFut[0] * look[0] + acFut[1] * look[1] + acFut[2] * look[2]
+                    if (fd >= MIN_DEPTH) {
+                        val fx = cx + ((acFut[0] * right[0] + acFut[1] * right[1] + acFut[2] * right[2]) / fd) * focal
+                        val fy = cy - ((acFut[0] * up[0] + acFut[1] * up[1] + acFut[2] * up[2]) / fd) * focal
+                        val dx = fx - sx; val dy = fy - sy
+                        if (hypot(dx, dy) > 0.5f) angle = atan2(dy, dx)
                     }
-                    drawPath(marker, color)
+                    drawPath(planeMarker(sx, sy, s * 1.05f, angle), color)
                 }
                 aircraftHits.add(AircraftHit(sx, sy, ac))
 
@@ -998,6 +1007,37 @@ private fun LaunchedPersistFov(viewModel: SkyViewModel, fovProvider: () -> Float
 
 /** A tappable aircraft position recorded during the draw pass. */
 private class AircraftHit(val x: Float, val y: Float, val render: AircraftRender)
+
+/**
+ * A small top-view airplane silhouette (swept wings + tailplane) centred at ([cx],[cy]),
+ * scaled by [s] and rotated so the nose points along [angle] (screen radians, +x = right,
+ * +y = down). Half the outline is listed nose→tail then mirrored to close.
+ */
+private fun planeMarker(cx: Float, cy: Float, s: Float, angle: Float): Path {
+    val ca = cos(angle); val sa = sin(angle)
+    fun px(x: Float, y: Float) = cx + (x * ca - y * sa) * s
+    fun py(x: Float, y: Float) = cy + (x * sa + y * ca) * s
+    // Right-half outline (x = forward toward the nose, y = out to the right wing).
+    val pts = floatArrayOf(
+        1.25f, 0f,      // nose
+        0.18f, 0.15f,   // fuselage shoulder
+        -0.05f, 0.92f,  // wingtip (swept back)
+        -0.32f, 0.20f,  // wing trailing root
+        -0.92f, 0.13f,  // aft fuselage
+        -1.12f, 0.50f,  // tailplane tip
+        -1.25f, 0.12f,  // tailplane trailing
+        -1.28f, 0f,     // tail centre
+    )
+    return Path().apply {
+        moveTo(px(pts[0], pts[1]), py(pts[0], pts[1]))
+        var i = 2
+        while (i < pts.size) { lineTo(px(pts[i], pts[i + 1]), py(pts[i], pts[i + 1])); i += 2 }
+        // Mirror the right half back along the left side (tail centre → shoulder), then close to the nose.
+        i = pts.size - 4
+        while (i >= 2) { lineTo(px(pts[i], -pts[i + 1]), py(pts[i], -pts[i + 1])); i -= 2 }
+        close()
+    }
+}
 
 /**
  * Finds the nearest identifiable sky object within [thresh] px of ([ox],[oy]).

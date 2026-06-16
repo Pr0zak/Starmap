@@ -12,7 +12,9 @@ import android.net.Uri
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.verticalScroll
@@ -35,7 +37,6 @@ import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.BlurOn
 import androidx.compose.material.icons.filled.Brightness1
 import androidx.compose.material.icons.filled.BubbleChart
-import androidx.compose.material.icons.filled.CameraAlt
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.DarkMode
 import androidx.compose.material.icons.filled.Download
@@ -59,7 +60,6 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.minimumInteractiveComponentSize
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -75,6 +75,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
@@ -83,6 +84,7 @@ import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextDecoration
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
@@ -111,6 +113,49 @@ import kotlin.math.atan2
 import kotlin.math.roundToInt
 
 private enum class Screen { Sky, Search, Settings, Downloads, About }
+
+/** The three top-level viewing modes, surfaced as a segmented switcher. */
+enum class SkyMode(val label: String) { Sky("Sky"), Radar("Radar"), Ar("AR") }
+
+/** Segmented Sky · Radar · AR control. Selected segment is a glowing gold pill; the rest are translucent glass. */
+@Composable
+internal fun ModeSwitcher(
+    current: SkyMode,
+    onSelect: (SkyMode) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val outer = RoundedCornerShape(13.dp)
+    val pill = RoundedCornerShape(10.dp)
+    Box(modifier = modifier.glass(outer).padding(4.dp)) {
+        Row {
+            for (mode in SkyMode.values()) {
+                val selected = mode == current
+                Box(
+                    modifier = Modifier
+                        .then(if (selected) Modifier.glow(pill, Hud.Gold, 12.dp) else Modifier)
+                        .clip(pill)
+                        .background(
+                            if (selected) {
+                                Brush.verticalGradient(listOf(Hud.GoldSoft, Hud.Gold))
+                            } else {
+                                Brush.verticalGradient(listOf(Color.Transparent, Color.Transparent))
+                            },
+                        )
+                        .clickable { onSelect(mode) }
+                        .padding(horizontal = 18.dp, vertical = 8.dp),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Text(
+                        mode.label,
+                        color = if (selected) Hud.Ink else Hud.TextDim,
+                        fontSize = 13.sp,
+                        fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
+                    )
+                }
+            }
+        }
+    }
+}
 
 @Composable
 fun MainScreen(viewModel: SkyViewModel = viewModel()) {
@@ -253,11 +298,37 @@ private fun SkyScreen(
         }
     }
 
+    // Which top-level mode the switcher reflects, and how to move between them.
+    // Radar is its own full-screen view; Sky and AR share the star-field Box below.
+    val currentMode = when {
+        arActive -> SkyMode.Ar
+        settings.radarMode -> SkyMode.Radar
+        else -> SkyMode.Sky
+    }
+    val selectMode: (SkyMode) -> Unit = selectMode@{ mode ->
+        if (mode == currentMode) return@selectMode
+        when (mode) {
+            SkyMode.Sky -> {
+                viewModel.setBool(BoolSetting.RadarMode, false)
+                if (settings.arMode) viewModel.setBool(BoolSetting.ArMode, false)
+            }
+            SkyMode.Radar -> {
+                if (settings.arMode) viewModel.setBool(BoolSetting.ArMode, false)
+                viewModel.setBool(BoolSetting.RadarMode, true)
+            }
+            SkyMode.Ar -> {
+                viewModel.setBool(BoolSetting.RadarMode, false)
+                onToggleAr() // handles the camera-permission flow + enabling AR
+            }
+        }
+    }
+
     if (settings.radarMode) {
         RadarView(
             viewModel = viewModel,
             settings = settings,
             model = model,
+            onSelectMode = selectMode,
             onExit = { viewModel.setBool(BoolSetting.RadarMode, false) },
             modifier = Modifier.fillMaxSize(),
         )
@@ -274,50 +345,46 @@ private fun SkyScreen(
         Column(modifier = Modifier.fillMaxWidth().statusBarsPadding()) {
             Row(
                 modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp),
-                verticalAlignment = Alignment.CenterVertically,
+                verticalAlignment = Alignment.Top,
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = "${heading.roundToInt()}° ${compassLabel(heading)}",
-                        color = Color(0xFFD8E0F0),
-                        fontSize = 22.sp,
-                        fontWeight = FontWeight.SemiBold,
-                    )
-                    if (manualMode) {
-                        Text("Manual — drag to look around", color = Color(0xFFFFD54F), fontSize = 12.sp)
-                    } else if (!viewModel.hasOrientationSensor) {
-                        Text("No sensor — switch to manual look", color = Color(0xFFFFB4A0), fontSize = 12.sp)
-                    } else if (accuracy in 0..1) {
-                        Text("Wave the phone in a figure-8 to calibrate", color = Color(0xFFFFD089), fontSize = 12.sp)
+                    Box(
+                        modifier = Modifier
+                            .glass(RoundedCornerShape(12.dp))
+                            .padding(horizontal = 12.dp, vertical = 7.dp),
+                    ) {
+                        Text(
+                            text = "${heading.roundToInt()}° ${compassLabel(heading)}",
+                            color = Hud.Text,
+                            fontSize = 20.sp,
+                            fontWeight = FontWeight.SemiBold,
+                        )
+                    }
+                    val hint = when {
+                        manualMode -> "Manual — drag to look around" to Color(0xFFFFD54F)
+                        !viewModel.hasOrientationSensor -> "No sensor — switch to manual look" to Color(0xFFFFB4A0)
+                        accuracy in 0..1 -> "Wave the phone in a figure-8 to calibrate" to Color(0xFFFFD089)
+                        else -> null
+                    }
+                    hint?.let { (t, c) ->
+                        Text(t, color = c, fontSize = 12.sp, modifier = Modifier.padding(start = 4.dp, top = 4.dp))
                     }
                 }
-                IconButton(onClick = { viewModel.toggleManualMode() }) {
-                    Icon(
-                        Icons.Filled.PanTool, contentDescription = "Manual look",
-                        tint = if (manualMode) Color(0xFFFFD54F) else Color(0xFFD8E0F0),
-                    )
+                HudIconButton(Icons.Filled.PanTool, "Manual look", active = manualMode) {
+                    viewModel.toggleManualMode()
                 }
-                IconButton(onClick = onToggleAr) {
-                    Icon(
-                        Icons.Filled.CameraAlt, contentDescription = "Camera AR",
-                        tint = if (arActive) Color(0xFFFFD54F) else Color(0xFFD8E0F0),
-                    )
+                HudIconButton(Icons.Filled.Schedule, "Time machine", active = !liveTime) {
+                    showTimePanel = !showTimePanel
                 }
-                IconButton(onClick = { viewModel.setBool(BoolSetting.RadarMode, true) }) {
-                    Icon(
-                        Icons.Filled.Flight, contentDescription = "Radar mode", tint = Color(0xFFD8E0F0),
-                    )
-                }
-                IconButton(onClick = { showTimePanel = !showTimePanel }) {
-                    Icon(
-                        Icons.Filled.Schedule, contentDescription = "Time machine",
-                        tint = if (!liveTime) Color(0xFFFFD54F) else Color(0xFFD8E0F0),
-                    )
-                }
-                IconButton(onClick = { onOpen(Screen.Search) }) {
-                    Icon(Icons.Filled.Search, contentDescription = "Search", tint = Color(0xFFD8E0F0))
-                }
+                HudIconButton(Icons.Filled.Search, "Search") { onOpen(Screen.Search) }
                 OverflowMenu(onOpen)
+            }
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp),
+                horizontalArrangement = Arrangement.Center,
+            ) {
+                ModeSwitcher(current = currentMode, onSelect = selectMode)
             }
             SearchBanner(viewModel, model)
         }
@@ -441,9 +508,7 @@ private fun SkyScreen(
 private fun OverflowMenu(onOpen: (Screen) -> Unit) {
     var expanded by remember { mutableStateOf(false) }
     Box {
-        androidx.compose.material3.IconButton(onClick = { expanded = true }) {
-            Icon(Icons.Filled.MoreVert, contentDescription = "Menu", tint = Color(0xFFD8E0F0))
-        }
+        HudIconButton(Icons.Filled.MoreVert, "Menu", active = expanded) { expanded = true }
         DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
             DropdownMenuItem(
                 text = { Text("Settings") },
@@ -473,54 +538,55 @@ private fun ObjectInfoCard(
     onClose: (() -> Unit)? = null,
 ) {
     val (icon, accent) = objectVisual(obj)
-    Surface(
-        color = Color(0xF21B2030),
-        shape = RoundedCornerShape(16.dp),
-        modifier = Modifier.fillMaxWidth(),
-    ) {
+    Box(modifier = Modifier.fillMaxWidth().glass(RoundedCornerShape(20.dp))) {
         Row(
-            modifier = Modifier.padding(start = 14.dp, top = 10.dp, bottom = 12.dp, end = 8.dp),
+            modifier = Modifier.padding(start = 14.dp, top = 12.dp, bottom = 12.dp, end = 8.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Box(
-                modifier = Modifier
-                    .size(44.dp)
-                    .clip(CircleShape)
-                    .background(accent.copy(alpha = 0.16f)),
-                contentAlignment = Alignment.Center,
-            ) {
-                Icon(icon, contentDescription = null, tint = accent, modifier = Modifier.size(26.dp))
-            }
+            IconBadge(icon, accent)
             Column(modifier = Modifier.weight(1f).padding(start = 14.dp)) {
-                Text(
-                    obj.name, color = Color(0xFFF1F4FA), fontSize = 18.sp,
-                    fontWeight = FontWeight.SemiBold,
-                )
+                Text(obj.name, color = Hud.Text, fontSize = 18.sp, fontWeight = FontWeight.SemiBold)
                 Text(obj.kind, color = accent, fontSize = 12.sp, fontWeight = FontWeight.Medium)
                 Text(
-                    obj.detail, color = Color(0xB3FFFFFF), fontSize = 13.sp,
+                    obj.detail, color = Hud.TextDim, fontSize = 13.sp,
                     modifier = Modifier.padding(top = 3.dp),
                 )
             }
             if (onDetails != null) {
                 IconButton(onClick = onDetails) {
-                    Icon(Icons.Filled.Info, contentDescription = "Details", tint = Color(0xFFD8E0F0))
+                    Icon(Icons.Filled.Info, contentDescription = "Details", tint = Hud.Text)
                 }
             }
             if (onFollow != null) {
                 IconButton(onClick = onFollow) {
                     Icon(
                         Icons.Filled.MyLocation, contentDescription = "Follow",
-                        tint = if (following) Color(0xFFFFD54F) else Color(0xFFD8E0F0),
+                        tint = if (following) Hud.Gold else Hud.Text,
                     )
                 }
             }
             if (onClose != null) {
                 IconButton(onClick = onClose) {
-                    Icon(Icons.Filled.Close, contentDescription = "Close", tint = Color(0xFFD8E0F0))
+                    Icon(Icons.Filled.Close, contentDescription = "Close", tint = Hud.Text)
                 }
             }
         }
+    }
+}
+
+/** A circular, softly-glowing icon badge tinted to an object's accent colour. */
+@Composable
+private fun IconBadge(icon: ImageVector, accent: Color, size: Dp = 46.dp) {
+    Box(
+        modifier = Modifier
+            .size(size)
+            .glow(CircleShape, accent, 8.dp)
+            .clip(CircleShape)
+            .background(Brush.verticalGradient(listOf(accent.copy(alpha = 0.30f), accent.copy(alpha = 0.10f))))
+            .border(BorderStroke(1.dp, accent.copy(alpha = 0.45f)), CircleShape),
+        contentAlignment = Alignment.Center,
+    ) {
+        Icon(icon, contentDescription = null, tint = accent, modifier = Modifier.size(24.dp))
     }
 }
 
@@ -550,10 +616,9 @@ private fun ObjectDetailDialog(
     onClose: () -> Unit,
 ) {
     Dialog(onDismissRequest = onClose) {
-        Surface(
-            color = Color(0xFF141A28),
-            shape = RoundedCornerShape(18.dp),
-            modifier = Modifier.fillMaxWidth(),
+        Box(
+            modifier = Modifier.fillMaxWidth()
+                .glass(RoundedCornerShape(22.dp), top = Color(0xF2171E2E), bottom = Color(0xF20E1320)),
         ) {
             Column(modifier = Modifier.padding(18.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
@@ -633,11 +698,7 @@ private fun TimeBar(viewModel: SkyViewModel, model: SkyModel?) {
     val fmt = remember {
         java.text.SimpleDateFormat("EEE d MMM yyyy · h:mm a", java.util.Locale.getDefault())
     }
-    Surface(
-        color = Color(0xE61B2030),
-        shape = RoundedCornerShape(14.dp),
-        modifier = Modifier.fillMaxWidth(),
-    ) {
+    Box(modifier = Modifier.fillMaxWidth().glass(RoundedCornerShape(18.dp))) {
         Column(modifier = Modifier.padding(12.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
@@ -681,17 +742,26 @@ private fun TimeBar(viewModel: SkyViewModel, model: SkyModel?) {
 
 @Composable
 private fun TimeChip(label: String, highlight: Boolean = false, onClick: () -> Unit) {
+    val shape = RoundedCornerShape(10.dp)
     Box(
         modifier = Modifier.minimumInteractiveComponentSize().clickable(onClick = onClick),
         contentAlignment = Alignment.Center,
     ) {
-        Surface(
-            color = if (highlight) Color(0xFF2E5C8A) else Color(0x33FFFFFF),
-            shape = RoundedCornerShape(8.dp),
+        Box(
+            modifier = if (highlight) {
+                Modifier.glow(shape, Hud.Gold, 7.dp).clip(shape)
+                    .background(Brush.verticalGradient(listOf(Hud.GoldSoft, Hud.Gold)))
+            } else {
+                Modifier.clip(shape).background(Color(0x1FFFFFFF))
+                    .border(BorderStroke(1.dp, Hud.Hairline), shape)
+            },
         ) {
             Text(
-                label, color = Color(0xFFE8ECF6), fontSize = 13.sp,
-                modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                label,
+                color = if (highlight) Hud.Ink else Hud.Text,
+                fontSize = 13.sp,
+                fontWeight = if (highlight) FontWeight.SemiBold else FontWeight.Normal,
+                modifier = Modifier.padding(horizontal = 11.dp, vertical = 6.dp),
             )
         }
     }
@@ -699,11 +769,7 @@ private fun TimeChip(label: String, highlight: Boolean = false, onClick: () -> U
 
 @Composable
 private fun StatusCard(content: @Composable () -> Unit) {
-    Surface(
-        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.92f),
-        shape = RoundedCornerShape(14.dp),
-        modifier = Modifier.fillMaxWidth(),
-    ) {
+    Box(modifier = Modifier.fillMaxWidth().glass(RoundedCornerShape(18.dp))) {
         Box(modifier = Modifier.padding(14.dp)) { content() }
     }
 }
@@ -728,10 +794,9 @@ private fun DisposableEffectLifecycle(onResume: () -> Unit, onPause: () -> Unit)
 private fun SearchBanner(viewModel: SkyViewModel, model: SkyModel?) {
     val target by viewModel.searchTarget
     val t = target ?: return
-    Surface(
-        color = Color(0xE61B2030),
-        shape = RoundedCornerShape(12.dp),
-        modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 2.dp),
+    Box(
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 2.dp)
+            .glass(RoundedCornerShape(14.dp)),
     ) {
         Row(
             modifier = Modifier.padding(start = 14.dp, top = 8.dp, bottom = 8.dp),
@@ -789,19 +854,22 @@ internal fun AircraftInfoCard(
     onTrack: () -> Unit,
     onClose: () -> Unit,
 ) {
-    Surface(
-        color = if (ac.isEmergency) Color(0xF2401A1A) else Color(0xF21B2030),
-        shape = RoundedCornerShape(14.dp),
-        modifier = Modifier.fillMaxWidth(),
-    ) {
-        Column(modifier = Modifier.padding(start = 16.dp, top = 8.dp, bottom = 12.dp, end = 8.dp)) {
+    val shape = RoundedCornerShape(18.dp)
+    val cardMod = if (ac.isEmergency) {
+        Modifier.fillMaxWidth()
+            .glass(shape, top = Color(0xD14A1C1C), bottom = Color(0xD12A1010), border = Color(0x55FF8A8A))
+    } else {
+        Modifier.fillMaxWidth().glass(shape)
+    }
+    Box(modifier = cardMod) {
+        Column(modifier = Modifier.padding(start = 14.dp, top = 12.dp, bottom = 12.dp, end = 8.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(
-                    Icons.Filled.Flight, contentDescription = null,
-                    tint = if (ac.isHelicopter) Color(0xFF7FD8C6) else Color(0xFFFFC061),
-                    modifier = Modifier.padding(end = 10.dp).size(22.dp),
+                IconBadge(
+                    Icons.Filled.Flight,
+                    if (ac.isHelicopter) Color(0xFF7FD8C6) else Color(0xFFFFC061),
+                    size = 40.dp,
                 )
-                Column(modifier = Modifier.weight(1f)) {
+                Column(modifier = Modifier.weight(1f).padding(start = 12.dp)) {
                     Text(
                         ac.callsign.ifBlank { "Aircraft" },
                         color = Color(0xFFFFE9A8), fontSize = 18.sp, fontWeight = FontWeight.SemiBold,

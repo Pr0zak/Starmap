@@ -52,8 +52,6 @@ data class Settings(
     val radarLandmarks: Boolean = true,
     val radarAircraft: Boolean = true,
     val radarRangeNm: Float = 40f,
-    val radarAltMinFt: Float = 0f,
-    val radarAltMaxFt: Float = 60000f,
     /** 0 = off, 1 = satellite imagery, 2 = street map. */
     val radarBasemap: Int = 0,
     val radarBasemapOpacity: Float = 0.6f,
@@ -119,8 +117,6 @@ class SettingsRepository(private val context: Context) {
         val radarLandmarks = booleanPreferencesKey("radar_landmarks")
         val radarAircraft = booleanPreferencesKey("radar_aircraft")
         val radarRangeNm = floatPreferencesKey("radar_range_nm")
-        val radarAltMinFt = floatPreferencesKey("radar_alt_min_ft")
-        val radarAltMaxFt = floatPreferencesKey("radar_alt_max_ft")
         val showBelowHorizon = booleanPreferencesKey("show_below_horizon")
         val applyRefraction = booleanPreferencesKey("apply_refraction")
         val centerIdentify = booleanPreferencesKey("center_identify")
@@ -179,8 +175,6 @@ class SettingsRepository(private val context: Context) {
             radarLandmarks = p[Keys.radarLandmarks] ?: true,
             radarAircraft = p[Keys.radarAircraft] ?: true,
             radarRangeNm = (p[Keys.radarRangeNm] ?: 40f).coerceIn(5f, 150f),
-            radarAltMinFt = (p[Keys.radarAltMinFt] ?: 0f).coerceIn(0f, 60000f),
-            radarAltMaxFt = (p[Keys.radarAltMaxFt] ?: 60000f).coerceIn(0f, 60000f),
             radarBasemap = (p[Keys.radarBasemap] ?: 0).coerceIn(0, 2),
             radarBasemapOpacity = (p[Keys.radarBasemapOpacity] ?: 0.6f).coerceIn(0f, 1f),
             radarWeather = (p[Keys.radarWeather] ?: 0).coerceIn(0, 1),
@@ -232,8 +226,6 @@ class SettingsRepository(private val context: Context) {
         AircraftRange(Keys.aircraftRangeNm),
         LandmarkRange(Keys.landmarkRangeKm),
         RadarRange(Keys.radarRangeNm),
-        RadarAltMin(Keys.radarAltMinFt),
-        RadarAltMax(Keys.radarAltMaxFt),
         RadarBasemapOpacity(Keys.radarBasemapOpacity),
         RadarWeatherOpacity(Keys.radarWeatherOpacity),
     }
