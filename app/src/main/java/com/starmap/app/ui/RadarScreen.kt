@@ -191,14 +191,20 @@ fun RadarView(
         }
         return best
     }
+    // A dark shadow layer keeps text readable over a bright basemap (satellite/streets).
     val labelPaint = remember {
-        android.graphics.Paint().apply { isAntiAlias = true; textSize = 10f * density }
+        android.graphics.Paint().apply {
+            isAntiAlias = true
+            textSize = 10f * density
+            setShadowLayer(3f * density, 0f, 1f * density, android.graphics.Color.argb(225, 0, 0, 0))
+        }
     }
     val ringPaint = remember {
         android.graphics.Paint().apply {
             isAntiAlias = true
             textSize = 9f * density
-            color = android.graphics.Color.argb(170, 130, 200, 150)
+            color = android.graphics.Color.argb(215, 150, 220, 170)
+            setShadowLayer(3f * density, 0f, 1f * density, android.graphics.Color.argb(205, 0, 0, 0))
         }
     }
 
@@ -269,10 +275,20 @@ fun RadarView(
                 return Offset(cx + e2 * scale, cy - n2 * scale)
             }
 
+            // Darken a visible basemap/weather layer so the scope, trails and labels
+            // keep their contrast; scaled by how opaque the map is.
+            val mapVis = maxOf(
+                if (basemap != 0) basemapOpacity else 0f,
+                if (weather != 0) weatherOpacity else 0f,
+            )
+            if (mapVis > 0f) {
+                drawRect(Color(0xFF04070B), alpha = (0.18f + 0.42f * mapVis).coerceIn(0f, 0.62f))
+            }
+
             // Range rings + distance labels.
-            val ringColor = Color(0xFF1E5F37)
+            val ringColor = Color(0xFF2E8B57)
             for (i in 1..4) {
-                drawCircle(ringColor, r * i / 4f, Offset(cx, cy), style = Stroke(1f * density))
+                drawCircle(ringColor, r * i / 4f, Offset(cx, cy), style = Stroke(1.2f * density))
                 drawContext.canvas.nativeCanvas.drawText(
                     "${(rangeNm * i / 4f).roundToInt()}",
                     cx + 3f * density, cy - r * i / 4f - 2f * density, ringPaint,
@@ -285,7 +301,7 @@ fun RadarView(
             for ((lbl, brg) in listOf("N" to 0.0, "E" to 90.0, "S" to 180.0, "W" to 270.0)) {
                 val ang = Math.toRadians(brg) - a
                 drawLine(
-                    Color(0x3320E060), Offset(cx, cy),
+                    Color(0x5520E060), Offset(cx, cy),
                     Offset(cx + (sin(ang) * r).toFloat(), cy - (cos(ang) * r).toFloat()),
                     strokeWidth = 0.8f * density,
                 )
@@ -298,7 +314,7 @@ fun RadarView(
                 if (d % 90 == 0) continue
                 val ang = Math.toRadians(d.toDouble()) - a
                 drawLine(
-                    Color(0x3320E060),
+                    Color(0x5520E060),
                     Offset(cx + (sin(ang) * (r - 5f * density)).toFloat(), cy - (cos(ang) * (r - 5f * density)).toFloat()),
                     Offset(cx + (sin(ang) * r).toFloat(), cy - (cos(ang) * r).toFloat()),
                     strokeWidth = 1f * density,
@@ -383,13 +399,13 @@ fun RadarView(
                         val p0 = prev
                         if (p0 != null) {
                             val frac = if (pts > 0) (j / 3).toFloat() / pts else 0f
-                            drawLine(col.copy(alpha = 0.08f + 0.30f * frac), p0, to, strokeWidth = 1.2f * density)
+                            drawLine(col.copy(alpha = 0.12f + 0.40f * frac), p0, to, strokeWidth = 1.4f * density)
                         }
                         prev = to
                     }
                     j += 3
                 }
-                prev?.let { drawLine(col.copy(alpha = 0.38f), it, o, strokeWidth = 1.2f * density) }
+                prev?.let { drawLine(col.copy(alpha = 0.55f), it, o, strokeWidth = 1.4f * density) }
 
                 val theta = Math.toRadians(ac.trackDeg) - a
                 val s = 6f * density
