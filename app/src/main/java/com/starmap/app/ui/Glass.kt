@@ -12,7 +12,9 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
@@ -37,6 +39,23 @@ object Hud {
     val GlassBottom = Color(0xD10E1320)
     val Hairline = Color(0x3AAFC6F0) // cool 1px edge
     val HairlineGold = Color(0x66FFD54F)
+}
+
+/**
+ * A docked bottom-sheet surface: only the top corners are rounded, filled with a
+ * near-opaque navy gradient (so list content stays legible over the map/scope) and a
+ * single hairline accent along the top edge — no side or bottom border, so it reads as
+ * docked to the screen edge rather than a floating card.
+ */
+fun Modifier.bottomSheet(topRadius: Dp = 22.dp): Modifier {
+    val shape = RoundedCornerShape(topStart = topRadius, topEnd = topRadius)
+    return this
+        .clip(shape)
+        .background(Brush.verticalGradient(listOf(Color(0xF21B2436), Color(0xFF0B0F18))))
+        .drawBehind {
+            val r = topRadius.toPx()
+            drawLine(Hud.Hairline, Offset(r, 0.5f), Offset(size.width - r, 0.5f), strokeWidth = 1f)
+        }
 }
 
 /** Vertical-gradient translucent fill + hairline border, clipped to [shape]. The "glass plate". */

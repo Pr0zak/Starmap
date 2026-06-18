@@ -18,6 +18,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
@@ -40,7 +41,6 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.minimumInteractiveComponentSize
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -525,14 +525,13 @@ fun RadarView(
             if (showBasemapMenu) {
                 Spacer(Modifier.height(6.dp))
                 Box(Modifier.fillMaxWidth()) {
-                    Surface(
+                    Box(
                         modifier = Modifier.align(Alignment.TopCenter).width(232.dp)
+                            .glass(RoundedCornerShape(14.dp))
                             .clickable(
                                 interactionSource = remember { MutableInteractionSource() },
                                 indication = null,
                             ) {},
-                        shape = RoundedCornerShape(14.dp),
-                        color = Color(0xF2161E2A),
                     ) {
                         Column(Modifier.padding(14.dp)) {
                             Text("BASEMAP", color = Color(0xFF8B97A8), fontSize = 10.sp)
@@ -639,7 +638,7 @@ fun RadarView(
             // Weather timeline: pinned above the drawer so it stays visible while the
             // animation plays on the full scope.
             if (weather != 0 && weatherFrames.isNotEmpty()) {
-                Surface(color = Color(0xF20B0F15), modifier = Modifier.fillMaxWidth()) {
+                Box(modifier = Modifier.fillMaxWidth().bottomSheet(22.dp)) {
                     Row(
                         modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 2.dp),
                         verticalAlignment = Alignment.CenterVertically,
@@ -692,6 +691,8 @@ fun RadarView(
             }
             RadarDrawer(
                 viewModel, aircraft, selectedHex,
+                // Flat top when the weather timeline already caps the sheet stack above it.
+                roundedTop = !(weather != 0 && weatherFrames.isNotEmpty()),
                 modifier = Modifier.fillMaxWidth(),
             )
         }
@@ -807,13 +808,15 @@ private fun RadarDrawer(
     viewModel: SkyViewModel,
     aircraft: List<AircraftRender>,
     selectedHex: String?,
+    roundedTop: Boolean = true,
     modifier: Modifier = Modifier,
 ) {
     var expanded by remember { mutableStateOf(false) }
     val sorted = aircraft.sortedBy { it.rangeKm }
-    Box(modifier = modifier.fillMaxWidth().glass(RoundedCornerShape(topStart = 22.dp, topEnd = 22.dp))) {
+    Box(modifier = modifier.fillMaxWidth().bottomSheet(if (roundedTop) 22.dp else 0.dp)) {
         Column(
-            modifier = Modifier.animateContentSize().fillMaxWidth().padding(horizontal = 14.dp),
+            modifier = Modifier.animateContentSize().fillMaxWidth()
+                .navigationBarsPadding().padding(horizontal = 14.dp),
         ) {
             Box(
                 modifier = Modifier.fillMaxWidth().clickable { expanded = !expanded }.padding(vertical = 9.dp),
