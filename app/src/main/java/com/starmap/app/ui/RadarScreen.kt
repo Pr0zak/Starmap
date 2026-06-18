@@ -67,6 +67,7 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.starmap.app.settings.Settings
@@ -859,7 +860,7 @@ private fun RadarDrawer(
                     Text("DIST", color = hc, fontSize = 9.sp, letterSpacing = 1.sp, textAlign = TextAlign.End, modifier = Modifier.width(48.dp))
                 }
                 HorizontalDivider(color = Hud.Hairline)
-                LazyColumn(modifier = Modifier.heightIn(max = 300.dp)) {
+                LazyColumn(modifier = Modifier.heightIn(max = 340.dp)) {
                     items(sorted) { ac ->
                         AircraftRowTabular(ac, ac.icaoHex == selectedHex) { viewModel.selectAircraft(ac) }
                     }
@@ -870,7 +871,7 @@ private fun RadarDrawer(
     }
 }
 
-/** Aircraft list row: altitude band pill + callsign/type + tabular ALT/SPD/DIST, gold accent bar when selected. */
+/** Compact aircraft list row: altitude-colour dot + callsign + tabular ALT/SPD/DIST, gold accent bar when selected. */
 @Composable
 private fun AircraftRowTabular(ac: AircraftRender, selected: Boolean, onClick: () -> Unit) {
     val nm = (ac.rangeKm * 0.539957).roundToInt()
@@ -881,40 +882,22 @@ private fun AircraftRowTabular(ac: AircraftRender, selected: Boolean, onClick: (
     val col = aircraftColor(ac)
     Row(
         modifier = Modifier.fillMaxWidth()
-            .clip(RoundedCornerShape(8.dp))
+            .clip(RoundedCornerShape(7.dp))
             .drawBehind { if (selected) drawRect(Hud.Gold, size = Size(3.dp.toPx(), size.height)) }
             .background(if (selected) Color(0x22FFD54F) else Color.Transparent)
             .clickable(onClick = onClick)
-            .padding(start = 9.dp, end = 4.dp, top = 8.dp, bottom = 8.dp),
+            .padding(start = 11.dp, end = 4.dp, top = 6.dp, bottom = 6.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Box(
-            modifier = Modifier.clip(RoundedCornerShape(4.dp)).background(col.copy(alpha = 0.20f))
-                .padding(horizontal = 5.dp, vertical = 2.dp),
-        ) {
-            Text(altBand(ac), color = col, fontSize = 8.sp, fontWeight = FontWeight.Bold, letterSpacing = 0.5.sp)
-        }
-        Column(modifier = Modifier.weight(1f).padding(start = 9.dp)) {
-            Text(
-                name, color = if (ac.isEmergency) Color(0xFFFF6B6B) else Hud.Text,
-                fontSize = 13.sp, fontWeight = FontWeight.Medium,
-            )
-            if (ac.typeCode.isNotBlank()) Text(ac.typeCode, color = Hud.TextDim, fontSize = 10.sp)
-        }
+        Box(modifier = Modifier.size(8.dp).clip(CircleShape).background(col))
+        Text(
+            name, color = if (ac.isEmergency) Color(0xFFFF6B6B) else Hud.Text,
+            fontSize = 13.sp, fontWeight = FontWeight.Medium, maxLines = 1, overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.weight(1f).padding(start = 10.dp),
+        )
         Text("${"%,d".format(ft)}$arrow", color = Hud.Text, fontSize = 12.sp, textAlign = TextAlign.End, modifier = Modifier.width(64.dp))
         Text("$gs", color = Hud.TextDim, fontSize = 12.sp, textAlign = TextAlign.End, modifier = Modifier.width(46.dp))
         Text("$nm", color = Hud.Text, fontSize = 12.sp, fontWeight = FontWeight.Medium, textAlign = TextAlign.End, modifier = Modifier.width(48.dp))
-    }
-}
-
-/** Altitude band label for the row pill. */
-private fun altBand(ac: AircraftRender): String {
-    val ft = ac.altitudeMeters / 0.3048
-    return when {
-        ac.altitudeMeters < 30.0 -> "GND"
-        ft < 10000 -> "LOW"
-        ft < 24000 -> "MID"
-        else -> "HIGH"
     }
 }
 
