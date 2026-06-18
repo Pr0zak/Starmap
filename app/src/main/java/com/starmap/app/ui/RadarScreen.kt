@@ -8,6 +8,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.detectTransformGestures
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -26,6 +27,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Explore
 import androidx.compose.material.icons.filled.Flight
@@ -64,6 +66,7 @@ import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.starmap.app.settings.Settings
@@ -500,33 +503,23 @@ fun RadarView(
         Column(
             modifier = Modifier.align(Alignment.TopStart).fillMaxWidth().statusBarsPadding().padding(8.dp),
         ) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
                 ModeSwitcher(current = SkyMode.Radar, onSelect = onSelectMode)
                 Spacer(Modifier.weight(1f))
-                IconButton(onClick = { showBasemapMenu = !showBasemapMenu }) {
-                    Icon(
-                        Icons.Filled.Layers,
-                        contentDescription = "Basemap layer",
-                        tint = if (basemap != 0) Color(0xFFFFD54F) else Color(0xFFD8E0F0),
-                    )
+                HudIconButton(Icons.Filled.Layers, "Basemap layer", active = basemap != 0) {
+                    showBasemapMenu = !showBasemapMenu
                 }
-                IconButton(onClick = { viewModel.setBool(BoolSetting.RadarAircraft, !showAircraft) }) {
-                    Icon(
-                        Icons.Filled.Flight, contentDescription = "Aircraft",
-                        tint = if (showAircraft) Color(0xFFFFD54F) else Color(0xFF6B7686),
-                    )
+                HudIconButton(Icons.Filled.Flight, "Aircraft", active = showAircraft) {
+                    viewModel.setBool(BoolSetting.RadarAircraft, !showAircraft)
                 }
-                IconButton(onClick = { viewModel.setBool(BoolSetting.RadarLandmarks, !showPois) }) {
-                    Icon(
-                        Icons.Filled.Place, contentDescription = "Landmarks",
-                        tint = if (showPois) Color(0xFFFFD54F) else Color(0xFF6B7686),
-                    )
+                HudIconButton(Icons.Filled.Place, "Landmarks", active = showPois) {
+                    viewModel.setBool(BoolSetting.RadarLandmarks, !showPois)
                 }
-                IconButton(onClick = { viewModel.setBool(BoolSetting.RadarHeadingUp, !headingUp) }) {
-                    Icon(
-                        Icons.Filled.Explore, contentDescription = "Heading up",
-                        tint = if (headingUp) Color(0xFFFFD54F) else Color(0xFFD8E0F0),
-                    )
+                HudIconButton(Icons.Filled.Explore, "Heading up", active = headingUp) {
+                    viewModel.setBool(BoolSetting.RadarHeadingUp, !headingUp)
                 }
             }
             if (showBasemapMenu) {
@@ -818,76 +811,107 @@ private fun RadarDrawer(
 ) {
     var expanded by remember { mutableStateOf(false) }
     val sorted = aircraft.sortedBy { it.rangeKm }
-    Surface(
-        color = Color(0xF20B0F15),
-        shape = RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp),
-        modifier = modifier.fillMaxWidth(),
-    ) {
+    Box(modifier = modifier.fillMaxWidth().glass(RoundedCornerShape(topStart = 22.dp, topEnd = 22.dp))) {
         Column(
-            modifier = Modifier.animateContentSize().fillMaxWidth().padding(horizontal = 16.dp),
+            modifier = Modifier.animateContentSize().fillMaxWidth().padding(horizontal = 14.dp),
         ) {
             Box(
-                modifier = Modifier.fillMaxWidth().clickable { expanded = !expanded }.padding(vertical = 8.dp),
+                modifier = Modifier.fillMaxWidth().clickable { expanded = !expanded }.padding(vertical = 9.dp),
                 contentAlignment = Alignment.Center,
             ) {
                 Box(
-                    modifier = Modifier.width(36.dp).height(4.dp)
-                        .background(Color(0x44FFFFFF), RoundedCornerShape(2.dp)),
+                    modifier = Modifier.width(34.dp).height(4.dp)
+                        .background(Color(0x55FFFFFF), RoundedCornerShape(2.dp)),
                 )
             }
             Row(
-                modifier = Modifier.fillMaxWidth().clickable { expanded = !expanded }
-                    .padding(bottom = if (expanded) 8.dp else 14.dp),
+                modifier = Modifier.fillMaxWidth().padding(bottom = if (expanded) 8.dp else 14.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Text(
-                    "${sorted.size} aircraft", color = Color(0xFFEAF0F8),
-                    fontSize = 14.sp, fontWeight = FontWeight.Medium,
-                )
-                sorted.firstOrNull()?.let {
-                    Text(
-                        "  ·  nearest ${(it.rangeKm * 0.539957).roundToInt()} nm",
-                        color = Color(0xFF8A96A6), fontSize = 12.sp,
-                    )
-                }
-                Spacer(Modifier.weight(1f))
-                Text(if (expanded) "Hide ▾" else "List ▸", color = Color(0xFFFFD54F), fontSize = 12.sp)
-            }
-            if (expanded) {
-                HorizontalDivider(color = Color(0x14FFFFFF))
-                LazyColumn(modifier = Modifier.heightIn(max = 280.dp)) {
-                    items(sorted) { ac ->
-                        AircraftRow(ac, ac.icaoHex == selectedHex) { viewModel.selectAircraft(ac) }
+                Row(
+                    modifier = Modifier.clickable { expanded = !expanded },
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text("${sorted.size}", color = Hud.Gold, fontSize = 16.sp, fontWeight = FontWeight.Bold)
+                    Text(" aircraft", color = Hud.Text, fontSize = 14.sp, fontWeight = FontWeight.Medium)
+                    sorted.firstOrNull()?.let {
+                        Text(
+                            "  ·  nearest ${(it.rangeKm * 0.539957).roundToInt()} nm",
+                            color = Hud.TextDim, fontSize = 12.sp,
+                        )
                     }
                 }
-                Spacer(Modifier.height(8.dp))
+                Spacer(Modifier.weight(1f))
+                Text(
+                    if (expanded) "Hide ▾" else "List ▸", color = Hud.Gold, fontSize = 12.sp,
+                    modifier = Modifier.clickable { expanded = !expanded },
+                )
+            }
+            if (expanded) {
+                Row(modifier = Modifier.fillMaxWidth().padding(start = 8.dp, end = 4.dp, bottom = 4.dp)) {
+                    val hc = Hud.TextDim.copy(alpha = 0.55f)
+                    Text("CALLSIGN", color = hc, fontSize = 9.sp, letterSpacing = 1.sp, modifier = Modifier.weight(1f))
+                    Text("ALT", color = hc, fontSize = 9.sp, letterSpacing = 1.sp, textAlign = TextAlign.End, modifier = Modifier.width(64.dp))
+                    Text("SPD", color = hc, fontSize = 9.sp, letterSpacing = 1.sp, textAlign = TextAlign.End, modifier = Modifier.width(46.dp))
+                    Text("DIST", color = hc, fontSize = 9.sp, letterSpacing = 1.sp, textAlign = TextAlign.End, modifier = Modifier.width(48.dp))
+                }
+                HorizontalDivider(color = Hud.Hairline)
+                LazyColumn(modifier = Modifier.heightIn(max = 300.dp)) {
+                    items(sorted) { ac ->
+                        AircraftRowTabular(ac, ac.icaoHex == selectedHex) { viewModel.selectAircraft(ac) }
+                    }
+                }
+                Spacer(Modifier.height(10.dp))
             }
         }
     }
 }
 
+/** Aircraft list row: altitude band pill + callsign/type + tabular ALT/SPD/DIST, gold accent bar when selected. */
 @Composable
-private fun AircraftRow(ac: AircraftRender, selected: Boolean, onClick: () -> Unit) {
+private fun AircraftRowTabular(ac: AircraftRender, selected: Boolean, onClick: () -> Unit) {
     val nm = (ac.rangeKm * 0.539957).roundToInt()
     val ft = (ac.altitudeMeters / 0.3048).roundToInt()
     val gs = ac.groundSpeedKts.roundToInt()
     val arrow = if (ac.verticalRateFpm > 100) " ↑" else if (ac.verticalRateFpm < -100) " ↓" else ""
     val name = ac.callsign.ifBlank { ac.registration.ifBlank { ac.typeCode.ifBlank { "Aircraft" } } }
-    val dot = aircraftColor(ac)
+    val col = aircraftColor(ac)
     Row(
         modifier = Modifier.fillMaxWidth()
-            .background(if (selected) Color(0x26FFD54F) else Color.Transparent)
-            .clickable(onClick = onClick).padding(vertical = 7.dp),
+            .clip(RoundedCornerShape(8.dp))
+            .drawBehind { if (selected) drawRect(Hud.Gold, size = Size(3.dp.toPx(), size.height)) }
+            .background(if (selected) Color(0x22FFD54F) else Color.Transparent)
+            .clickable(onClick = onClick)
+            .padding(start = 9.dp, end = 4.dp, top = 8.dp, bottom = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Box(Modifier.padding(end = 8.dp).size(7.dp).background(dot, CircleShape))
-        Text(
-            name, color = if (ac.isEmergency) Color(0xFFFF6B6B) else Color(0xFFE6ECF5),
-            fontSize = 13.sp, modifier = Modifier.weight(1f),
-        )
-        Text("$ft ft$arrow", color = Color(0xFFB6C2D2), fontSize = 12.sp, modifier = Modifier.width(70.dp))
-        Text("$gs kt", color = Color(0xFF8A96A6), fontSize = 12.sp, modifier = Modifier.width(50.dp))
-        Text("$nm nm", color = Color(0xFFD8E0F0), fontSize = 12.sp, modifier = Modifier.width(50.dp))
+        Box(
+            modifier = Modifier.clip(RoundedCornerShape(4.dp)).background(col.copy(alpha = 0.20f))
+                .padding(horizontal = 5.dp, vertical = 2.dp),
+        ) {
+            Text(altBand(ac), color = col, fontSize = 8.sp, fontWeight = FontWeight.Bold, letterSpacing = 0.5.sp)
+        }
+        Column(modifier = Modifier.weight(1f).padding(start = 9.dp)) {
+            Text(
+                name, color = if (ac.isEmergency) Color(0xFFFF6B6B) else Hud.Text,
+                fontSize = 13.sp, fontWeight = FontWeight.Medium,
+            )
+            if (ac.typeCode.isNotBlank()) Text(ac.typeCode, color = Hud.TextDim, fontSize = 10.sp)
+        }
+        Text("${"%,d".format(ft)}$arrow", color = Hud.Text, fontSize = 12.sp, textAlign = TextAlign.End, modifier = Modifier.width(64.dp))
+        Text("$gs", color = Hud.TextDim, fontSize = 12.sp, textAlign = TextAlign.End, modifier = Modifier.width(46.dp))
+        Text("$nm", color = Hud.Text, fontSize = 12.sp, fontWeight = FontWeight.Medium, textAlign = TextAlign.End, modifier = Modifier.width(48.dp))
+    }
+}
+
+/** Altitude band label for the row pill. */
+private fun altBand(ac: AircraftRender): String {
+    val ft = ac.altitudeMeters / 0.3048
+    return when {
+        ac.altitudeMeters < 30.0 -> "GND"
+        ft < 10000 -> "LOW"
+        ft < 24000 -> "MID"
+        else -> "HIGH"
     }
 }
 
