@@ -54,7 +54,7 @@ object Asteroids {
     }
 
     fun positions(elements: List<Element>, jd: Double): List<Asteroid> {
-        val d = AstroMath.daysSinceJ2000(jd)
+        val d = AstroMath.schlyterDay(jd)
         val oblecl = (23.4393 - 3.563e-7 * d) * DEG2RAD
         val sun = sunRectEcliptic(d)
         return elements.map { el ->
@@ -73,7 +73,7 @@ object Asteroids {
 
     /** RA/Dec only (degrees) for one asteroid at [jd] — used to plot its path. */
     fun raDec(el: Element, jd: Double): DoubleArray {
-        val d = AstroMath.daysSinceJ2000(jd)
+        val d = AstroMath.schlyterDay(jd)
         val oblecl = (23.4393 - 3.563e-7 * d) * DEG2RAD
         val sun = sunRectEcliptic(d)
         val (xg, yg, zg) = heliocentricGeocentric(el, jd, sun)

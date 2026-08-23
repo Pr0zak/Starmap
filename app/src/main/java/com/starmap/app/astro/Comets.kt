@@ -67,7 +67,7 @@ object Comets {
     }
 
     fun positions(elements: List<Element>, jd: Double): List<Comet> {
-        val d = AstroMath.daysSinceJ2000(jd)
+        val d = AstroMath.schlyterDay(jd)
         val oblecl = (23.4393 - 3.563e-7 * d) * DEG2RAD
         val sun = sunRectEcliptic(d)
         return elements.map { el ->
@@ -92,7 +92,7 @@ object Comets {
 
     /** RA/Dec only (degrees) for one comet at [jd] — used to plot its path. */
     fun raDec(el: Element, jd: Double): DoubleArray {
-        val d = AstroMath.daysSinceJ2000(jd)
+        val d = AstroMath.schlyterDay(jd)
         val oblecl = (23.4393 - 3.563e-7 * d) * DEG2RAD
         val sun = sunRectEcliptic(d)
         val helio = heliocentric(el, jd)

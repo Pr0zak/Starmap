@@ -74,7 +74,7 @@ object Planets {
 
     /** Geocentric RA/Dec for all planets at the given Julian Day. */
     fun positions(jd: Double): List<Planet> {
-        val d = AstroMath.daysSinceJ2000(jd)
+        val d = AstroMath.schlyterDay(jd)
         val oblecl = (23.4393 - 3.563e-7 * d) * DEG2RAD
 
         // Sun's geocentric ecliptic rectangular coordinates (Earth->Sun).

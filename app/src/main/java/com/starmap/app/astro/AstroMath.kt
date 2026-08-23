@@ -1,6 +1,7 @@
 package com.starmap.app.astro
 
 import kotlin.math.PI
+import kotlin.math.acos
 import kotlin.math.asin
 import kotlin.math.atan2
 import kotlin.math.cos
@@ -31,6 +32,44 @@ object AstroMath {
 
     /** Days since the J2000.0 epoch. */
     fun daysSinceJ2000(jd: Double): Double = jd - 2_451_545.0
+
+    /**
+     * Schlyter's day number: d = 0 at "2000 Jan 0.0" UT, i.e. 1999-12-31 00:00 UT
+     * (JD 2451543.5). His own definition is the integer expression
+     * `d = 367y - 7(y + (m+9)/12)/4 + 275m/9 + D - 730530` plus UT/24, which is zero
+     * on that date.
+     *
+     * This is NOT [daysSinceJ2000], which is 1.5 days larger. Every Schlyter
+     * mean-element polynomial — in SunMoon, Planets, Comets and Asteroids — must use
+     * this function; feeding it [daysSinceJ2000] puts every body 1.5 days behind
+     * (about 20 degrees for the Moon). [gmstDegrees] is genuinely J2000-referenced
+     * and must keep using [daysSinceJ2000].
+     */
+    fun schlyterDay(jd: Double): Double = jd - 2_451_543.5
+
+    /** Obliquity of the ecliptic in degrees at [jd] (Schlyter's linear term). */
+    fun obliquityDeg(jd: Double): Double = 23.4393 - 3.563e-7 * schlyterDay(jd)
+
+    /** Ecliptic longitude in degrees [0,360) of an equatorial position. */
+    fun eclipticLongitude(raDeg: Double, decDeg: Double, jd: Double): Double {
+        val v = equatorialToVec(raDeg, decDeg)
+        val e = obliquityDeg(jd) * DEG2RAD
+        return norm360(atan2(v[1] * cos(e) + v[2] * sin(e), v[0]) * RAD2DEG)
+    }
+
+    /** Ecliptic latitude in degrees [-90,90] of an equatorial position. */
+    fun eclipticLatitude(raDeg: Double, decDeg: Double, jd: Double): Double {
+        val v = equatorialToVec(raDeg, decDeg)
+        val e = obliquityDeg(jd) * DEG2RAD
+        return asin((v[2] * cos(e) - v[1] * sin(e)).coerceIn(-1.0, 1.0)) * RAD2DEG
+    }
+
+    /** Great-circle separation between two equatorial positions, in degrees [0,180]. */
+    fun angularSepDeg(ra1: Double, dec1: Double, ra2: Double, dec2: Double): Double {
+        val a = equatorialToVec(ra1, dec1)
+        val b = equatorialToVec(ra2, dec2)
+        return acos(dot(a, b).coerceIn(-1.0, 1.0)) * RAD2DEG
+    }
 
     /** Greenwich Mean Sidereal Time in degrees [0,360). */
     fun gmstDegrees(jd: Double): Double {

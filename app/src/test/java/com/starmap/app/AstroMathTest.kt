@@ -23,9 +23,13 @@ class AstroMathTest {
     @Test
     fun sunNearSummerSolstice() {
         val s = SunMoon.sun(jd("2026-06-08T12:00:00Z"))
-        // Sun approaching the June solstice: dec ~ +22.7, RA ~ 75 deg.
-        assertEquals(22.73, s.decDeg, 0.15)
-        assertEquals(75.11, s.raDeg, 0.3)
+        // Reference values from the Astronomical Almanac's low-precision solar formula
+        // (good to ~0.01 deg), NOT from this implementation: RA 76.658, Dec 22.868.
+        // The previous goldens here (75.11 / 22.73) were generated from the code while
+        // it fed Schlyter's polynomials a J2000 day number, which put every body 1.5
+        // days behind. See AstroMath.schlyterDay.
+        assertEquals(22.868, s.decDeg, 0.05)
+        assertEquals(76.658, s.raDeg, 0.05)
     }
 
     @Test
