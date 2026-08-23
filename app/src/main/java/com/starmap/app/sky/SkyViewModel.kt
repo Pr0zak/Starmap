@@ -88,6 +88,9 @@ class SkyViewModel(app: Application) : AndroidViewModel(app) {
     private var messierDsos: List<com.starmap.app.astro.Messier.Dso> = emptyList()
     private var milkyWay: com.starmap.app.astro.MilkyWay? = null
 
+    /** Sky alerts: preferences, the "coming up" preview, and the background scan. */
+    val alerts = AlertsController(app, effectiveLocation, viewModelScope)
+
     private val aircraftController = AircraftController(settings, effectiveLocation, viewModelScope)
     private val landmarkController = LandmarkController(settings, effectiveLocation, viewModelScope)
     val landmarkMessage: State<String?> get() = landmarkController.message

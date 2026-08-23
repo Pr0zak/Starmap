@@ -11,6 +11,9 @@
     <!-- Lets the app install a downloaded release APK (self-update). -->
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
 
+    <!-- Sky alerts. Requested at the moment the user switches alerts on, never at launch. -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+
     <!-- Orientation sensors: used for the point-and-identify feature but not strictly
          required to install (manual location + browsing still work). -->
     <uses-feature android:name="android.hardware.sensor.compass" android:required="false" />
@@ -35,12 +38,19 @@
         <activity
             android:name=".MainActivity"
             android:exported="true"
+            android:launchMode="singleTop"
             android:configChanges="orientation|screenSize|screenLayout|keyboardHidden"
             android:screenOrientation="fullUser"
             android:theme="@style/Theme.Starmap">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+            <!-- Tapping a sky alert opens the app looking at what it told you about. -->
+            <intent-filter>
+                <action android:name="com.starmap.app.action.OPEN_EVENT" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:scheme="starmap" android:host="event" />
             </intent-filter>
         </activity>
 

@@ -126,6 +126,8 @@ dependencies {
     implementation(libs.androidx.material.icons.extended)
     implementation(libs.androidx.datastore.preferences)
     implementation(libs.kotlinx.coroutines.android)
+    // Runs the periodic sky-event scan and the timed delivery of each alert.
+    implementation(libs.androidx.work.runtime.ktx)
     implementation(libs.coil.compose)
     // Radar basemap (online raster tiles: satellite / street map)
     implementation("org.osmdroid:osmdroid-android:6.1.20")

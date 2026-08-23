@@ -33,7 +33,12 @@ import com.starmap.app.sky.SkyViewModel
 import kotlin.math.roundToInt
 
 @Composable
-fun SettingsScreen(viewModel: SkyViewModel, settings: Settings, onBack: () -> Unit) {
+fun SettingsScreen(
+    viewModel: SkyViewModel,
+    settings: Settings,
+    onOpenAlerts: () -> Unit,
+    onBack: () -> Unit,
+) {
     DetailScaffold(title = "Settings", onBack = onBack) {
         Column(modifier = Modifier.verticalScroll(rememberScrollState()).padding(bottom = 32.dp)) {
 
@@ -254,6 +259,15 @@ fun SettingsScreen(viewModel: SkyViewModel, settings: Settings, onBack: () -> Un
             SectionHeader("Offline data")
             SettingsGroup {
             OfflineDataSection(viewModel)
+            }
+
+            SectionHeader("Alerts")
+            SettingsGroup {
+            SettingsLink(
+                "Sky alerts",
+                "A nudge before meteor peaks, eclipses and close pairings.",
+                onOpenAlerts,
+            )
             }
 
             SectionHeader("Updates")

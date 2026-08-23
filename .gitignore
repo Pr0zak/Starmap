@@ -31,3 +31,6 @@ Thumbs.db
 # The *generated* catalogs under app/src/main/assets and /catalog ARE committed.
 /tools/data/
 .stitch-mockups/
+
+# Kotlin 2.0 build session directory
+.kotlin/

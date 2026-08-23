@@ -46,6 +46,7 @@ import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.LocationOff
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.MyLocation
+import androidx.compose.material.icons.filled.NotificationsActive
 import androidx.compose.material.icons.filled.PanTool
 import androidx.compose.material.icons.filled.Public
 import androidx.compose.material.icons.filled.SatelliteAlt
@@ -96,6 +97,7 @@ import coil.compose.AsyncImage
 import coil.compose.AsyncImagePainter
 import coil.request.ImageRequest
 import com.starmap.app.aircraft.AircraftManager
+import com.starmap.app.events.android.EventDeepLink
 import com.starmap.app.info.WikiManager
 import com.starmap.app.settings.SettingsRepository
 import com.starmap.app.settings.SettingsRepository.BoolSetting
@@ -112,7 +114,7 @@ import kotlin.math.asin
 import kotlin.math.atan2
 import kotlin.math.roundToInt
 
-private enum class Screen { Sky, Search, Settings, Downloads, About }
+private enum class Screen { Sky, Search, Settings, Alerts, Downloads, About }
 
 /** The three top-level viewing modes, surfaced as a segmented switcher. */
 enum class SkyMode(val label: String) { Sky("Sky"), Radar("Radar"), Ar("AR") }
@@ -219,8 +221,25 @@ fun MainScreen(viewModel: SkyViewModel = viewModel()) {
         if (granted) viewModel.setBool(BoolSetting.ArMode, true)
     }
 
+    // Alerts can be reached from the menu or from Settings; back should retrace whichever.
+    var alertsFrom by remember { mutableStateOf(Screen.Sky) }
+
+    // A tapped sky alert should leave the user looking at the thing it told them about,
+    // not merely with the app open. The target is stashed by MainActivity, which can
+    // receive the intent well before there is any composition to hand it to.
+    val loading by viewModel.loading
+    val pendingAlert by EventDeepLink.pending.collectAsState()
+    LaunchedEffect(loading, pendingAlert) {
+        if (loading || pendingAlert == null) return@LaunchedEffect
+        val target = EventDeepLink.take() ?: return@LaunchedEffect
+        screen = Screen.Sky
+        viewModel.search(target).firstOrNull()?.let { viewModel.selectSearchTarget(it.target) }
+    }
+
     // System back returns to the sky from any detail screen (instead of exiting).
-    BackHandler(enabled = screen != Screen.Sky) { screen = Screen.Sky }
+    BackHandler(enabled = screen != Screen.Sky) {
+        screen = if (screen == Screen.Alerts) alertsFrom else Screen.Sky
+    }
 
     when (screen) {
         Screen.Sky -> SkyScreen(
@@ -245,7 +264,12 @@ fun MainScreen(viewModel: SkyViewModel = viewModel()) {
                 )
             },
         )
-        Screen.Settings -> SettingsScreen(viewModel, settings) { screen = Screen.Sky }
+        Screen.Settings -> SettingsScreen(
+            viewModel,
+            settings,
+            onOpenAlerts = { alertsFrom = Screen.Settings; screen = Screen.Alerts },
+        ) { screen = Screen.Sky }
+        Screen.Alerts -> AlertsScreen(viewModel.alerts) { screen = alertsFrom }
         Screen.Downloads -> DownloadsScreen(viewModel) { screen = Screen.Sky }
         Screen.About -> AboutScreen(viewModel) { screen = Screen.Sky }
         Screen.Search -> SearchScreen(viewModel) { screen = Screen.Sky }
@@ -516,6 +540,11 @@ private fun OverflowMenu(onOpen: (Screen) -> Unit) {
                 onClick = { expanded = false; onOpen(Screen.Settings) },
             )
             DropdownMenuItem(
+                text = { Text("Sky alerts") },
+                leadingIcon = { Icon(Icons.Filled.NotificationsActive, null) },
+                onClick = { expanded = false; onOpen(Screen.Alerts) },
+            )
+            DropdownMenuItem(
                 text = { Text("Offline downloads") },
                 leadingIcon = { Icon(Icons.Filled.Download, null) },
                 onClick = { expanded = false; onOpen(Screen.Downloads) },
@@ -775,7 +804,7 @@ private fun StatusCard(content: @Composable () -> Unit) {
 }
 
 @Composable
-private fun DisposableEffectLifecycle(onResume: () -> Unit, onPause: () -> Unit) {
+internal fun DisposableEffectLifecycle(onResume: () -> Unit, onPause: () -> Unit) {
     val owner = LocalLifecycleOwner.current
     androidx.compose.runtime.DisposableEffect(owner) {
         val observer = LifecycleEventObserver { _, event ->

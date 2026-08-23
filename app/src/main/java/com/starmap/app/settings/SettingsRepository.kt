@@ -76,7 +76,9 @@ data class Settings(
     val manualLon: Double = 0.0,
 )
 
-private val Context.dataStore: DataStore<Preferences> by preferencesDataStore(name = "starmap_settings")
+// Shared with NotificationSettings.kt: preferencesDataStore is a process-wide singleton
+// keyed by file name, so a second delegate over the same file would throw at runtime.
+internal val Context.dataStore: DataStore<Preferences> by preferencesDataStore(name = "starmap_settings")
 
 class SettingsRepository(private val context: Context) {
 

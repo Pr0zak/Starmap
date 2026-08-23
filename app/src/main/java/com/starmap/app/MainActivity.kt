@@ -3,6 +3,7 @@ package com.starmap.app
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
+import android.content.Intent
 import android.graphics.Color
 import android.graphics.Typeface
 import android.os.Bundle
@@ -25,6 +26,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.ui.Modifier
 import androidx.lifecycle.lifecycleScope
+import com.starmap.app.events.android.EventDeepLink
 import com.starmap.app.ui.MainScreen
 import com.starmap.app.ui.theme.StarmapTheme
 import com.starmap.app.update.DiagPrefs
@@ -36,6 +38,11 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+
+        // Stash a tapped sky alert before anything else can return early. The crash-report
+        // branch below returns before setContent, so doing this later would lose the link
+        // on exactly the launch where the user is least likely to try again.
+        EventDeepLink.consume(intent)
 
         // If the previous launch crashed, show the report instead of running so
         // the error is never lost (handy when there's no way to read logcat).
@@ -70,6 +77,14 @@ class MainActivity : ComponentActivity() {
             CrashLog.write(this, report)
             showCrashReport(report, crashFile)
         }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        // Without this, getIntent() keeps handing back the intent the activity launched
+        // with, so a second notification tap would replay the first one.
+        setIntent(intent)
+        EventDeepLink.consume(intent)
     }
 
     private fun showCrashReport(report: String, crashFile: File) {

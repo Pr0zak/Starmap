@@ -44,6 +44,13 @@ object MeteorShowers {
         Shower("Ursids", 217.0, 76.0, 1217, 1226, 1222, 10),
     )
 
+    /**
+     * The whole table. Peak dates are MMDD with no year and no hour: the true maximum
+     * is set by solar longitude and drifts by half a day either way, so treat a peak as
+     * a night, never a time.
+     */
+    val all: List<Shower> get() = showers
+
     /** Showers active on the given instant, with how many days until each peaks. */
     fun active(timeMillis: Long): List<ActiveShower> {
         val date = Instant.ofEpochMilli(timeMillis).atZone(ZoneOffset.UTC).toLocalDate()
