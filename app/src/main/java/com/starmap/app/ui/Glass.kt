@@ -156,6 +156,8 @@ fun StatTile(
     trend: String? = null,
     trendColor: Color = Hud.Text,
     filled: Boolean = false,
+    /** Optional small chart under the value (e.g. the altitude history). */
+    extra: (@Composable () -> Unit)? = null,
 ) {
     Column(
         modifier = modifier
@@ -174,6 +176,7 @@ fun StatTile(
             if (trend != null) Text(trend, color = trendColor, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
         }
         if (sub != null) Text(sub, color = Color(0xFF8B97A8), fontSize = 10.sp, maxLines = 1)
+        extra?.invoke()
     }
 }
 

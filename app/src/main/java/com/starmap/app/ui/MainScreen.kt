@@ -108,6 +108,7 @@ import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextDecoration
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -134,6 +135,8 @@ import com.starmap.app.sky.resolveTargetEnu
 import com.starmap.app.sky.RiseSet
 import com.starmap.app.sky.RadarMath
 import androidx.compose.material.icons.filled.Visibility
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.KeyboardArrowUp
 import com.starmap.app.sky.AlertsController
 import com.starmap.app.events.SkyEvent
 import com.starmap.app.events.android.DeepLink
@@ -1249,7 +1252,11 @@ internal fun AircraftInfoCard(
     modifier: Modifier = Modifier,
     /** Radar only: switch to the sky view already following this plane. */
     onFindInSky: (() -> Unit)? = null,
+    /** Radar: open as a single row that expands on tap, so the scope stays visible. */
+    compact: Boolean = false,
+    distanceUnit: RadarMath.Unit = RadarMath.Unit.Miles,
 ) {
+    var expanded by remember(ac.icaoHex) { mutableStateOf(!compact) }
     val shape = RoundedCornerShape(18.dp)
     val cardMod = if (ac.isEmergency) {
         modifier.fillMaxWidth()
@@ -1281,7 +1288,10 @@ internal fun AircraftInfoCard(
                         )
                     }
                 }
-                Column(modifier = Modifier.weight(1f).padding(start = 12.dp)) {
+                Column(
+                    modifier = Modifier.weight(1f).padding(start = 12.dp)
+                        .then(if (compact) Modifier.clickable { expanded = !expanded } else Modifier),
+                ) {
                     val title = ac.callsign.ifBlank { ac.registration.ifBlank { "Aircraft" } }
                     Text(title, color = Color(0xFFFFE9A8), fontSize = 18.sp, fontWeight = FontWeight.SemiBold)
                     // General-aviation flights use the registration as callsign, so only
@@ -1297,7 +1307,26 @@ internal fun AircraftInfoCard(
                         route?.airline?.takeIf { it.isNotBlank() },
                         ac.squawk.takeIf { it.isNotBlank() && !ac.isEmergency }?.let { "squawk $it" },
                     ).joinToString(" · ")
-                    if (sub.isNotBlank()) Text(sub, color = Hud.TextDim, fontSize = 12.5.sp)
+                    if (!expanded) {
+                        // Collapsed: the numbers that matter at a glance, on one line.
+                        val vr = ac.verticalRateFpm
+                        Text(
+                            "FL${(ac.altitudeMeters / 0.3048 / 100).roundToInt()}" +
+                                (if (vr > 100) " ↑" else if (vr < -100) " ↓" else "") +
+                                " · ${ac.groundSpeedKts.roundToInt()} kt · ${distanceUnit.format(ac.rangeKm)}",
+                            color = Hud.TextDim, fontSize = 12.5.sp, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                        )
+                    } else if (sub.isNotBlank()) {
+                        Text(sub, color = Hud.TextDim, fontSize = 12.5.sp)
+                    }
+                }
+                if (compact) {
+                    IconButton(onClick = { expanded = !expanded }) {
+                        Icon(
+                            if (expanded) Icons.Filled.KeyboardArrowDown else Icons.Filled.KeyboardArrowUp,
+                            contentDescription = if (expanded) "Show less" else "Show more", tint = Hud.TextDim,
+                        )
+                    }
                 }
                 IconButton(onClick = onTrack) {
                     Icon(
@@ -1310,6 +1339,7 @@ internal fun AircraftInfoCard(
                 }
             }
 
+            if (!expanded) return@Column
             if (ac.isEmergency) {
                 val em = ac.emergencyText.takeIf {
                     it.isNotBlank() && !it.equals("none", ignoreCase = true)
@@ -1326,7 +1356,7 @@ internal fun AircraftInfoCard(
             val vr = ac.verticalRateFpm
             val climbing = vr > 100
             val descending = vr < -100
-            val miles = ac.rangeKm * 0.621371
+            val dist = distanceUnit.fromKm(ac.rangeKm)
             Row(
                 modifier = Modifier.fillMaxWidth().padding(top = 12.dp, end = 8.dp),
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -1337,6 +1367,11 @@ internal fun AircraftInfoCard(
                     trend = if (climbing) " ↑" else if (descending) " ↓" else null,
                     trendColor = if (climbing) Color(0xFF7FE3A0) else Color(0xFFFFC061),
                     filled = true,
+                    extra = if (ac.trailAltM.size >= 3) {
+                        { AltitudeSparkline(ac.trailAltM, ac.altitudeMeters.toFloat()) }
+                    } else {
+                        null
+                    },
                 )
                 StatTile("SPD", "${ac.groundSpeedKts.roundToInt()}", Modifier.weight(1f), sub = "kt", filled = true)
                 StatTile(
@@ -1344,13 +1379,18 @@ internal fun AircraftInfoCard(
                     sub = compassLabel(ac.trackDeg.toFloat()), filled = true,
                 )
                 StatTile(
-                    "DIST", if (miles < 10) "%.1f".format(miles) else "${miles.roundToInt()}", Modifier.weight(1f),
-                    sub = "mi · ${ac.rangeKm.roundToInt()} km", filled = true,
+                    "DIST", if (dist < 10) "%.1f".format(dist) else "${dist.roundToInt()}", Modifier.weight(1f),
+                    sub = if (distanceUnit == RadarMath.Unit.Kilometres) "km" else "${distanceUnit.label} · ${ac.rangeKm.roundToInt()} km",
+                    filled = true,
                 )
             }
             route?.let {
                 if (it.origin.code != "?" || it.destination.code != "?") {
-                    AirportRoute(it.origin, it.destination)
+                    val progress = RadarMath.routeProgress(
+                        it.origin.lat, it.origin.lon, it.destination.lat, it.destination.lon,
+                        ac.latitude, ac.longitude, ac.groundSpeedKts, System.currentTimeMillis(),
+                    )
+                    AirportRoute(it.origin, it.destination, progress)
                 }
             }
             if (onFindInSky != null) {
@@ -1369,8 +1409,11 @@ internal fun AircraftInfoCard(
                     Icon(Icons.Filled.Visibility, contentDescription = null, tint = Hud.Gold, modifier = Modifier.size(18.dp))
                     Spacer(Modifier.width(8.dp))
                     Text(
-                        if (el >= 0f) "Look ${el.roundToInt()}° up, to the ${compassLabel(az)}"
-                        else "Below your horizon, to the ${compassLabel(az)}",
+                        when {
+                            el >= 1.5f -> "Look ${el.roundToInt()}° up, to the ${compassLabel(az)}"
+                            el >= -0.5f -> "Low on the horizon, to the ${compassLabel(az)}"
+                            else -> "Below your horizon, to the ${compassLabel(az)}"
+                        },
                         color = Hud.Text, fontSize = 13.sp, modifier = Modifier.weight(1f),
                     )
                     ActionPill(Icons.Filled.MyLocation, "Find in sky", primary = true, onClick = onFindInSky)
@@ -1387,18 +1430,72 @@ internal fun AircraftInfoCard(
     }
 }
 
+/** The last few minutes of altitude (the trail plus now), as a small line. */
+@Composable
+private fun AltitudeSparkline(trailAltM: FloatArray, nowAltM: Float) {
+    val pts = trailAltM + nowAltM
+    val lo = pts.min()
+    val hi = pts.max()
+    val span = (hi - lo).coerceAtLeast(60f) // flatter than ~200 ft reads as level
+    androidx.compose.foundation.Canvas(Modifier.fillMaxWidth().height(18.dp).padding(top = 4.dp)) {
+        val path = androidx.compose.ui.graphics.Path()
+        for (i in pts.indices) {
+            val x = size.width * i / (pts.size - 1)
+            val y = size.height - (pts[i] - lo) / span * size.height
+            if (i == 0) path.moveTo(x, y) else path.lineTo(x, y)
+        }
+        drawPath(path, Color(0xFFFFC061), style = androidx.compose.ui.graphics.drawscope.Stroke(1.6.dp.toPx()))
+        drawCircle(
+            Color(0xFFFFC061), 2.5.dp.toPx(),
+            Offset(size.width, size.height - (pts.last() - lo) / span * size.height),
+        )
+    }
+}
+
 /**
  * The flight route shown on the aircraft card: two airport codes with an arrow between.
  * A code with known details (full name / city) is underlined and tappable, expanding to
  * show that name and location below; tapping again collapses it.
  */
 @Composable
-private fun AirportRoute(origin: AircraftManager.Airport, destination: AircraftManager.Airport) {
+private fun AirportRoute(
+    origin: AircraftManager.Airport,
+    destination: AircraftManager.Airport,
+    progress: RadarMath.Progress? = null,
+) {
     var expanded by remember(origin, destination) { mutableStateOf<AircraftManager.Airport?>(null) }
-    Column(modifier = Modifier.padding(top = 4.dp)) {
+    Column(modifier = Modifier.padding(top = 8.dp, end = 8.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             AirportCode(origin) { expanded = if (expanded == origin) null else origin }
-            Text("  →  ", color = Color(0xFF9FE0C0), fontSize = 15.sp)
+            if (progress == null) {
+                Text("  →  ", color = Color(0xFF9FE0C0), fontSize = 15.sp)
+            } else {
+                // How far through the flight it is, and when it should land at this speed.
+                val eta = progress.etaMillis?.let {
+                    " · lands ≈ " + java.text.SimpleDateFormat("h:mm a", java.util.Locale.getDefault()).format(java.util.Date(it))
+                } ?: ""
+                Column(Modifier.weight(1f).padding(horizontal = 10.dp)) {
+                    Text(
+                        "${(progress.fraction * 100).roundToInt()}%$eta",
+                        color = Hud.TextDim, fontSize = 11.5.sp,
+                        modifier = Modifier.align(Alignment.CenterHorizontally),
+                    )
+                    Box(Modifier.fillMaxWidth().padding(top = 4.dp).height(10.dp), contentAlignment = Alignment.CenterStart) {
+                        Box(Modifier.fillMaxWidth().height(4.dp).clip(RoundedCornerShape(2.dp)).background(Color(0x1FFFFFFF)))
+                        Box(
+                            Modifier.fillMaxWidth(progress.fraction.coerceIn(0.02f, 1f)).height(4.dp)
+                                .clip(RoundedCornerShape(2.dp))
+                                .background(Brush.horizontalGradient(listOf(Color(0x559FE0C0), Color(0xFF9FE0C0)))),
+                        )
+                        Box(
+                            Modifier.fillMaxWidth(progress.fraction.coerceIn(0.02f, 1f)),
+                            contentAlignment = Alignment.CenterEnd,
+                        ) {
+                            Box(Modifier.size(10.dp).glow(CircleShape, Hud.Gold, 6.dp).background(Hud.Gold, CircleShape))
+                        }
+                    }
+                }
+            }
             AirportCode(destination) { expanded = if (expanded == destination) null else destination }
         }
         expanded?.let { ap ->

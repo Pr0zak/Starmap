@@ -925,6 +925,8 @@ fun RadarView(
                     onTrack = { viewModel.followAircraft(if (followHex == ac.icaoHex) null else ac.icaoHex) },
                     onClose = { detailsHidden = true },
                     modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
+                    compact = true,
+                    distanceUnit = unit,
                     onFindInSky = {
                         // The sky only draws planes with its aircraft layer on.
                         if (!settings.showAircraft) viewModel.setBool(BoolSetting.Aircraft, true)
