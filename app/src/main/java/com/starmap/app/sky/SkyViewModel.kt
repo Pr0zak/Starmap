@@ -431,6 +431,40 @@ class SkyViewModel(app: Application) : AndroidViewModel(app) {
 
     fun search(query: String): List<SearchResult> = searchIndex.search(query)
 
+    // Recent searches: the last few picks, by display name, newest first.
+    private val searchPrefs = app.getSharedPreferences("search", android.content.Context.MODE_PRIVATE)
+    private val _recentSearches = mutableStateOf(
+        searchPrefs.getString("recent", "").orEmpty().split('\n').filter { it.isNotBlank() },
+    )
+    val recentSearches: State<List<String>> = _recentSearches
+
+    fun rememberSearch(display: String) {
+        val list = (listOf(display) + _recentSearches.value.filter { it != display }).take(5)
+        _recentSearches.value = list
+        searchPrefs.edit().putString("recent", list.joinToString("\n")).apply()
+    }
+
+    /**
+     * Bright things above the horizon right now, for the search screen's "Up now"
+     * row: the Moon, the planets, and the brightest named stars, brightest first.
+     */
+    fun upNow(): List<SearchResult> {
+        val m = _model.value ?: return emptyList()
+        val out = ArrayList<Pair<Float, SearchResult>>()
+        m.moon?.let { if (it.enu[2] > 0f) out += -12f to SearchResult(SearchTarget.SpecialT("Moon"), "Moon", "Moon") }
+        for (pl in m.planets) {
+            if (pl.enu[2] > 0.02f) out += -3f to SearchResult(SearchTarget.PlanetT(pl.name), pl.name, "Planet")
+        }
+        for ((idx, name) in m.labels) {
+            if (idx !in 0 until m.count) continue
+            val mag = m.starMag[idx]
+            if (mag <= 1.0f && m.starEnu[idx * 3 + 2] > 0.1f) {
+                out += mag to SearchResult(SearchTarget.StarT(idx, name), name, "Star")
+            }
+        }
+        return out.sortedBy { it.first }.map { it.second }.take(8)
+    }
+
     fun selectSearchTarget(target: SearchTarget?) {
         _searchTarget.value = target
         _followAircraftHex.value = null

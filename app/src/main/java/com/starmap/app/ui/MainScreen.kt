@@ -741,7 +741,7 @@ private fun ObjectInfoCard(
 
 /** A circular, softly-glowing icon badge tinted to an object's accent colour. */
 @Composable
-private fun IconBadge(icon: ImageVector, accent: Color, size: Dp = 46.dp) {
+internal fun IconBadge(icon: ImageVector, accent: Color, size: Dp = 46.dp) {
     Box(
         modifier = Modifier
             .size(size)
@@ -756,7 +756,7 @@ private fun IconBadge(icon: ImageVector, accent: Color, size: Dp = 46.dp) {
 }
 
 /** Maps an identified object to a representative icon and accent colour. */
-private fun objectVisual(obj: IdentifiedObject): Pair<ImageVector, Color> {
+internal fun objectVisual(obj: IdentifiedObject): Pair<ImageVector, Color> {
     val k = obj.kind
     return when {
         obj.name == "Sun" -> Icons.Filled.WbSunny to Color(0xFFFFB74D)
@@ -1317,7 +1317,7 @@ private fun Context.findActivity(): Activity? {
     return null
 }
 
-private fun compassLabel(deg: Float): String {
+internal fun compassLabel(deg: Float): String {
     val dirs = listOf("N", "NE", "E", "SE", "S", "SW", "W", "NW")
     val idx = (((deg % 360f) + 360f) % 360f / 45f).roundToInt() % 8
     return dirs[idx]
