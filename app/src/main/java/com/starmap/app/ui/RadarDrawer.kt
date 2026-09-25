@@ -65,12 +65,19 @@ internal fun RadarDrawer(
     totalCount: Int,
     expanded: Boolean,
     onExpandedChange: (Boolean) -> Unit,
+    onOpenLog: () -> Unit,
     roundedTop: Boolean = true,
+    /** Landscape: a full-height side panel, always open, no handle. */
+    sidePanel: Boolean = false,
     modifier: Modifier = Modifier,
 ) {
+    @Suppress("NAME_SHADOWING")
+    val expanded = expanded || sidePanel
     val unit = RadarMath.Unit.of(settings.radarUnits)
     val sort = settings.radarSort
     var query by rememberSaveable { mutableStateOf("") }
+    // As a side panel (landscape) height is short, so search and filters fold away.
+    var toolsOpen by rememberSaveable(sidePanel) { mutableStateOf(!sidePanel) }
     val q = query.trim()
     val rows = remember(aircraft, approaches, sort, q) {
         val matched = if (q.isEmpty()) aircraft else aircraft.filter { ac ->
@@ -95,9 +102,10 @@ internal fun RadarDrawer(
     Box(modifier = modifier.fillMaxWidth().bottomSheet(if (roundedTop) 22.dp else 0.dp)) {
         Column(
             modifier = Modifier.animateContentSize().fillMaxWidth()
+                .then(if (sidePanel) Modifier.fillMaxHeight().padding(top = 10.dp) else Modifier)
                 .navigationBarsPadding().padding(horizontal = 14.dp),
         ) {
-            Box(
+            if (!sidePanel) Box(
                 modifier = Modifier.fillMaxWidth().clickable { onExpandedChange(!expanded) }.padding(vertical = 9.dp),
                 contentAlignment = Alignment.Center,
             ) {
@@ -123,18 +131,32 @@ internal fun RadarDrawer(
                 } else {
                     Spacer(Modifier.weight(1f))
                 }
-                Text(if (expanded) "Hide ▾" else "List ▸", color = Hud.Gold, fontSize = 12.sp)
+                if (!sidePanel) Text(if (expanded) "Hide ▾" else "List ▸", color = Hud.Gold, fontSize = 12.sp)
             }
-            AltitudeHistogram(aircraft, Modifier.fillMaxWidth().padding(bottom = if (expanded) 10.dp else 12.dp))
+            // The side panel is short on height; the blips' colours still show altitude there.
+            if (!sidePanel) AltitudeHistogram(aircraft, Modifier.fillMaxWidth().padding(bottom = if (expanded) 10.dp else 12.dp))
 
             if (expanded) {
-                GlassSearchField(query, { query = it }, "Callsign, registration or type", sidePadding = 0.dp)
-                ChipRow("SORT") {
+                Row(Modifier.fillMaxWidth().padding(bottom = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        if (sidePanel) (if (toolsOpen) "Search & filter ▾" else "Search & filter ▸") else "Search, sort and filter",
+                        color = if (sidePanel) Hud.Gold else Hud.TextDim.copy(alpha = 0.7f), fontSize = 11.5.sp,
+                        modifier = Modifier.weight(1f).then(
+                            if (sidePanel) Modifier.clickable { toolsOpen = !toolsOpen } else Modifier,
+                        ),
+                    )
+                    Text(
+                        "Seen today ›", color = Hud.Gold, fontSize = 12.sp, fontWeight = FontWeight.Medium,
+                        modifier = Modifier.clip(RoundedCornerShape(6.dp)).clickable(onClick = onOpenLog).padding(4.dp),
+                    )
+                }
+                if (toolsOpen) GlassSearchField(query, { query = it }, "Callsign, registration or type", sidePadding = 0.dp)
+                if (toolsOpen) ChipRow("SORT") {
                     listOf("Distance", "Closest pass", "Altitude", "Speed").forEachIndexed { i, label ->
                         FilterChipSmall(label, sort == i) { viewModel.setInt(IntSetting.RadarSort, i) }
                     }
                 }
-                ChipRow("SHOW") {
+                if (toolsOpen) ChipRow("SHOW") {
                     for ((bit, label) in KIND_CHIPS) {
                         val on = settings.radarKinds and bit != 0
                         FilterChipSmall(label, on) {
@@ -159,7 +181,7 @@ internal fun RadarDrawer(
                         color = Hud.TextDim, fontSize = 13.sp, modifier = Modifier.padding(vertical = 14.dp),
                     )
                 }
-                LazyColumn(modifier = Modifier.heightIn(max = 300.dp)) {
+                LazyColumn(modifier = if (sidePanel) Modifier.weight(1f) else Modifier.heightIn(max = 300.dp)) {
                     items(rows, key = { it.icaoHex }) { ac ->
                         val lastKm = if (sort == 1) approaches[ac.icaoHex]?.distanceKm?.toDouble() else ac.rangeKm
                         AircraftRow(ac, ac.icaoHex == selectedHex, lastKm?.let { unit.fromKm(it) }, sort == 1) {

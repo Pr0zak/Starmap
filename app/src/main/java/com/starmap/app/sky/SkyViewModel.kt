@@ -116,7 +116,9 @@ class SkyViewModel(app: Application) : AndroidViewModel(app) {
     /** Sky alerts: preferences, the "coming up" preview, and the background scan. */
     val alerts = AlertsController(app, effectiveLocation, viewModelScope)
 
-    private val aircraftController = AircraftController(settings, effectiveLocation, viewModelScope)
+    /** Aircraft seen today, for the radar's log (on-device only). */
+    val seenLog = SeenLog(java.io.File(app.filesDir, "seen"))
+    private val aircraftController = AircraftController(settings, effectiveLocation, viewModelScope, seenLog)
     private val landmarkController = LandmarkController(settings, effectiveLocation, viewModelScope)
     val landmarkMessage: State<String?> get() = landmarkController.message
 

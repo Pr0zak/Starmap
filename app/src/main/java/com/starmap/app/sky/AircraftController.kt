@@ -6,6 +6,8 @@ import com.starmap.app.aircraft.AircraftTrack
 import com.starmap.app.sensors.LocationProvider
 import com.starmap.app.settings.Settings
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.isActive
@@ -21,6 +23,8 @@ class AircraftController(
     private val settings: StateFlow<Settings>,
     private val location: StateFlow<LocationProvider.Fix?>,
     scope: CoroutineScope,
+    /** Where every fetched aircraft is logged for the radar's "Seen today". */
+    private val seenLog: SeenLog? = null,
 ) {
     val manager = AircraftManager()
 
@@ -53,6 +57,16 @@ class AircraftController(
                                 )
                             }
                             history.keys.retainAll(seen)
+                            seenLog?.let { log ->
+                                val sightings = r.aircraft.map { ac ->
+                                    SeenLog.Sighting(
+                                        ac.id, ac.callsign.takeIf { it != ac.id }.orEmpty(), ac.typeCode,
+                                        ac.registration, ac.kind,
+                                        RadarMath.distanceKm(fix.latitude, fix.longitude, ac.latitude, ac.longitude),
+                                    )
+                                }
+                                withContext(Dispatchers.IO) { log.record(now, sightings) }
+                            }
                         }
                         is AircraftManager.Result.Failed -> Log.w(TAG, "Aircraft fetch: ${r.message}")
                     }

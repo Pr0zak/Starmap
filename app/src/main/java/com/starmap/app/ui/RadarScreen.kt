@@ -13,6 +13,10 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalHapticFeedback
 import com.starmap.app.aircraft.RadarKind
+import android.content.res.Configuration
+import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.unit.LayoutDirection
+import androidx.compose.foundation.layout.fillMaxHeight
 import com.starmap.app.aircraft.Metar
 import com.starmap.app.landmark.LandmarkManager
 import androidx.compose.ui.graphics.StrokeCap
@@ -249,14 +253,34 @@ fun RadarView(
 
     // Keep the scope clear of the top controls and the collapsed drawer (and the side
     // view when it's on). Every layer uses the same insets so they stay aligned.
+    // In landscape the list, card and side view move into a panel on the right.
+    val landscape = LocalConfiguration.current.orientation == Configuration.ORIENTATION_LANDSCAPE
+    val panelWidth = 340.dp
     val topInset = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
-    val bottomInset = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
+    val navPadding = WindowInsets.navigationBars.asPaddingValues()
+    val bottomInset = navPadding.calculateBottomPadding()
+    // With 3-button navigation in landscape the bar sits on the right, beside the panel.
+    val navRight = navPadding.calculateRightPadding(LayoutDirection.Ltr)
     val insets = with(LocalDensity.current) {
-        RadarInsets(
-            top = (topInset + 60.dp).toPx(),
-            bottom = (bottomInset + 104.dp + if (settings.radarProfile) 112.dp else 0.dp).toPx(),
-        )
+        if (landscape) {
+            RadarInsets(
+                top = (topInset + 60.dp).toPx(),
+                right = (panelWidth + navRight).toPx(),
+                bottom = (bottomInset + 8.dp).toPx(),
+            )
+        } else {
+            RadarInsets(
+                top = (topInset + 60.dp).toPx(),
+                bottom = (
+                    bottomInset + 104.dp +
+                        (if (settings.radarProfile) 124.dp else 0.dp) +
+                        // the weather legend and map credits sit above the drawer too
+                        (if (settings.radarWeather == 2) 36.dp else if (settings.radarWeather == 1 || settings.radarBasemap != 0) 22.dp else 0.dp)
+                    ).toPx(),
+            )
+        }
     }
+    var showLog by remember { mutableStateOf(false) }
 
     // Runways and the current wind at nearby airports. Runways are fetched once per
     // ~5 km of movement; METARs every 15 minutes.
@@ -333,6 +357,38 @@ fun RadarView(
             textSize = 9f * density
             color = android.graphics.Color.argb(215, 150, 220, 170)
             setShadowLayer(3f * density, 0f, 1f * density, android.graphics.Color.argb(205, 0, 0, 0))
+        }
+    }
+
+    // Weather legend and map credits: above the drawer in portrait, over the scope's
+    // bottom-left corner in landscape (where the side panel has no room for them).
+    val LayerCredits: @Composable () -> Unit = {
+        Column {
+                if (weather == 1) {
+                    WeatherLegend(modifier = Modifier.padding(start = 12.dp, bottom = 4.dp))
+                }
+                if (weather == 2) {
+                    val sat = model?.location?.let { CloudTiles.satelliteFor(it.longitude) }
+                    Text(
+                        if (sat != null) "Clouds from $sat infrared · colder tops show brighter"
+                        else "No cloud imagery covers this area (GOES and Himawari only)",
+                        color = Color(0xFFB6C2D2), fontSize = 10.sp,
+                        modifier = Modifier.padding(start = 12.dp, bottom = 4.dp),
+                    )
+                }
+                if (basemap != 0 || weather != 0) {
+                    Text(
+                        buildString {
+                            if (basemap != 0) append("Map © Esri")
+                            if (weather != 0) {
+                                if (isNotEmpty()) append("   ·   ")
+                                append(if (weather == 2) "Clouds: NASA GIBS / NOAA" else "Weather © RainViewer")
+                            }
+                        },
+                        color = Color(0x99B6C2D2), fontSize = 9.sp,
+                        modifier = Modifier.padding(start = 12.dp, bottom = 4.dp),
+                    )
+                }
         }
     }
 
@@ -802,7 +858,9 @@ fun RadarView(
 
         // Top controls + the selected-aircraft card (reused from the sky view).
         Column(
-            modifier = Modifier.align(Alignment.TopStart).fillMaxWidth().statusBarsPadding().padding(8.dp),
+            modifier = Modifier.align(Alignment.TopStart).fillMaxWidth()
+                .padding(end = if (landscape) panelWidth + navRight else 0.dp)
+                .statusBarsPadding().padding(8.dp),
         ) {
             Row(
                 verticalAlignment = Alignment.CenterVertically,
@@ -949,7 +1007,20 @@ fun RadarView(
             }
         }
 
-        Column(modifier = Modifier.align(Alignment.BottomCenter).fillMaxWidth()) {
+        Column(
+            modifier = if (landscape) {
+                Modifier.align(Alignment.TopEnd).padding(end = navRight).width(panelWidth).fillMaxHeight().statusBarsPadding()
+            } else {
+                Modifier.align(Alignment.BottomCenter).fillMaxWidth()
+            },
+            verticalArrangement = if (landscape) Arrangement.Top else Arrangement.Bottom,
+        ) {
+            if (settings.radarProfile) {
+                RadarProfile(
+                    sortedAircraft, rangeNm * 1.852f, unit, selectedHex, { frameClock.longValue },
+                    Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 4.dp).height(if (landscape) 84.dp else 104.dp),
+                )
+            }
             // Label detail and units, tucked just above the drawer (hidden under a card).
             if (selAc == null || detailsHidden) Row(
                 modifier = Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 6.dp),
@@ -988,31 +1059,7 @@ fun RadarView(
                     },
                 )
             }
-            if (weather == 1) {
-                WeatherLegend(modifier = Modifier.padding(start = 12.dp, bottom = 4.dp))
-            }
-            if (weather == 2) {
-                val sat = fix?.let { CloudTiles.satelliteFor(it.longitude) }
-                Text(
-                    if (sat != null) "Clouds from $sat infrared · colder tops show brighter"
-                    else "No cloud imagery covers this area (GOES and Himawari only)",
-                    color = Color(0xFFB6C2D2), fontSize = 10.sp,
-                    modifier = Modifier.padding(start = 12.dp, bottom = 4.dp),
-                )
-            }
-            if (basemap != 0 || weather != 0) {
-                Text(
-                    buildString {
-                        if (basemap != 0) append("Map © Esri")
-                        if (weather != 0) {
-                            if (isNotEmpty()) append("   ·   ")
-                            append(if (weather == 2) "Clouds: NASA GIBS / NOAA" else "Weather © RainViewer")
-                        }
-                    },
-                    color = Color(0x99B6C2D2), fontSize = 9.sp,
-                    modifier = Modifier.padding(start = 12.dp, bottom = 4.dp),
-                )
-            }
+            if (!landscape) LayerCredits()
             // Weather timeline: pinned above the drawer so it stays visible while the
             // animation plays on the full scope.
             if (weather == 1 && weatherFrames.isNotEmpty()) {
@@ -1070,13 +1117,20 @@ fun RadarView(
             RadarDrawer(
                 viewModel, settings, sortedAircraft, approaches, selectedHex,
                 totalCount = aircraft.size,
+                onOpenLog = { showLog = true },
+                sidePanel = landscape,
                 expanded = listExpanded,
                 onExpandedChange = { listExpanded = it },
                 // Flat top when the weather timeline already caps the sheet stack above it.
                 roundedTop = !(weather == 1 && weatherFrames.isNotEmpty()),
-                modifier = Modifier.fillMaxWidth(),
+                modifier = if (landscape) Modifier.fillMaxWidth().weight(1f) else Modifier.fillMaxWidth(),
             )
         }
+
+        if (landscape) {
+            Box(Modifier.align(Alignment.BottomStart).navigationBarsPadding().padding(bottom = 4.dp)) { LayerCredits() }
+        }
+        if (showLog) SeenTodaySheet(viewModel.seenLog, unit) { showLog = false }
     }
 }
 
