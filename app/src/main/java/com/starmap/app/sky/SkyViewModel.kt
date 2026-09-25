@@ -39,6 +39,12 @@ data class IdentifiedObject(
     val target: SearchTarget? = null,
     /** ICAO hex when this is an aircraft, so it can be tracked. */
     val aircraftHex: String? = null,
+    /** Where it is now (degrees), for the card's stat chips and rise/set. */
+    val altDeg: Float? = null,
+    val azDeg: Float? = null,
+    val mag: Float? = null,
+    /** A kind-specific extra line (the Moon's phase, a landmark's distance). */
+    val note: String? = null,
 )
 
 /**

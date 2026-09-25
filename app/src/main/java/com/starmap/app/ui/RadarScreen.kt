@@ -612,10 +612,9 @@ fun RadarView(
                 Spacer(Modifier.height(8.dp))
                 val route by viewModel.selectedRoute
                 val photo by viewModel.selectedPhoto
-                val photoStatus by viewModel.photoStatus
                 val followHex by viewModel.followAircraftHex
                 AircraftInfoCard(
-                    ac, route, photo, photoStatus,
+                    ac, route, photo,
                     tracking = followHex == ac.icaoHex,
                     onTrack = { viewModel.followAircraft(if (followHex == ac.icaoHex) null else ac.icaoHex) },
                     onClose = { detailsHidden = true },

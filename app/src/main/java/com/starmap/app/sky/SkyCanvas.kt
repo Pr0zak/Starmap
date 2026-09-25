@@ -1078,15 +1078,13 @@ private fun nearestObject(
         val d2 = dx * dx + dy * dy
         if (d2 < bestD2) {
             bestD2 = d2
-            best = if (detailOverride != null) {
-                IdentifiedObject(name, kind, detailOverride, target)
-            } else {
-                identify(arr, base, name, kind, mag, target)
-            }
+            best = identify(arr, base, name, kind, mag, target, detailOverride)
         }
     }
-    m.sun?.let { consider(it.enu, 0, "Sun", "Star", null, SearchTarget.SpecialT("Sun"), m.sunDetail) }
-    m.moon?.let { consider(it.enu, 0, "Moon", "Moon", null, SearchTarget.SpecialT("Moon"), m.moonDetail) }
+    m.sun?.let { consider(it.enu, 0, "Sun", "Star", null, SearchTarget.SpecialT("Sun")) }
+    m.moon?.let {
+        consider(it.enu, 0, "Moon", "Moon", null, SearchTarget.SpecialT("Moon"), m.moonDetail.substringBefore('\n'))
+    }
     for (pl in m.planets) consider(pl.enu, 0, pl.name, "Planet", null, SearchTarget.PlanetT(pl.name))
     for (c in m.comets) consider(c.enu, 0, c.name, "Comet", c.magnitude, SearchTarget.CometT(c.name))
     for (a in m.asteroids) consider(a.enu, 0, a.name, "Asteroid", null, SearchTarget.AsteroidT(a.name))
@@ -1152,6 +1150,7 @@ private fun identify(
     kind: String,
     mag: Float?,
     target: SearchTarget?,
+    note: String? = null,
 ): IdentifiedObject {
     val alt = Math.toDegrees(asin(arr[base + 2].coerceIn(-1f, 1f).toDouble()))
     val az = (Math.toDegrees(atan2(arr[base].toDouble(), arr[base + 1].toDouble())) + 360.0) % 360.0
@@ -1162,6 +1161,11 @@ private fun identify(
     } else {
         ""
     }
-    val detail = "Alt %.0f° · Az %.0f° %s%s".format(alt, az, compass, magStr)
-    return IdentifiedObject(name, kind, detail, target)
+    val detail = note ?: "Alt %.0f° · Az %.0f° %s%s".format(alt, az, compass, magStr)
+    return IdentifiedObject(
+        name, kind, detail, target,
+        altDeg = alt.toFloat(), azDeg = az.toFloat(),
+        mag = mag?.takeIf { it.isFinite() && kind != "Satellite" },
+        note = note,
+    )
 }

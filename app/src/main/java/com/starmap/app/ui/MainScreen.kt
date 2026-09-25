@@ -115,6 +115,7 @@ import com.starmap.app.sky.SkyCanvas
 import com.starmap.app.sky.SkyModel
 import com.starmap.app.sky.SkyViewModel
 import com.starmap.app.sky.resolveTargetEnu
+import com.starmap.app.sky.RiseSet
 import kotlinx.coroutines.android.awaitFrame
 import kotlin.math.abs
 import kotlin.math.asin
@@ -298,6 +299,8 @@ private fun SkyScreen(
     val manualMode by viewModel.manualMode
     val liveTime by viewModel.liveTime
     var showTimePanel by remember { mutableStateOf(false) }
+    // The object whose details sheet is open, for its facts and "Show in sky".
+    var detailObj by remember { mutableStateOf<IdentifiedObject?>(null) }
 
     // Auto-match the render field of view to the camera while AR is on; restore after.
     val context = LocalContext.current
@@ -440,12 +443,11 @@ private fun SkyScreen(
             val selAc by viewModel.selectedAircraft
             val selRoute by viewModel.selectedRoute
             val selPhoto by viewModel.selectedPhoto
-            val selPhotoStatus by viewModel.photoStatus
             val followingState by viewModel.followActive
             val followHex by viewModel.followAircraftHex
             selAc?.let { ac ->
                 AircraftInfoCard(
-                    ac, selRoute, selPhoto, selPhotoStatus,
+                    ac, selRoute, selPhoto,
                     tracking = followHex == ac.icaoHex,
                     onTrack = { viewModel.followAircraft(if (followHex == ac.icaoHex) null else ac.icaoHex) },
                     onClose = { viewModel.selectAircraft(null) },
@@ -458,7 +460,7 @@ private fun SkyScreen(
                 (selObj ?: centerObj)?.let { obj ->
                     val hex = obj.aircraftHex
                     val followingThis = if (hex != null) followHex == hex else followingState
-                    val openDetails = { viewModel.openObjectDetail(obj) }
+                    val openDetails = { detailObj = obj; viewModel.openObjectDetail(obj) }
                     val onFollow: (() -> Unit)? = when {
                         hex != null -> {
                             { viewModel.followAircraft(if (followHex == hex) null else hex) }
@@ -475,8 +477,12 @@ private fun SkyScreen(
                         }
                         else -> null
                     }
+                    val whenLine = remember(obj.name, model?.timeMillis?.div(60_000)) {
+                        model?.let { m -> RiseSet.forObject(obj, m)?.let { RiseSet.describe(it) } }
+                    }
                     ObjectInfoCard(
                         obj,
+                        whenLine = whenLine,
                         following = followingThis,
                         onDetails = if (hex != null) null else openDetails,
                         onFollow = onFollow,
@@ -524,8 +530,19 @@ private fun SkyScreen(
 
         val detail by viewModel.objectDetail
         detail?.let { d ->
-            ObjectDetailDialog(
+            val target = detailObj?.target
+            ObjectDetailSheet(
                 d,
+                obj = detailObj?.takeIf { it.name == d.title },
+                model = model,
+                onShowInSky = target?.let {
+                    {
+                        viewModel.closeObjectDetail()
+                        viewModel.selectObject(null)
+                        viewModel.selectSearchTarget(it)
+                        viewModel.setFollow(true)
+                    }
+                },
                 onOpenLink = { url ->
                     runCatching {
                         context.startActivity(
@@ -640,6 +657,7 @@ private fun OverflowMenu(onOpen: (Screen) -> Unit) {
 @Composable
 private fun ObjectInfoCard(
     obj: IdentifiedObject,
+    whenLine: String? = null,
     following: Boolean = false,
     onDetails: (() -> Unit)? = null,
     onFollow: (() -> Unit)? = null,
@@ -647,35 +665,58 @@ private fun ObjectInfoCard(
 ) {
     val (icon, accent) = objectVisual(obj)
     Box(modifier = Modifier.fillMaxWidth().glass(RoundedCornerShape(20.dp))) {
-        Row(
-            modifier = Modifier.padding(start = 14.dp, top = 12.dp, bottom = 12.dp, end = 8.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            IconBadge(icon, accent)
-            Column(modifier = Modifier.weight(1f).padding(start = 14.dp)) {
-                Text(obj.name, color = Hud.Text, fontSize = 18.sp, fontWeight = FontWeight.SemiBold)
-                Text(obj.kind, color = accent, fontSize = 12.sp, fontWeight = FontWeight.Medium)
-                Text(
-                    obj.detail, color = Hud.TextDim, fontSize = 13.sp,
-                    modifier = Modifier.padding(top = 3.dp),
-                )
-            }
-            if (onDetails != null) {
-                IconButton(onClick = onDetails) {
-                    Icon(Icons.Filled.Info, contentDescription = "Details", tint = Hud.Text)
+        Column(modifier = Modifier.padding(start = 14.dp, top = 12.dp, bottom = 12.dp, end = 4.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                IconBadge(icon, accent)
+                Column(modifier = Modifier.weight(1f).padding(start = 14.dp)) {
+                    Text(obj.name, color = Hud.Text, fontSize = 18.sp, fontWeight = FontWeight.SemiBold)
+                    Text(obj.kind, color = accent, fontSize = 12.sp, fontWeight = FontWeight.Medium)
+                }
+                if (onClose != null) {
+                    IconButton(onClick = onClose) {
+                        Icon(Icons.Filled.Close, contentDescription = "Close", tint = Hud.TextDim)
+                    }
                 }
             }
-            if (onFollow != null) {
-                IconButton(onClick = onFollow) {
-                    Icon(
-                        Icons.Filled.MyLocation, contentDescription = "Follow",
-                        tint = if (following) Hud.Gold else Hud.Text,
+            Column(modifier = Modifier.padding(start = 60.dp, end = 10.dp)) {
+                val alt = obj.altDeg
+                val az = obj.azDeg
+                if (alt != null && az != null) {
+                    Row(
+                        modifier = Modifier.padding(top = 10.dp),
+                        horizontalArrangement = Arrangement.spacedBy(20.dp),
+                    ) {
+                        StatTile("ALT", "${alt.roundToInt()}°")
+                        StatTile("AZ", "${az.roundToInt() % 360}° ${compassLabel(az)}")
+                        obj.mag?.let { StatTile("MAG", "%.1f".format(it)) }
+                    }
+                } else {
+                    Text(
+                        obj.detail, color = Hud.TextDim, fontSize = 13.sp,
+                        modifier = Modifier.padding(top = 6.dp),
                     )
                 }
-            }
-            if (onClose != null) {
-                IconButton(onClick = onClose) {
-                    Icon(Icons.Filled.Close, contentDescription = "Close", tint = Hud.Text)
+                for (line in listOfNotNull(obj.note, whenLine)) {
+                    Text(
+                        line, color = Hud.TextDim, fontSize = 12.5.sp,
+                        modifier = Modifier.padding(top = 6.dp),
+                    )
+                }
+                if (onDetails != null || onFollow != null) {
+                    Row(
+                        modifier = Modifier.padding(top = 10.dp),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        onDetails?.let { ActionPill(Icons.Filled.Info, "Details", onClick = it) }
+                        onFollow?.let {
+                            ActionPill(
+                                Icons.Filled.MyLocation,
+                                if (following) "Following" else "Follow",
+                                active = following,
+                                onClick = it,
+                            )
+                        }
+                    }
                 }
             }
         }
@@ -717,85 +758,154 @@ private fun objectVisual(obj: IdentifiedObject): Pair<ImageVector, Color> {
     }
 }
 
+/**
+ * Object details as a bottom sheet: the object stays visible above it. Facts the app
+ * knows offline come first, then the Wikipedia summary. The photo slot shows a
+ * shimmer while loading and disappears if the image can't be fetched.
+ */
 @Composable
-private fun ObjectDetailDialog(
+private fun ObjectDetailSheet(
     detail: ObjectDetail,
+    obj: IdentifiedObject?,
+    model: SkyModel?,
+    onShowInSky: (() -> Unit)?,
     onOpenLink: (String) -> Unit,
     onClose: () -> Unit,
 ) {
-    Dialog(onDismissRequest = onClose) {
-        Box(
-            modifier = Modifier.fillMaxWidth()
-                .glass(RoundedCornerShape(22.dp), top = Color(0xF2171E2E), bottom = Color(0xF20E1320)),
-        ) {
-            Column(modifier = Modifier.padding(18.dp)) {
+    InWindowSheet(onDismiss = onClose) {
+        Column(Modifier.fillMaxWidth().navigationBarsPadding()) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(max = 560.dp)
+                    .verticalScroll(rememberScrollState())
+                    .padding(start = 18.dp, end = 18.dp),
+            ) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(
-                        detail.title, color = Color(0xFFF1F4FA), fontSize = 20.sp,
-                        fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f),
-                    )
+                    if (obj != null) {
+                        val (icon, accent) = objectVisual(obj)
+                        IconBadge(icon, accent, size = 42.dp)
+                        Spacer(Modifier.width(12.dp))
+                    }
+                    Column(Modifier.weight(1f)) {
+                        Text(detail.title, color = Hud.Text, fontSize = 21.sp, fontWeight = FontWeight.SemiBold)
+                        obj?.let { Text(it.kind, color = objectVisual(it).second, fontSize = 12.sp) }
+                    }
                     IconButton(onClick = onClose) {
-                        Icon(Icons.Filled.Close, contentDescription = "Close", tint = Color(0xFFD8E0F0))
+                        Icon(Icons.Filled.Close, contentDescription = "Close", tint = Hud.TextDim)
                     }
                 }
-                Spacer(Modifier.height(6.dp))
-                when (detail) {
-                    is ObjectDetail.Loading ->
-                        Text("Loading…", color = Color(0x99FFFFFF), fontSize = 14.sp)
-                    is ObjectDetail.Empty ->
-                        Text("No description found.", color = Color(0x99FFFFFF), fontSize = 14.sp)
-                    is ObjectDetail.Failed ->
-                        Text("Couldn't load details · ${detail.message}", color = Color(0x99FFFFFF), fontSize = 14.sp)
-                    is ObjectDetail.Loaded -> {
-                        Column(
-                            modifier = Modifier
-                                .heightIn(max = 460.dp)
-                                .verticalScroll(rememberScrollState()),
-                        ) {
-                            detail.info.imageUrl?.let { url ->
-                                AsyncImage(
-                                    model = ImageRequest.Builder(LocalContext.current)
-                                        .data(url.replaceFirst("http://", "https://"))
-                                        .setHeader("User-Agent", WikiManager.USER_AGENT)
-                                        .crossfade(true)
-                                        .build(),
-                                    contentDescription = null,
-                                    contentScale = ContentScale.Crop,
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .height(190.dp)
-                                        .clip(RoundedCornerShape(12.dp)),
-                                )
-                                Spacer(Modifier.height(12.dp))
+
+                val facts = remember(obj, model?.timeMillis?.div(60_000)) { quickFacts(obj, model) }
+                if (facts.isNotEmpty()) {
+                    Spacer(Modifier.height(14.dp))
+                    for (row in facts.chunked(3)) {
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(bottom = 8.dp)) {
+                            for ((label, value) in row) {
+                                StatTile(label, value, filled = true, modifier = Modifier.weight(1f))
                             }
-                            Text(
-                                detail.info.extract, color = Color(0xDDFFFFFF),
-                                fontSize = 14.sp, lineHeight = 20.sp,
-                            )
-                            Text(
-                                "Text from Wikipedia (CC BY-SA)",
-                                color = Color(0x66FFFFFF), fontSize = 10.sp,
-                                modifier = Modifier.padding(top = 6.dp),
-                            )
+                            repeat(3 - row.size) { Spacer(Modifier.weight(1f)) }
                         }
                     }
+                    val whenLine = remember(obj, model?.timeMillis?.div(60_000)) {
+                        if (obj != null && model != null) RiseSet.forObject(obj, model)?.let { RiseSet.describe(it) } else null
+                    }
+                    whenLine?.let { Text(it, color = Hud.TextDim, fontSize = 13.sp, modifier = Modifier.padding(bottom = 4.dp)) }
                 }
-                // Always offer a Wikipedia link (the article, or a search for it).
+
+                Spacer(Modifier.height(10.dp))
+                when (detail) {
+                    is ObjectDetail.Loading -> {
+                        Shimmer(Modifier.fillMaxWidth().height(150.dp))
+                        Spacer(Modifier.height(12.dp))
+                        repeat(3) {
+                            Shimmer(Modifier.fillMaxWidth(if (it == 2) 0.6f else 1f).height(12.dp), RoundedCornerShape(4.dp))
+                            Spacer(Modifier.height(8.dp))
+                        }
+                    }
+                    is ObjectDetail.Empty ->
+                        Text("Wikipedia has no summary for this one.", color = Hud.TextDim, fontSize = 14.sp)
+                    is ObjectDetail.Failed ->
+                        Text("Couldn't load the description · ${detail.message}", color = Hud.TextDim, fontSize = 14.sp)
+                    is ObjectDetail.Loaded -> {
+                        detail.info.imageUrl?.let { url ->
+                            var state by remember(url) { mutableIntStateOf(0) } // 0 loading, 1 ok, 2 failed
+                            if (state != 2) {
+                                Box(Modifier.fillMaxWidth().height(190.dp).clip(RoundedCornerShape(12.dp))) {
+                                    if (state == 0) Shimmer(Modifier.fillMaxSize())
+                                    AsyncImage(
+                                        model = ImageRequest.Builder(LocalContext.current)
+                                            .data(url.replaceFirst("http://", "https://"))
+                                            .setHeader("User-Agent", WikiManager.USER_AGENT)
+                                            .crossfade(true)
+                                            .build(),
+                                        contentDescription = null,
+                                        contentScale = ContentScale.Crop,
+                                        onState = { st ->
+                                            state = when (st) {
+                                                is AsyncImagePainter.State.Success -> 1
+                                                is AsyncImagePainter.State.Error -> 2
+                                                else -> state
+                                            }
+                                        },
+                                        modifier = Modifier.fillMaxSize(),
+                                    )
+                                }
+                                Spacer(Modifier.height(12.dp))
+                            }
+                        }
+                        Text(detail.info.extract, color = Color(0xDDFFFFFF), fontSize = 14.sp, lineHeight = 20.sp)
+                        Text(
+                            "Text from Wikipedia (CC BY-SA)",
+                            color = Color(0x66FFFFFF), fontSize = 10.sp,
+                            modifier = Modifier.padding(top = 6.dp),
+                        )
+                    }
+                }
+
+                Spacer(Modifier.height(4.dp))
+            }
+            // Actions stay pinned under the scrolling text.
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                modifier = Modifier.padding(start = 18.dp, end = 18.dp, top = 10.dp, bottom = 14.dp),
+            ) {
+                onShowInSky?.let { ActionPill(Icons.Filled.MyLocation, "Show in sky", primary = true, onClick = it) }
                 if (detail !is ObjectDetail.Loading) {
                     val pageLink = (detail as? ObjectDetail.Loaded)?.info?.pageUrl
                     val link = pageLink
                         ?: ("https://en.wikipedia.org/wiki/Special:Search?search=" + Uri.encode(detail.title))
-                    Spacer(Modifier.height(8.dp))
-                    TextButton(onClick = { onOpenLink(link) }) {
-                        Text(
-                            if (pageLink != null) "Read more on Wikipedia ↗" else "Search Wikipedia ↗",
-                            color = Color(0xFF8AB4F8),
-                        )
+                    ActionPill(Icons.Filled.Public, if (pageLink != null) "Wikipedia ↗" else "Search Wikipedia ↗") {
+                        onOpenLink(link)
                     }
                 }
             }
         }
     }
+}
+
+/** Offline facts for the details sheet: magnitude, position, and equatorial coordinates. */
+private fun quickFacts(obj: IdentifiedObject?, model: SkyModel?): List<Pair<String, String>> {
+    if (obj == null) return emptyList()
+    val out = ArrayList<Pair<String, String>>()
+    obj.mag?.let { out += "MAG" to "%.1f".format(it) }
+    val alt = obj.altDeg
+    val az = obj.azDeg
+    if (alt != null && az != null) {
+        out += "ALT" to "${alt.roundToInt()}°"
+        out += "AZ" to "${az.roundToInt() % 360}° ${compassLabel(az)}"
+        if (model != null && obj.aircraftHex == null) {
+            val lst = com.starmap.app.astro.AstroMath.lstDegrees(
+                com.starmap.app.astro.AstroMath.julianDay(model.timeMillis), model.location.longitude,
+            )
+            val (ra, dec) = RiseSet.raDecFromAltAz(alt.toDouble(), az.toDouble(), model.location.latitude, lst)
+            val raH = ra / 15.0
+            out += "RA" to "%dh %02dm".format(raH.toInt(), ((raH % 1) * 60).toInt())
+            out += "DEC" to "%+.1f°".format(dec)
+        }
+    }
+    obj.note?.let { if (obj.kind == "Moon") out += "PHASE" to it.substringAfterLast(" · ", it) }
+    return out
 }
 
 @Composable
@@ -945,19 +1055,10 @@ private fun describeDirection(enu: FloatArray): String {
 }
 
 @Composable
-private fun PhotoNote(text: String) {
-    Text(
-        text, color = Color(0x80FFFFFF), fontSize = 11.sp,
-        modifier = Modifier.padding(top = 8.dp, bottom = 2.dp, end = 8.dp),
-    )
-}
-
-@Composable
 internal fun AircraftInfoCard(
     ac: AircraftRender,
     route: AircraftManager.Route?,
     photo: AircraftManager.Photo?,
-    photoStatus: String?,
     tracking: Boolean,
     onTrack: () -> Unit,
     onClose: () -> Unit,
@@ -969,31 +1070,37 @@ internal fun AircraftInfoCard(
     } else {
         Modifier.fillMaxWidth().glass(shape)
     }
+    val accent = if (ac.isHelicopter) Color(0xFF7FD8C6) else Color(0xFFFFC061)
     Box(modifier = cardMod) {
-        Column(modifier = Modifier.padding(start = 14.dp, top = 12.dp, bottom = 12.dp, end = 8.dp)) {
+        Column(modifier = Modifier.padding(start = 14.dp, top = 12.dp, bottom = 14.dp, end = 6.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                IconBadge(
-                    Icons.Filled.Flight,
-                    if (ac.isHelicopter) Color(0xFF7FD8C6) else Color(0xFFFFC061),
-                    size = 40.dp,
-                )
+                IconBadge(Icons.Filled.Flight, accent, size = 40.dp)
                 Column(modifier = Modifier.weight(1f).padding(start = 12.dp)) {
-                    Text(
-                        ac.callsign.ifBlank { "Aircraft" },
-                        color = Color(0xFFFFE9A8), fontSize = 18.sp, fontWeight = FontWeight.SemiBold,
-                    )
-                    if (ac.registration.isNotBlank()) {
-                        Text(ac.registration, color = Color(0x99FFFFFF), fontSize = 12.sp)
+                    val title = ac.callsign.ifBlank { ac.registration.ifBlank { "Aircraft" } }
+                    Text(title, color = Color(0xFFFFE9A8), fontSize = 18.sp, fontWeight = FontWeight.SemiBold)
+                    // General-aviation flights use the registration as callsign, so only
+                    // repeat it when it adds something.
+                    val kind = when {
+                        ac.isHelicopter && ac.typeCode.isNotBlank() -> "Helicopter · ${ac.typeCode}"
+                        ac.isHelicopter -> "Helicopter"
+                        else -> ac.typeCode
                     }
+                    val sub = listOfNotNull(
+                        ac.registration.takeIf { it.isNotBlank() && !it.equals(title, ignoreCase = true) },
+                        kind.takeIf { it.isNotBlank() },
+                        route?.airline?.takeIf { it.isNotBlank() },
+                        ac.squawk.takeIf { it.isNotBlank() && !ac.isEmergency }?.let { "squawk $it" },
+                    ).joinToString(" · ")
+                    if (sub.isNotBlank()) Text(sub, color = Hud.TextDim, fontSize = 12.5.sp)
                 }
                 IconButton(onClick = onTrack) {
                     Icon(
                         Icons.Filled.MyLocation, contentDescription = "Track",
-                        tint = if (tracking) Color(0xFFFFD54F) else Color(0xFFD8E0F0),
+                        tint = if (tracking) Hud.Gold else Hud.Text,
                     )
                 }
                 IconButton(onClick = onClose) {
-                    Icon(Icons.Filled.Close, contentDescription = "Close", tint = Color(0xFFD8E0F0))
+                    Icon(Icons.Filled.Close, contentDescription = "Close", tint = Hud.TextDim)
                 }
             }
 
@@ -1005,14 +1112,14 @@ internal fun AircraftInfoCard(
                     "⚠ EMERGENCY" + (if (em != null) " · $em" else "") +
                         (if (ac.squawk in listOf("7500", "7600", "7700")) " · squawk ${ac.squawk}" else ""),
                     color = Color(0xFFFF8A8A), fontSize = 13.sp, fontWeight = FontWeight.SemiBold,
+                    modifier = Modifier.padding(top = 6.dp),
                 )
             }
 
+            // Only a found photo gets space; "no photo" isn't worth a row.
             if (photo != null) {
                 var imgFailed by remember(photo.thumbnailUrl) { mutableStateOf(false) }
-                if (imgFailed) {
-                    PhotoNote("Photo failed to load")
-                } else {
+                if (!imgFailed) {
                     AsyncImage(
                         model = ImageRequest.Builder(LocalContext.current)
                             .data(photo.thumbnailUrl)
@@ -1024,42 +1131,45 @@ internal fun AircraftInfoCard(
                         onState = { st -> if (st is AsyncImagePainter.State.Error) imgFailed = true },
                         modifier = Modifier
                             .fillMaxWidth()
-                            .height(150.dp)
-                            .padding(top = 8.dp, end = 8.dp)
+                            .height(140.dp)
+                            .padding(top = 10.dp, end = 8.dp)
                             .clip(RoundedCornerShape(10.dp)),
                     )
                     if (photo.photographer.isNotBlank()) {
                         Text(
-                            "📷 ${photo.photographer} / planespotters.net",
+                            "Photo ${photo.photographer} / planespotters.net",
                             color = Color(0x66FFFFFF), fontSize = 10.sp,
                         )
                     }
                 }
-            } else if (photoStatus != null) {
-                PhotoNote(photoStatus)
             }
 
-            val kind = when {
-                ac.isHelicopter && ac.typeCode.isNotBlank() -> "Helicopter · ${ac.typeCode}"
-                ac.isHelicopter -> "Helicopter"
-                ac.typeCode.isNotBlank() -> ac.typeCode
-                else -> "Aircraft"
-            }
-            val kindLine = if (route?.airline?.isNotBlank() == true) "$kind · ${route.airline}" else kind
-            Text(kindLine, color = Color(0xCCFFFFFF), fontSize = 13.sp, modifier = Modifier.padding(top = 6.dp))
-
-            val ft = (ac.altitudeMeters / 0.3048).toInt()
+            val ft = (ac.altitudeMeters / 0.3048).roundToInt()
             val vr = ac.verticalRateFpm
-            val vrStr = if (abs(vr) > 100) " ${if (vr > 0) "↑" else "↓"}${abs(vr).toInt()}fpm" else ""
-            Text(
-                "Alt ${"%,d".format(ft)} ft$vrStr · ${ac.groundSpeedKts.toInt()} kt · heading ${ac.trackDeg.toInt()}°",
-                color = Color(0xCCFFFFFF), fontSize = 13.sp,
-            )
-            Text(
-                "%.0f km (%.0f mi) away".format(ac.rangeKm, ac.rangeKm * 0.621371) +
-                    (if (ac.squawk.isNotBlank() && !ac.isEmergency) " · squawk ${ac.squawk}" else ""),
-                color = Color(0x99FFFFFF), fontSize = 12.sp,
-            )
+            val climbing = vr > 100
+            val descending = vr < -100
+            val miles = ac.rangeKm * 0.621371
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(top = 12.dp, end = 8.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                StatTile(
+                    "ALT", "%,d".format(ft), Modifier.weight(1.25f),
+                    sub = if (climbing || descending) "ft · %+,d fpm".format(vr.roundToInt()) else "ft",
+                    trend = if (climbing) " ↑" else if (descending) " ↓" else null,
+                    trendColor = if (climbing) Color(0xFF7FE3A0) else Color(0xFFFFC061),
+                    filled = true,
+                )
+                StatTile("SPD", "${ac.groundSpeedKts.roundToInt()}", Modifier.weight(1f), sub = "kt", filled = true)
+                StatTile(
+                    "HDG", "${ac.trackDeg.roundToInt() % 360}°", Modifier.weight(1f),
+                    sub = compassLabel(ac.trackDeg.toFloat()), filled = true,
+                )
+                StatTile(
+                    "DIST", if (miles < 10) "%.1f".format(miles) else "${miles.roundToInt()}", Modifier.weight(1f),
+                    sub = "mi · ${ac.rangeKm.roundToInt()} km", filled = true,
+                )
+            }
             route?.let {
                 if (it.origin.code != "?" || it.destination.code != "?") {
                     AirportRoute(it.origin, it.destination)
