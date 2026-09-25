@@ -57,7 +57,7 @@ class SatelliteController(
     fun currentSats(): List<NamedSat> =
         if (issSats.isEmpty() && starlinkSats.isEmpty()) emptyList() else issSats + starlinkSats
 
-    fun downloadIss(showIss: Boolean) {
+    fun downloadIss(showIss: Boolean, onSuccess: () -> Unit = {}) {
         if (_issBusy.value) return
         _issBusy.value = true
         scope.launch {
@@ -65,6 +65,7 @@ class SatelliteController(
                 is SatelliteManager.Result.Ok -> {
                     _message.value = "ISS elements updated"
                     if (showIss) issSats = manager.loadIss()
+                    onSuccess()
                 }
                 is SatelliteManager.Result.Failed -> _message.value = "ISS: ${r.message}"
             }
@@ -72,7 +73,7 @@ class SatelliteController(
         }
     }
 
-    fun downloadStarlink(showStarlink: Boolean) {
+    fun downloadStarlink(showStarlink: Boolean, onSuccess: () -> Unit = {}) {
         if (_starlinkBusy.value) return
         _starlinkBusy.value = true
         _starlinkProgress.value = 0f
@@ -81,6 +82,7 @@ class SatelliteController(
                 is SatelliteManager.Result.Ok -> {
                     _message.value = "Starlink: ${r.count} satellites"
                     if (showStarlink) starlinkSats = manager.loadStarlink()
+                    onSuccess()
                 }
                 is SatelliteManager.Result.Failed -> _message.value = "Starlink: ${r.message}"
             }

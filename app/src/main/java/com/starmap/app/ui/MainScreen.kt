@@ -247,6 +247,7 @@ fun MainScreen(viewModel: SkyViewModel = viewModel()) {
 
     // Alerts can be reached from the menu or from Settings; back should retrace whichever.
     var alertsFrom by remember { mutableStateOf(Screen.Sky) }
+    var aboutFrom by remember { mutableStateOf(Screen.Sky) }
 
     // A tapped sky alert should leave the user looking at the thing it told them about,
     // not merely with the app open. The target is stashed by MainActivity, which can
@@ -262,7 +263,11 @@ fun MainScreen(viewModel: SkyViewModel = viewModel()) {
 
     // System back returns to the sky from any detail screen (instead of exiting).
     BackHandler(enabled = screen != Screen.Sky) {
-        screen = if (screen == Screen.Alerts) alertsFrom else Screen.Sky
+        screen = when (screen) {
+            Screen.Alerts -> alertsFrom
+            Screen.About -> aboutFrom
+            else -> Screen.Sky
+        }
     }
 
     when (screen) {
@@ -278,7 +283,12 @@ fun MainScreen(viewModel: SkyViewModel = viewModel()) {
                     else -> cameraPermLauncher.launch(Manifest.permission.CAMERA)
                 }
             },
-            onOpen = { screen = it },
+            onOpen = {
+                // Opened from the sky's menu, so back returns to the sky.
+                alertsFrom = Screen.Sky
+                aboutFrom = Screen.Sky
+                screen = it
+            },
             onRequestPermission = {
                 permLauncher.launch(
                     arrayOf(
@@ -292,10 +302,18 @@ fun MainScreen(viewModel: SkyViewModel = viewModel()) {
             viewModel,
             settings,
             onOpenAlerts = { alertsFrom = Screen.Settings; screen = Screen.Alerts },
+            onOpenAbout = { aboutFrom = Screen.Settings; screen = Screen.About },
         ) { screen = Screen.Sky }
         Screen.Alerts -> AlertsScreen(viewModel.alerts) { screen = alertsFrom }
-        Screen.Downloads -> DownloadsScreen(viewModel) { screen = Screen.Sky }
-        Screen.About -> AboutScreen(viewModel) { screen = Screen.Sky }
+        // The old Offline downloads screen is now the Offline data page of Settings.
+        Screen.Downloads -> SettingsScreen(
+            viewModel,
+            settings,
+            onOpenAlerts = { alertsFrom = Screen.Downloads; screen = Screen.Alerts },
+            onOpenAbout = { aboutFrom = Screen.Downloads; screen = Screen.About },
+            initialPage = SettingsPage.Offline,
+        ) { screen = Screen.Sky }
+        Screen.About -> AboutScreen(viewModel) { screen = aboutFrom }
         Screen.Search -> SearchScreen(viewModel) { screen = Screen.Sky }
     }
 }
@@ -657,7 +675,7 @@ private fun OverflowMenu(onOpen: (Screen) -> Unit) {
                 onClick = { expanded = false; onOpen(Screen.Alerts) },
             )
             DropdownMenuItem(
-                text = { Text("Offline downloads") },
+                text = { Text("Offline data") },
                 leadingIcon = { Icon(Icons.Filled.Download, null) },
                 onClick = { expanded = false; onOpen(Screen.Downloads) },
             )

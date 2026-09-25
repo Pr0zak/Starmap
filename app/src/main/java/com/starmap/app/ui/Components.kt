@@ -1,6 +1,18 @@
 package com.starmap.app.ui
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Search
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
@@ -64,9 +76,22 @@ fun DetailScaffold(title: String, onBack: () -> Unit, content: @Composable () ->
 }
 
 @Composable
-fun SettingSwitch(label: String, description: String? = null, checked: Boolean, enabled: Boolean = true, onChange: (Boolean) -> Unit) {
+fun SettingSwitch(
+    label: String,
+    description: String? = null,
+    checked: Boolean,
+    enabled: Boolean = true,
+    /** A sub-option of the row above: indented under a thin guide so it reads as nested. */
+    indent: Boolean = false,
+    onChange: (Boolean) -> Unit,
+) {
     Row(
-        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp),
+        modifier = Modifier
+            .fillMaxWidth()
+            .then(if (indent) Modifier.padding(start = 20.dp).drawBehind {
+                drawLine(Hud.Hairline, Offset(0f, 0f), Offset(0f, size.height), strokeWidth = 2.dp.toPx())
+            } else Modifier)
+            .padding(horizontal = 16.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Column(modifier = Modifier.weight(1f)) {
@@ -114,6 +139,8 @@ fun SettingSlider(
     valueText: String,
     range: ClosedFloatingPointRange<Float>,
     steps: Int = 0,
+    /** A plain-language reading of the current value, under the label. */
+    description: String? = null,
     onChange: (Float) -> Unit,
 ) {
     Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp)) {
@@ -121,6 +148,9 @@ fun SettingSlider(
             Text(label, fontSize = 16.sp)
             Text(valueText, fontSize = 14.sp,
                 color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.SemiBold)
+        }
+        if (description != null) {
+            Text(description, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f))
         }
         CleanSlider(
             value = value, onValueChange = onChange, valueRange = range, steps = steps,
@@ -194,15 +224,107 @@ fun SegmentedChoice(
     }
 }
 
-/** Groups a settings section's rows in a rounded, slightly-tinted card. */
+/** Groups a settings section's rows on a glass plate, like the HUD's cards. */
 @Composable
 fun SettingsGroup(content: @Composable ColumnScope.() -> Unit) {
-    Surface(
-        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f),
-        shape = RoundedCornerShape(16.dp),
-        modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 2.dp),
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 12.dp, vertical = 2.dp)
+            .glass(RoundedCornerShape(16.dp))
+            .padding(vertical = 4.dp),
+        content = content,
+    )
+}
+
+/** A settings-hub row: icon badge, title, a one-line summary of the current state. */
+@Composable
+fun SettingsCategoryRow(
+    icon: ImageVector,
+    accent: Color,
+    title: String,
+    summary: String,
+    badge: String? = null,
+    onClick: () -> Unit,
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth().clickable(onClick = onClick).padding(horizontal = 14.dp, vertical = 11.dp),
+        verticalAlignment = Alignment.CenterVertically,
     ) {
-        Column(modifier = Modifier.padding(vertical = 4.dp), content = content)
+        Box(
+            modifier = Modifier.size(36.dp).clip(CircleShape)
+                .background(accent.copy(alpha = 0.14f))
+                .border(1.dp, accent.copy(alpha = 0.4f), CircleShape),
+            contentAlignment = Alignment.Center,
+        ) {
+            Icon(icon, contentDescription = null, tint = accent, modifier = Modifier.size(18.dp))
+        }
+        Column(Modifier.weight(1f).padding(start = 14.dp)) {
+            Text(title, fontSize = 16.sp, color = Hud.Text)
+            Text(summary, fontSize = 12.sp, color = Hud.TextDim.copy(alpha = 0.75f), maxLines = 2)
+        }
+        badge?.let { StatusPill(it, Hud.Gold) }
+        Icon(
+            Icons.AutoMirrored.Filled.KeyboardArrowRight,
+            contentDescription = null,
+            tint = Hud.TextDim.copy(alpha = 0.6f),
+        )
+    }
+}
+
+/** A small outlined status label ("Not downloaded", "Synced", "v2.3.0"). */
+@Composable
+fun StatusPill(text: String, color: Color) {
+    Text(
+        text,
+        color = color,
+        fontSize = 11.sp,
+        fontWeight = FontWeight.Medium,
+        modifier = Modifier
+            .padding(end = 6.dp)
+            .border(1.dp, color.copy(alpha = 0.45f), RoundedCornerShape(50))
+            .padding(horizontal = 8.dp, vertical = 3.dp),
+    )
+}
+
+/** The glass search field used by Search and Settings. */
+@Composable
+fun GlassSearchField(
+    query: String,
+    onQueryChange: (String) -> Unit,
+    placeholder: String,
+    modifier: Modifier = Modifier,
+    fieldModifier: Modifier = Modifier,
+) {
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp)
+            .glass(RoundedCornerShape(14.dp))
+            .padding(start = 12.dp, end = 4.dp)
+            .height(48.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(Icons.Filled.Search, contentDescription = null, tint = Hud.Gold, modifier = Modifier.size(20.dp))
+        Spacer(Modifier.width(10.dp))
+        Box(Modifier.weight(1f)) {
+            if (query.isEmpty()) {
+                Text(placeholder, color = Hud.TextDim.copy(alpha = 0.6f), fontSize = 16.sp)
+            }
+            BasicTextField(
+                value = query,
+                onValueChange = onQueryChange,
+                singleLine = true,
+                textStyle = TextStyle(color = Hud.Text, fontSize = 16.sp),
+                cursorBrush = SolidColor(Hud.Gold),
+                modifier = fieldModifier.fillMaxWidth(),
+            )
+        }
+        if (query.isNotEmpty()) {
+            IconButton(onClick = { onQueryChange("") }) {
+                Icon(Icons.Filled.Close, contentDescription = "Clear", tint = Hud.TextDim)
+            }
+        }
     }
 }
 

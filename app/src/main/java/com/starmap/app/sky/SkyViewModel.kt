@@ -418,8 +418,21 @@ class SkyViewModel(app: Application) : AndroidViewModel(app) {
     fun resetUpdateDownload() = updateController.resetDownload()
 
     // --- Satellite (TLE) downloads (see SatelliteController) ---
-    fun downloadIss() = satelliteController.downloadIss(settings.value.showIss)
-    fun downloadStarlink() = satelliteController.downloadStarlink(settings.value.showStarlink)
+    /** Download ISS elements; with [thenShow], switch the layer on once they arrive. */
+    fun downloadIss(thenShow: Boolean = false) = satelliteController.downloadIss(settings.value.showIss) {
+        if (thenShow) setBool(SettingsRepository.BoolSetting.Iss, true)
+    }
+    fun downloadStarlink(thenShow: Boolean = false) = satelliteController.downloadStarlink(settings.value.showStarlink) {
+        if (thenShow) setBool(SettingsRepository.BoolSetting.Starlink, true)
+    }
+
+    /** How many catalogue stars are at least as bright as [mag] (whole sky), or null before loading. */
+    fun starsBrighterThan(mag: Float): Int? {
+        val cat = catalog ?: return null
+        var n = 0
+        for (i in 0 until cat.count) if (cat.mag[i] <= mag) n++
+        return n
+    }
     fun deleteIss() = satelliteController.deleteIss()
     fun deleteStarlink() = satelliteController.deleteStarlink()
 
