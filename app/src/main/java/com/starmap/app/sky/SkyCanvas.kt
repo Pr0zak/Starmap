@@ -228,6 +228,7 @@ fun SkyCanvas(viewModel: SkyViewModel, settings: Settings, modifier: Modifier = 
         projState.cx = cx; projState.cy = cy; projState.focal = focal
         projState.width = size.width; projState.height = size.height; projState.margin = margin
         projState.showBelow = settings.showBelowHorizon
+        viewModel.viewDirection.set(look)
 
         // Returns screen x/y in [out], or false if behind / off screen.
         fun project(v: FloatArray, out: FloatArray): Boolean = projState.projectVec(v, out)

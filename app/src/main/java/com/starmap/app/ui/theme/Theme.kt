@@ -9,7 +9,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 
-private val NightBlue = Color(0xFF8FB7FF)
 private val Amber = Color(0xFFFFD54F) // the app-wide "active / accent" colour
 private val DeepSpace = Color(0xFF05070D)
 private val PanelSurface = Color(0xFF12151E)
@@ -18,10 +17,12 @@ private val PanelSurface = Color(0xFF12151E)
 // Dialog, DropdownMenu, chips, cards) match the hand-drawn night UI instead of
 // falling back to default purples.
 private val StarmapDarkColors = darkColorScheme(
-    primary = NightBlue,
-    onPrimary = Color(0xFF06121F),
-    primaryContainer = Color(0xFF1E3A5F),
-    onPrimaryContainer = Color(0xFFD6E3FF),
+    // Amber is the one "active" colour app-wide, matching the HUD's Hud.Gold, so
+    // switches, sliders and buttons on the full-screen pages read as the same app.
+    primary = Amber,
+    onPrimary = Color(0xFF231A00),
+    primaryContainer = Color(0xFF574400),
+    onPrimaryContainer = Color(0xFFFFE69A),
     secondary = Color(0xFFB7C6E8),
     onSecondary = Color(0xFF111722),
     secondaryContainer = Color(0xFF273043),

@@ -19,6 +19,7 @@ import android.widget.ScrollView
 import android.widget.TextView
 import android.widget.Toast
 import androidx.activity.ComponentActivity
+import androidx.activity.SystemBarStyle
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.layout.fillMaxSize
@@ -60,7 +61,13 @@ class MainActivity : ComponentActivity() {
 
         try {
             Log.i(CrashLog.TAG, "MainActivity.onCreate — starting UI")
-            enableEdgeToEdge()
+            // The app is dark-only, so the bars are always dark. The default style
+            // follows the phone's light/dark setting and paints a light grey scrim
+            // behind 3-button navigation on a light-mode phone.
+            enableEdgeToEdge(
+                statusBarStyle = SystemBarStyle.dark(Color.TRANSPARENT),
+                navigationBarStyle = SystemBarStyle.dark(Color.TRANSPARENT),
+            )
             window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
             setContent {
                 StarmapTheme {

@@ -5,6 +5,7 @@ import android.net.Uri
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -193,8 +194,14 @@ private fun UpdateAvailableSection(
 
     Column {
         Text("Version ${release.versionName} is available!", fontSize = 15.sp)
-        if (release.notes.isNotBlank()) {
-            Text(release.notes.take(400), fontSize = 12.sp, modifier = Modifier.padding(top = 6.dp))
+        val notes = remember(release.notes) { ReleaseNotes.parse(release.notes) }
+        if (notes.text.isNotBlank()) {
+            Text(notes.text.take(400), fontSize = 12.sp, modifier = Modifier.padding(top = 6.dp))
+        }
+        notes.changelogUrl?.let { url ->
+            TextButton(onClick = { openUrl(url) }, contentPadding = PaddingValues(0.dp)) {
+                Text("See what changed ↗", fontSize = 13.sp)
+            }
         }
         Spacer(Modifier.height(10.dp))
 
@@ -247,5 +254,33 @@ private fun UpdateAvailableSection(
                 }
             }
         }
+    }
+}
+
+/**
+ * GitHub release bodies are Markdown, and the auto-generated ones are mostly a
+ * "**Full Changelog**: <compare url>" line. Shown raw, that reads as noise, so strip
+ * the Markdown markers and lift the compare link out into its own button.
+ */
+internal object ReleaseNotes {
+    data class Parsed(val text: String, val changelogUrl: String?)
+
+    private val changelog = Regex("""\*{0,2}Full Changelog\*{0,2}:?\s*(https?://\S+)""", RegexOption.IGNORE_CASE)
+
+    fun parse(markdown: String): Parsed {
+        val url = changelog.find(markdown)?.groupValues?.get(1)
+        val text = markdown
+            .replace(changelog, "")
+            .lines()
+            .map { line ->
+                line.trim()
+                    .replace(Regex("""^#{1,6}\s*"""), "")
+                    .replace(Regex("""^[*-]\s+"""), "• ")
+                    .replace(Regex("""\*\*|__|`"""), "")
+                    .replace(Regex("""\[([^\]]+)]\([^)]+\)"""), "$1")
+            }
+            .filter { it.isNotBlank() }
+            .joinToString("\n")
+        return Parsed(text, url)
     }
 }

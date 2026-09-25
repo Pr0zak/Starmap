@@ -30,6 +30,13 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.width
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.material3.CircularProgressIndicator
+import kotlinx.coroutines.delay
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -311,16 +318,31 @@ private fun SkyScreen(
         }
     }
 
-    // Live heading read for the HUD.
+    // Live view direction for the HUD: read from what the sky was last drawn with,
+    // so it follows manual dragging as well as the sensors.
     var heading by remember { mutableFloatStateOf(0f) }
+    var viewAlt by remember { mutableFloatStateOf(0f) }
     var accuracy by remember { mutableIntStateOf(0) }
     LaunchedEffect(Unit) {
         while (true) {
-            heading = viewModel.orientation.basis.azimuthDeg
+            heading = viewModel.viewDirection.azimuthDeg
+            viewAlt = viewModel.viewDirection.altitudeDeg
             accuracy = viewModel.orientation.accuracy
             awaitFrame()
         }
     }
+
+    // The manual-mode hint shows for a few seconds after switching to manual, then
+    // fades: the gold hand button already says which mode is on.
+    var manualHintVisible by remember { mutableStateOf(false) }
+    LaunchedEffect(manualMode) {
+        manualHintVisible = manualMode
+        if (manualMode) {
+            delay(4_000)
+            manualHintVisible = false
+        }
+    }
+    val loadingCatalog by viewModel.loading
 
     // Which top-level mode the switcher reflects, and how to move between them.
     // Radar is its own full-screen view; Sky and AR share the star-field Box below.
@@ -373,27 +395,7 @@ private fun SkyScreen(
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 Column(modifier = Modifier.weight(1f)) {
-                    Box(
-                        modifier = Modifier
-                            .glass(RoundedCornerShape(12.dp))
-                            .padding(horizontal = 12.dp, vertical = 7.dp),
-                    ) {
-                        Text(
-                            text = "${heading.roundToInt()}° ${compassLabel(heading)}",
-                            color = Hud.Text,
-                            fontSize = 20.sp,
-                            fontWeight = FontWeight.SemiBold,
-                        )
-                    }
-                    val hint = when {
-                        manualMode -> "Manual — drag to look around" to Color(0xFFFFD54F)
-                        !viewModel.hasOrientationSensor -> "No sensor — switch to manual look" to Color(0xFFFFB4A0)
-                        accuracy in 0..1 -> "Wave the phone in a figure-8 to calibrate" to Color(0xFFFFD089)
-                        else -> null
-                    }
-                    hint?.let { (t, c) ->
-                        Text(t, color = c, fontSize = 12.sp, modifier = Modifier.padding(start = 4.dp, top = 4.dp))
-                    }
+                    HeadingPill(heading, viewAlt, if (liveTime) null else model?.timeMillis)
                 }
                 HudIconButton(Icons.Filled.PanTool, "Manual look", active = manualMode) {
                     viewModel.toggleManualMode()
@@ -410,6 +412,15 @@ private fun SkyScreen(
             ) {
                 ModeSwitcher(current = currentMode, onSelect = selectMode)
             }
+            val hint = when {
+                loadingCatalog || (location != null && model == null) -> HudHint("Loading the star catalogue…", Hud.TextDim, busy = true)
+                manualMode && manualHintVisible -> HudHint("Drag to look around", Hud.GoldSoft)
+                manualMode -> null
+                !viewModel.hasOrientationSensor -> HudHint("No motion sensor · tap the hand to look around by dragging", Color(0xFFFFB4A0))
+                accuracy in 0..1 -> HudHint("Wave the phone in a figure-8 to calibrate", Color(0xFFFFD089))
+                else -> null
+            }
+            HintChip(hint)
             SearchBanner(viewModel, model)
         }
 
@@ -418,6 +429,7 @@ private fun SkyScreen(
             modifier = Modifier
                 .align(Alignment.BottomCenter)
                 .fillMaxWidth()
+                .navigationBarsPadding()
                 .padding(16.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
@@ -524,6 +536,73 @@ private fun SkyScreen(
                 },
                 onClose = { viewModel.closeObjectDetail() },
             )
+        }
+    }
+}
+
+/**
+ * The heading pill: which way the view points (true north), the altitude it's aimed at,
+ * and, while time-travelling, the moment being shown, so a screenshot of a past or
+ * future sky can't be mistaken for the live one.
+ */
+@Composable
+private fun HeadingPill(azimuth: Float, altitude: Float, travelMillis: Long?) {
+    val fmt = remember { java.text.SimpleDateFormat("EEE d MMM · h:mm a", java.util.Locale.getDefault()) }
+    val az = azimuth.roundToInt() % 360
+    val alt = altitude.roundToInt()
+    Column(
+        modifier = Modifier
+            .glass(RoundedCornerShape(12.dp))
+            .padding(start = 12.dp, end = 12.dp, top = 5.dp, bottom = 6.dp),
+    ) {
+        Text(
+            text = "$az° ${compassLabel(az.toFloat())}",
+            color = Hud.Text,
+            fontSize = 20.sp,
+            fontWeight = FontWeight.SemiBold,
+            lineHeight = 22.sp,
+        )
+        Text(
+            text = (if (alt >= 0) "↑ $alt°" else "↓ ${-alt}°") +
+                (travelMillis?.let { "  ·  " + fmt.format(java.util.Date(it)) } ?: ""),
+            color = if (travelMillis != null) Hud.Gold else Hud.TextDim,
+            fontSize = 11.sp,
+            lineHeight = 13.sp,
+        )
+    }
+}
+
+private data class HudHint(val text: String, val color: Color, val busy: Boolean = false)
+
+/** A small glass chip under the mode switcher for transient status and setup hints. */
+@Composable
+private fun HintChip(hint: HudHint?) {
+    // Keep showing the last hint while it fades out.
+    var last by remember { mutableStateOf(hint) }
+    if (hint != null) last = hint
+    AnimatedVisibility(
+        visible = hint != null,
+        enter = fadeIn(),
+        exit = fadeOut(),
+        modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+    ) {
+        val h = last ?: return@AnimatedVisibility
+        Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+            Row(
+                modifier = Modifier
+                    .glass(RoundedCornerShape(50))
+                    .padding(horizontal = 12.dp, vertical = 6.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                if (h.busy) {
+                    CircularProgressIndicator(
+                        color = Hud.Gold, strokeWidth = 2.dp,
+                        modifier = Modifier.size(12.dp),
+                    )
+                    Spacer(Modifier.width(8.dp))
+                }
+                Text(h.text, color = h.color, fontSize = 12.sp)
+            }
         }
     }
 }

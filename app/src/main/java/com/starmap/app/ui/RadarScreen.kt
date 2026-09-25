@@ -510,14 +510,10 @@ fun RadarView(
             ) {
                 ModeSwitcher(current = SkyMode.Radar, onSelect = onSelectMode)
                 Spacer(Modifier.weight(1f))
-                HudIconButton(Icons.Filled.Layers, "Basemap layer", active = basemap != 0) {
+                // Aircraft / landmark toggles live in the layers panel: with them here
+                // the row was wider than a 411 dp phone and clipped the last button.
+                HudIconButton(Icons.Filled.Layers, "Layers", active = showBasemapMenu || basemap != 0 || weather != 0) {
                     showBasemapMenu = !showBasemapMenu
-                }
-                HudIconButton(Icons.Filled.Flight, "Aircraft", active = showAircraft) {
-                    viewModel.setBool(BoolSetting.RadarAircraft, !showAircraft)
-                }
-                HudIconButton(Icons.Filled.Place, "Landmarks", active = showPois) {
-                    viewModel.setBool(BoolSetting.RadarLandmarks, !showPois)
                 }
                 HudIconButton(Icons.Filled.Explore, "Heading up", active = headingUp) {
                     viewModel.setBool(BoolSetting.RadarHeadingUp, !headingUp)
@@ -535,6 +531,18 @@ fun RadarView(
                             ) {},
                     ) {
                         Column(Modifier.padding(14.dp)) {
+                            Text("SHOW", color = Color(0xFF8B97A8), fontSize = 10.sp)
+                            Spacer(Modifier.height(8.dp))
+                            Row {
+                                BasemapChip("Aircraft", showAircraft) {
+                                    viewModel.setBool(BoolSetting.RadarAircraft, !showAircraft)
+                                }
+                                Spacer(Modifier.width(6.dp))
+                                BasemapChip("Landmarks", showPois) {
+                                    viewModel.setBool(BoolSetting.RadarLandmarks, !showPois)
+                                }
+                            }
+                            Spacer(Modifier.height(16.dp))
                             Text("BASEMAP", color = Color(0xFF8B97A8), fontSize = 10.sp)
                             Spacer(Modifier.height(8.dp))
                             Row {

@@ -41,6 +41,24 @@ data class IdentifiedObject(
     val aircraftHex: String? = null,
 )
 
+/**
+ * Where the sky view is aimed right now, relative to true north. SkyCanvas writes it
+ * every frame from the camera it actually drew with, so the HUD shows the same
+ * direction in sensor and manual (drag) modes alike.
+ */
+class ViewDirection {
+    @Volatile var azimuthDeg = 0f
+        private set
+    @Volatile var altitudeDeg = 0f
+        private set
+
+    /** Update from a unit look vector in east-north-up coordinates. */
+    fun set(look: FloatArray) {
+        azimuthDeg = ((Math.toDegrees(kotlin.math.atan2(look[0].toDouble(), look[1].toDouble())) + 360.0) % 360.0).toFloat()
+        altitudeDeg = Math.toDegrees(kotlin.math.asin(look[2].coerceIn(-1f, 1f).toDouble())).toFloat()
+    }
+}
+
 /** Progress of pre-downloading object info for offline use. */
 sealed interface OfflineSync {
     object Idle : OfflineSync
@@ -60,6 +78,7 @@ sealed interface ObjectDetail {
 class SkyViewModel(app: Application) : AndroidViewModel(app) {
 
     val orientation = OrientationProvider(app)
+    val viewDirection = ViewDirection()
     private val location = LocationProvider(app)
     private val settingsRepo = SettingsRepository(app)
     val catalogManager = CatalogManager(app)
