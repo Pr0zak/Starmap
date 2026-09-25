@@ -40,7 +40,7 @@ private data class WeatherGrid(
  * [mode] is 1 = rain, 2 = clouds. [onBuffered] reports prefetch progress (loaded, total).
  */
 @Composable
-fun RadarWeatherLayer(
+internal fun RadarWeatherLayer(
     latitude: Double,
     longitude: Double,
     maxRangeKm: Float,
@@ -52,6 +52,7 @@ fun RadarWeatherLayer(
     frames: List<WeatherTiles.Frame>,
     frameIndex: Int,
     onBuffered: (loaded: Int, total: Int) -> Unit,
+    insets: RadarInsets,
     modifier: Modifier = Modifier,
 ) {
     val density = LocalDensity.current.density
@@ -72,14 +73,14 @@ fun RadarWeatherLayer(
     }
 
     // Round the centre to ~1 km so GPS jitter doesn't keep restarting the prefetch.
-    LaunchedEffect(sizePx, keyRound(latitude), keyRound(longitude), maxRangeKm, mode, host, framesKey) {
+    LaunchedEffect(sizePx, insets, keyRound(latitude), keyRound(longitude), maxRangeKm, mode, host, framesKey) {
         bitmaps.values.forEach { if (!it.isRecycled) it.recycle() }
         bitmaps.clear()
         wg = null
         onBuffered(0, frames.size)
         if (w <= 0f || h <= 0f || host == null || frames.isEmpty()) return@LaunchedEffect
 
-        val g = radarGeometry(w, h, density)
+        val g = radarGeometry(w, h, insets)
         val metersPerPixel = maxRangeKm * 1000.0 / g.r
         val desiredZoom = (ln(156543.03392 * cos(Math.toRadians(latitude)) / metersPerPixel) / ln(2.0))
             .coerceIn(2.0, 12.0)

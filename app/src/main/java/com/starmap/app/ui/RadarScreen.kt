@@ -1,5 +1,22 @@
 package com.starmap.app.ui
 
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.asPaddingValues
+import androidx.compose.foundation.layout.navigationBars
+import androidx.compose.foundation.layout.statusBars
+import androidx.compose.material.icons.filled.NotificationsActive
+import androidx.compose.material.icons.filled.Visibility
+import androidx.compose.runtime.mutableLongStateOf
+import androidx.compose.ui.graphics.PathEffect
+import androidx.compose.ui.graphics.drawscope.rotate
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalHapticFeedback
+import com.starmap.app.aircraft.RadarKind
+import com.starmap.app.settings.SettingsRepository.IntSetting
+import com.starmap.app.sky.RadarMath
+import com.starmap.app.sky.positionInto
+import kotlin.math.atan2
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.Canvas
@@ -155,9 +172,13 @@ fun RadarView(
     val curFrame = weatherFrames.getOrNull(frameIdx.coerceIn(0, (weatherFrames.size - 1).coerceAtLeast(0)))
 
     val azState = remember { mutableFloatStateOf(0f) }
+    // Frame clock: the scope redraws every frame for dead-reckoning, the sweep and the
+    // selection pulse, even when the heading doesn't change.
+    val frameClock = remember { mutableLongStateOf(0L) }
     LaunchedEffect(Unit) {
         while (true) {
             azState.floatValue = viewModel.orientation.basis.azimuthDeg
+            frameClock.longValue++
             awaitFrame()
         }
     }
@@ -175,7 +196,27 @@ fun RadarView(
     val aircraft = model?.aircraft ?: emptyList()
     // Sort once per aircraft-list change rather than every frame (rangeKm is stable
     // between fetches); reuse one Path for the chevrons.
-    val sortedAircraft = remember(aircraft) { aircraft.sortedBy { it.rangeKm } }
+    val kinds = settings.radarKinds
+    val sortedAircraft = remember(aircraft, kinds) {
+        aircraft.filter { it.kind and kinds != 0 || it.isEmergency }.sortedBy { it.rangeKm }
+    }
+    val unit = RadarMath.Unit.of(settings.radarUnits)
+    val labelMode = settings.radarLabelMode
+    // Closest approach for each plane, worked out once per ADS-B update.
+    val approaches = remember(sortedAircraft) {
+        val now = System.currentTimeMillis()
+        val pos = FloatArray(3)
+        sortedAircraft.associate { ac ->
+            ac.positionInto(now, pos)
+            ac.icaoHex to RadarMath.closestApproach(pos[0], pos[1], ac.groundSpeedKts, ac.trackDeg)
+        }
+    }
+    // The pass worth pointing out: nearest approach within 15 minutes and 20 km.
+    val nextPass = remember(approaches) {
+        sortedAircraft.mapNotNull { ac -> approaches[ac.icaoHex]?.let { ac to it } }
+            .filter { (_, ap) -> ap.minutes <= 15f && ap.distanceKm <= 20f }
+            .minByOrNull { it.second.distanceKm }
+    }
     val acPath = remember { Path() }
     val landmarks = model?.landmarks ?: emptyList()
     val selAc by viewModel.selectedAircraft
@@ -188,6 +229,49 @@ fun RadarView(
     LaunchedEffect(selectedHex) {
         detailsHidden = false
         if (selectedHex != null) listExpanded = false
+    }
+
+    // Keep the scope clear of the top controls and the collapsed drawer (and the side
+    // view when it's on). Every layer uses the same insets so they stay aligned.
+    val topInset = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
+    val bottomInset = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
+    val insets = with(LocalDensity.current) {
+        RadarInsets(
+            top = (topInset + 60.dp).toPx(),
+            bottom = (bottomInset + 104.dp + if (settings.radarProfile) 112.dp else 0.dp).toPx(),
+        )
+    }
+
+    // Heads-up: a banner (and a short buzz) when something will pass close, flies low
+    // nearby, or a helicopter or emergency shows up. Each plane is announced once per reason.
+    var headsUp by remember { mutableStateOf<String?>(null) }
+    val announced = remember { HashSet<String>() }
+    val haptics = LocalHapticFeedback.current
+    LaunchedEffect(sortedAircraft, settings.radarHeadsUp, settings.radarHeadsUpNm) {
+        if (!settings.radarHeadsUp) return@LaunchedEffect
+        val obsAltM = model?.location?.altitude ?: 0.0
+        val closeKm = settings.radarHeadsUpNm * 1.852f
+        val msgs = sortedAircraft.mapNotNull { ac ->
+            val name = ac.callsign.ifBlank { ac.registration.ifBlank { "An aircraft" } }
+            val ap = approaches[ac.icaoHex]
+            val aglFt = (ac.altitudeMeters - obsAltM) / 0.3048
+            when {
+                ac.isEmergency -> "emg:${ac.icaoHex}" to "$name is squawking ${ac.squawk.ifBlank { "emergency" }}"
+                ap != null && ap.distanceKm <= closeKm && ap.minutes <= 5f ->
+                    "cpa:${ac.icaoHex}" to "$name passes ${unit.format(ap.distanceKm.toDouble())} away in ${ap.minutes.roundToInt().coerceAtLeast(1)} min"
+                aglFt < 3000 && ac.rangeKm < 10 && ac.altitudeMeters > 30 ->
+                    "low:${ac.icaoHex}" to "$name is low: ${"%,d".format(aglFt.roundToInt().coerceAtLeast(0))} ft above you, ${unit.format(ac.rangeKm)} away"
+                ac.kind == RadarKind.HELICOPTER && ac.rangeKm < 15 ->
+                    "heli:${ac.icaoHex}" to "Helicopter $name ${unit.format(ac.rangeKm)} away"
+                else -> null
+            }
+        }.filter { announced.add(it.first) }
+        msgs.firstOrNull()?.let { (_, text) ->
+            headsUp = if (msgs.size > 1) "$text (+${msgs.size - 1} more)" else text
+            haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+            delay(6_000)
+            headsUp = null
+        }
     }
 
     val hits = remember { mutableListOf<Pair<Offset, AircraftRender>>() }
@@ -229,6 +313,7 @@ fun RadarView(
                 bearing = bearingProvider,
                 mode = basemap,
                 opacity = basemapOpacity,
+                insets = insets,
             )
         }
         if (weather != 0 && fix != null && weatherFrames.isNotEmpty()) {
@@ -244,6 +329,7 @@ fun RadarView(
                 frames = weatherFrames,
                 frameIndex = frameIdx,
                 onBuffered = { loaded, total -> weatherLoaded = loaded; weatherTotal = total },
+                insets = insets,
             )
         }
         Canvas(
@@ -251,6 +337,14 @@ fun RadarView(
                 .pointerInput(Unit) {
                     detectTapGestures(
                         onTap = { viewModel.selectAircraft(nearestTo(it)); detailsHidden = false },
+                        // Zoom so the nearest ten aircraft fill the scope.
+                        onDoubleTap = {
+                            val far = sortedAircraft.take(10).maxOfOrNull { it.rangeKm }
+                            if (far != null) {
+                                val need = far * 0.539957 * 1.15
+                                rangeNm = (NICE_RANGES_NM.firstOrNull { it >= need } ?: 150f)
+                            }
+                        },
                         onLongPress = { p ->
                             nearestTo(p)?.let {
                                 viewModel.selectAircraft(it)
@@ -265,6 +359,7 @@ fun RadarView(
                     }
                 },
         ) {
+            frameClock.longValue // redraw every frame
             hits.clear()
             labelPaint.textSize = 10f * density
             val az = azState.floatValue
@@ -272,7 +367,7 @@ fun RadarView(
             val a = if (headingUp) Math.toRadians(az.toDouble()) else 0.0
             val ca = cos(a)
             val sa = sin(a)
-            val geom = radarGeometry(size.width, size.height, density)
+            val geom = radarGeometry(size.width, size.height, insets)
             val cx = geom.cx
             val cy = geom.cy
             val r = geom.r
@@ -294,19 +389,21 @@ fun RadarView(
                 drawRect(Color(0xFF04070B), alpha = (0.18f + 0.42f * mapVis).coerceIn(0f, 0.62f))
             }
 
-            // Range rings + distance labels.
+            // Range rings, labelled along the north-east diagonal in the chosen unit.
             val ringColor = Color(0xFF2E8B57)
             for (i in 1..4) {
-                drawCircle(ringColor, r * i / 4f, Offset(cx, cy), style = Stroke(1.2f * density))
+                val rr = r * i / 4f
+                drawCircle(ringColor, rr, Offset(cx, cy), style = Stroke(1.2f * density))
+                val v = unit.fromKm(maxRangeKm * i / 4.0)
                 drawContext.canvas.nativeCanvas.drawText(
-                    "${(rangeNm * i / 4f).roundToInt()}",
-                    cx + 3f * density, cy - r * i / 4f - 2f * density, ringPaint,
+                    if (v < 10) "%.1f".format(v) else "${v.roundToInt()}",
+                    cx + rr * 0.7071f + 3f * density, cy - rr * 0.7071f - 3f * density, ringPaint,
                 )
             }
 
             // Cardinal spokes + letters (rotate with heading-up).
             ringPaint.textAlign = android.graphics.Paint.Align.CENTER
-            val rim = r + 13f * density
+            val rim = r - 12f * density // letters sit just inside the rim
             for ((lbl, brg) in listOf("N" to 0.0, "E" to 90.0, "S" to 180.0, "W" to 270.0)) {
                 val ang = Math.toRadians(brg) - a
                 drawLine(
@@ -329,10 +426,67 @@ fun RadarView(
                     strokeWidth = 1f * density,
                 )
             }
-            drawContext.canvas.nativeCanvas.drawText(
-                "HDG ${az.roundToInt() % 360}°", cx, cy - r - 22f * density, ringPaint,
-            )
+            if (headingUp) {
+                drawContext.canvas.nativeCanvas.drawText(
+                    "HDG ${az.roundToInt() % 360}°", cx, cy - r + 28f * density, ringPaint,
+                )
+            }
             ringPaint.textAlign = android.graphics.Paint.Align.LEFT
+
+            // Where the phone (and the sky view) is pointing, as a faint wedge.
+            run {
+                val lookAz = if (viewModel.hasOrientationSensor) az else viewModel.viewDirection.azimuthDeg
+                val vFov = Math.toRadians(settings.fovDeg.toDouble())
+                val hFov = Math.toDegrees(2 * kotlin.math.atan(kotlin.math.tan(vFov / 2) * size.width / size.height)).toFloat()
+                val start = lookAz - hFov / 2f - Math.toDegrees(a).toFloat() - 90f
+                drawArc(
+                    Hud.Gold.copy(alpha = 0.07f), start, hFov, useCenter = true,
+                    topLeft = Offset(cx - r, cy - r), size = Size(2 * r, 2 * r),
+                )
+                for (edge in listOf(start, start + hFov)) {
+                    val er = Math.toRadians(edge.toDouble())
+                    drawLine(
+                        Hud.Gold.copy(alpha = 0.35f), Offset(cx, cy),
+                        Offset(cx + (cos(er) * r).toFloat(), cy + (sin(er) * r).toFloat()),
+                        strokeWidth = 1f * density,
+                        pathEffect = PathEffect.dashPathEffect(floatArrayOf(4f * density, 5f * density)),
+                    )
+                }
+            }
+
+            // Optional sweep beam, one turn every six seconds.
+            val sweepDeg = if (settings.radarSweep) (System.currentTimeMillis() % 6000L) / 6000f * 360f else Float.NaN
+            if (!sweepDeg.isNaN()) {
+                rotate(sweepDeg - 90f, Offset(cx, cy)) {
+                    drawArc(
+                        Brush.sweepGradient(
+                            0f to Color.Transparent, 0.885f to Color.Transparent, 1f to Color(0x553EE08A),
+                            center = Offset(cx, cy),
+                        ),
+                        startAngle = -42f, sweepAngle = 42f, useCenter = true,
+                        topLeft = Offset(cx - r, cy - r), size = Size(2 * r, 2 * r),
+                    )
+                    drawLine(Color(0x996BFFB0), Offset(cx, cy), Offset(cx + r, cy), strokeWidth = 1.5f * density)
+                }
+            }
+
+            // Sun and Moon bearings on the rim.
+            fun rimMarker(enu: FloatArray?, label: String, color: Color) {
+                if (enu == null) return
+                val brg = atan2(enu[0].toDouble(), enu[1].toDouble()) - a
+                val p = Offset(cx + (sin(brg) * r).toFloat(), cy - (cos(brg) * r).toFloat())
+                drawCircle(Color(0xFF05080C), 8f * density, p)
+                drawCircle(color.copy(alpha = if (enu[2] < 0f) 0.45f else 1f), 6f * density, p)
+                labelPaint.color = color.toArgb()
+                val inward = Offset(cx - p.x, cy - p.y).let { it / it.getDistance().coerceAtLeast(1f) }
+                val tw = labelPaint.measureText(label)
+                drawContext.canvas.nativeCanvas.drawText(
+                    label + if (enu[2] < 0f) " ↓" else "",
+                    p.x + inward.x * 16f * density - tw / 2f, p.y + inward.y * 16f * density + 4f * density, labelPaint,
+                )
+            }
+            rimMarker(model?.sun?.enu, "Sun", Color(0xFFFFB74D))
+            rimMarker(model?.moon?.enu, "Moon", Color(0xFFCFD8DC))
 
             drawCircle(Color(0xFFD8E0F0), 3f * density, Offset(cx, cy))
 
@@ -389,6 +543,31 @@ fun RadarView(
                 val o = proj(eKm, nKm)
                 hits.add(o to ac)
                 val col = aircraftColor(ac)
+                // Afterglow just behind the sweep beam.
+                if (!sweepDeg.isNaN()) {
+                    val blipDeg = ((Math.toDegrees(atan2((o.x - cx).toDouble(), (cy - o.y).toDouble())) + 360.0) % 360.0).toFloat()
+                    val behind = ((sweepDeg - blipDeg) % 360f + 360f) % 360f
+                    if (behind < 50f) drawCircle(col.copy(alpha = 0.45f * (1f - behind / 50f)), 11f * density, o)
+                }
+                // Closest approach, for the pass worth pointing out and the selected plane.
+                if (ac.icaoHex == selectedHex || ac.icaoHex == nextPass?.first?.icaoHex) {
+                    RadarMath.closestApproach(eKm, nKm, ac.groundSpeedKts, ac.trackDeg)?.let { ap ->
+                        val cp = proj(ap.eastKm, ap.northKm)
+                        val dash = PathEffect.dashPathEffect(floatArrayOf(3f * density, 4f * density))
+                        drawLine(Hud.Gold.copy(alpha = 0.8f), o, cp, strokeWidth = 1.2f * density, pathEffect = dash)
+                        drawLine(Hud.Gold.copy(alpha = 0.4f), Offset(cx, cy), cp, strokeWidth = 1f * density)
+                        drawCircle(Hud.Gold, 5f * density, cp, style = Stroke(1.6f * density))
+                        labelPaint.color = Color(0xFFFFE08A).toArgb()
+                        val txt = "${unit.format(ap.distanceKm.toDouble())} · ${ap.minutes.roundToInt().coerceAtLeast(1)} min"
+                        drawContext.canvas.nativeCanvas.drawText(txt, cp.x + 8f * density, cp.y - 6f * density, labelPaint)
+                        taken.add(
+                            android.graphics.RectF(
+                                cp.x + 8f * density, cp.y - 16f * density,
+                                cp.x + 8f * density + labelPaint.measureText(txt), cp.y - 3f * density,
+                            ),
+                        )
+                    }
+                }
 
                 // Trail polyline (positions, fading toward the oldest sample).
                 val tr = ac.trail
@@ -432,36 +611,67 @@ fun RadarView(
                         Color(0xFFFFD54F).copy(alpha = 0.45f + 0.55f * pulse),
                         s * (1.7f + 0.7f * pulse), o, style = Stroke(1.6f * density),
                     )
+                    // Where it will be in 1, 2 and 5 minutes on its current heading.
+                    val kmPerMin = (ac.groundSpeedKts * 1.852 / 60.0).toFloat()
+                    if (kmPerMin > 0.2f) {
+                        val end = dir(theta, kmPerMin * 5f * scale)
+                        drawLine(
+                            Hud.Gold.copy(alpha = 0.6f), o, end, strokeWidth = 1.2f * density,
+                            pathEffect = PathEffect.dashPathEffect(floatArrayOf(2f * density, 5f * density)),
+                        )
+                        labelPaint.color = Color(0xFFFFE08A).toArgb()
+                        for (m in intArrayOf(1, 2, 5)) {
+                            val tp = dir(theta, kmPerMin * m * scale)
+                            drawCircle(Hud.Gold, 3f * density, tp)
+                            drawContext.canvas.nativeCanvas.drawText("${m}m", tp.x + 5f * density, tp.y + 12f * density, labelPaint)
+                        }
+                    }
                 }
                 val vr = when {
                     ac.verticalRateFpm > 200 -> " ↑"
                     ac.verticalRateFpm < -200 -> " ↓"
                     else -> ""
                 }
-                if (ac.icaoHex == selectedHex) {
+                // The selected plane's card already says all this, so its block only
+                // shows while the card is closed.
+                val cardOpen = selAc != null && !detailsHidden
+                if (ac.icaoHex == selectedHex && cardOpen) {
+                    // nothing: the ring and the card identify it
+                } else if (ac.icaoHex == selectedHex || labelMode == 2) {
                     // Full data block beside the selected blip.
                     val lines = buildList {
                         add(ac.callsign.ifBlank { ac.registration.ifBlank { "Aircraft" } })
                         add("${ac.typeCode.ifBlank { "—" }}  FL${(ft / 100).roundToInt()}$vr")
-                        add("${ac.groundSpeedKts.roundToInt()} kt  ·  ${(ac.rangeKm * 0.539957).roundToInt()} nm")
-                        selRoute?.let {
-                            val rt = "${it.origin.code}→${it.destination.code}"
-                            if (rt.length > 1) add(rt)
+                        add("${ac.groundSpeedKts.roundToInt()} kt  ·  ${unit.format(ac.rangeKm)}")
+                        if (ac.icaoHex == selectedHex) {
+                            selRoute?.let {
+                                val rt = "${it.origin.code}→${it.destination.code}"
+                                if (rt.length > 1) add(rt)
+                            }
                         }
                     }
-                    labelPaint.textSize = 11f * density
+                    labelPaint.textSize = (if (ac.icaoHex == selectedHex) 11f else 9.5f) * density
                     var bw = 0f
                     for (ln in lines) bw = maxOf(bw, labelPaint.measureText(ln))
                     val lh = 13f * density
                     val bx = (o.x + 10f * density)
                         .coerceAtMost(size.width - bw - 6f * density).coerceAtLeast(4f * density)
                     val by = (o.y - 8f * density - lines.size * lh).coerceAtLeast(12f * density)
+                    val blockRect = android.graphics.RectF(
+                        bx - 4f * density, by - 11f * density,
+                        bx + bw + 4f * density, by + lines.size * lh,
+                    )
+                    // Unselected blocks (full-label mode) skip rather than overlap.
+                    if (ac.icaoHex != selectedHex && taken.any { android.graphics.RectF.intersects(it, blockRect) }) {
+                        labelPaint.textSize = 10f * density
+                        continue
+                    }
                     drawRect(
                         Color(0xD8090D12),
                         topLeft = Offset(bx - 4f * density, by - 11f * density),
                         size = Size(bw + 8f * density, lines.size * lh + 6f * density),
                     )
-                    labelPaint.color = Color(0xFFFFE082).toArgb()
+                    labelPaint.color = (if (ac.icaoHex == selectedHex) Color(0xFFFFE082) else col).toArgb()
                     var yy = by
                     for (ln in lines) {
                         drawContext.canvas.nativeCanvas.drawText(ln, bx, yy, labelPaint)
@@ -476,7 +686,7 @@ fun RadarView(
                     labelPaint.textSize = 10f * density
                 } else {
                     val name = ac.callsign.ifBlank { ac.typeCode.ifBlank { "?" } }
-                    val text = "$name  FL${(ft / 100).roundToInt()}$vr"
+                    val text = if (labelMode == 0) name else "$name  FL${(ft / 100).roundToInt()}$vr"
                     val tw = labelPaint.measureText(text)
                     val lx = o.x + 7f * density
                     val ly = o.y - 4f * density
@@ -520,9 +730,9 @@ fun RadarView(
             }
             ringPaint.textAlign = android.graphics.Paint.Align.CENTER
             drawContext.canvas.nativeCanvas.drawText(
-                "${rangeNm.roundToInt()} nm  ·  pinch to zoom" +
+                unit.format(maxRangeKm.toDouble()) +
                     (if (hiddenLabels > 0) "  ·  $hiddenLabels names hidden" else ""),
-                cx, cy + r + 20f * density, ringPaint,
+                cx, cy + r - 26f * density, ringPaint,
             )
             ringPaint.textAlign = android.graphics.Paint.Align.LEFT
         }
@@ -560,7 +770,7 @@ fun RadarView(
                 Spacer(Modifier.height(6.dp))
                 Box(Modifier.fillMaxWidth()) {
                     Box(
-                        modifier = Modifier.align(Alignment.TopCenter).width(232.dp)
+                        modifier = Modifier.align(Alignment.TopCenter).width(280.dp)
                             .glass(RoundedCornerShape(14.dp))
                             .clickable(
                                 interactionSource = remember { MutableInteractionSource() },
@@ -579,6 +789,19 @@ fun RadarView(
                                     viewModel.setBool(BoolSetting.RadarLandmarks, !showPois)
                                 }
                             }
+                            Row {
+                                BasemapChip("Heads-up", settings.radarHeadsUp) {
+                                    viewModel.setBool(BoolSetting.RadarHeadsUp, !settings.radarHeadsUp)
+                                }
+                                Spacer(Modifier.width(6.dp))
+                                BasemapChip("Side view", settings.radarProfile) {
+                                    viewModel.setBool(BoolSetting.RadarProfile, !settings.radarProfile)
+                                }
+                                Spacer(Modifier.width(6.dp))
+                                BasemapChip("Sweep", settings.radarSweep) {
+                                    viewModel.setBool(BoolSetting.RadarSweep, !settings.radarSweep)
+                                }
+                            }
                             Spacer(Modifier.height(16.dp))
                             Text("BASEMAP", color = Color(0xFF8B97A8), fontSize = 10.sp)
                             Spacer(Modifier.height(8.dp))
@@ -588,6 +811,13 @@ fun RadarView(
                                 BasemapChip("Satellite", basemap == 1) { viewModel.setRadarBasemap(1) }
                                 Spacer(Modifier.width(6.dp))
                                 BasemapChip("Streets", basemap == 2) { viewModel.setRadarBasemap(2) }
+                            }
+                            Row {
+                                BasemapChip("Dark", basemap == 3) { viewModel.setRadarBasemap(3) }
+                                Spacer(Modifier.width(6.dp))
+                                BasemapChip("Runways & wind", settings.radarAirports) {
+                                    viewModel.setBool(BoolSetting.RadarAirports, !settings.radarAirports)
+                                }
                             }
                             if (basemap != 0) {
                                 Spacer(Modifier.height(12.dp))
@@ -615,6 +845,8 @@ fun RadarView(
                                 BasemapChip("Off", weather == 0) { viewModel.setRadarWeather(0) }
                                 Spacer(Modifier.width(6.dp))
                                 BasemapChip("Rain", weather == 1) { viewModel.setRadarWeather(1) }
+                                Spacer(Modifier.width(6.dp))
+                                BasemapChip("Clouds", weather == 2) { viewModel.setRadarWeather(2) }
                             }
                             if (weather != 0) {
                                 Spacer(Modifier.height(12.dp))
@@ -645,9 +877,42 @@ fun RadarView(
                     }
                 }
             }
+            Spacer(Modifier.height(8.dp))
+            // Heads-up banner, else the next close pass as a tappable chip.
+            val banner = headsUp
+            if (banner != null) {
+                RadarChip(banner, Icons.Filled.NotificationsActive, Hud.Gold) {}
+            } else {
+                nextPass?.let { (ac, ap) ->
+                    val (_, apAz) = RadarMath.lookAngles(floatArrayOf(ap.eastKm, ap.northKm, 0f).let { v ->
+                        val len = hypot(v[0], v[1]).coerceAtLeast(1e-3f); floatArrayOf(v[0] / len, v[1] / len, 0f)
+                    })
+                    RadarChip(
+                        "${ac.callsign.ifBlank { ac.registration }} passes ${unit.format(ap.distanceKm.toDouble())} " +
+                            "${compassLabel(apAz)} in ${ap.minutes.roundToInt().coerceAtLeast(1)} min",
+                        Icons.Filled.Visibility, Hud.GoldSoft,
+                    ) { viewModel.selectAircraft(ac) }
+                }
+            }
         }
 
         Column(modifier = Modifier.align(Alignment.BottomCenter).fillMaxWidth()) {
+            // Label detail and units, tucked just above the drawer (hidden under a card).
+            if (selAc == null || detailsHidden) Row(
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 6.dp),
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                SmallToggle("Labels: " + listOf("callsign", "+ altitude", "full")[labelMode]) {
+                    viewModel.setInt(IntSetting.RadarLabelMode, (labelMode + 1) % 3)
+                }
+                SmallToggle(unit.label) { viewModel.setInt(IntSetting.RadarUnits, (settings.radarUnits + 1) % 3) }
+                Spacer(Modifier.weight(1f))
+                SmallToggle("Fit") {
+                    sortedAircraft.take(10).maxOfOrNull { it.rangeKm }?.let { far ->
+                        rangeNm = NICE_RANGES_NM.firstOrNull { it >= far * 0.539957 * 1.15 } ?: 150f
+                    }
+                }
+            }
             // The selected aircraft's card sits just above the drawer, so the north
             // half of the scope and the Layers panel stay clear.
             selAc?.takeIf { !detailsHidden }?.let { ac ->
@@ -660,6 +925,12 @@ fun RadarView(
                     onTrack = { viewModel.followAircraft(if (followHex == ac.icaoHex) null else ac.icaoHex) },
                     onClose = { detailsHidden = true },
                     modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
+                    onFindInSky = {
+                        // The sky only draws planes with its aircraft layer on.
+                        if (!settings.showAircraft) viewModel.setBool(BoolSetting.Aircraft, true)
+                        viewModel.followAircraft(ac.icaoHex)
+                        onSelectMode(SkyMode.Sky)
+                    },
                 )
             }
             if (weather != 0) {
@@ -742,6 +1013,41 @@ fun RadarView(
             )
         }
     }
+}
+
+/** Range steps (nm) that "Fit" and double-tap snap to. */
+private val NICE_RANGES_NM = floatArrayOf(5f, 10f, 15f, 20f, 25f, 30f, 40f, 50f, 60f, 80f, 100f, 120f, 150f).toList()
+
+/** A glass status chip centred under the top controls. */
+@Composable
+private fun RadarChip(text: String, icon: ImageVector, tint: Color, onClick: () -> Unit) {
+    Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+        Row(
+            modifier = Modifier
+                .glass(RoundedCornerShape(50))
+                .clickable(onClick = onClick)
+                .padding(start = 10.dp, end = 12.dp, top = 6.dp, bottom = 6.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Icon(icon, contentDescription = null, tint = tint, modifier = Modifier.size(15.dp))
+            Spacer(Modifier.width(7.dp))
+            Text(text, color = Hud.Text, fontSize = 12.5.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        }
+    }
+}
+
+/** A small glass button for radar view options (label detail, units, fit). */
+@Composable
+private fun SmallToggle(label: String, onClick: () -> Unit) {
+    Text(
+        label,
+        color = Hud.TextDim,
+        fontSize = 11.5.sp,
+        modifier = Modifier
+            .glass(RoundedCornerShape(50))
+            .clickable(onClick = onClick)
+            .padding(horizontal = 10.dp, vertical = 5.dp),
+    )
 }
 
 /** Frame time relative to now, e.g. "now", "−40m" (past), "+10m" (nowcast). */

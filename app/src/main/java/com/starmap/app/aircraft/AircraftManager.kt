@@ -22,7 +22,38 @@ class Aircraft(
     val squawk: String,
     val isEmergency: Boolean,
     val emergencyText: String,
+    /** What sort of aircraft, as a [RadarKind] bit. */
+    val kind: Int = RadarKind.OTHER,
 )
+
+/**
+ * Broad aircraft kinds for the radar's filters, as bits so a set of them fits in one
+ * Int setting. Worked out from the ADS-B emitter category and adsb.lol's military flag.
+ */
+object RadarKind {
+    const val AIRLINER = 1
+    const val LIGHT = 2
+    const val HELICOPTER = 4
+    const val MILITARY = 8
+    const val OTHER = 16
+
+    /**
+     * [category] is the ADS-B emitter category ("A1".."C7"), [dbFlags] adsb.lol's
+     * database flags (bit 0 = military). Without a category, fall back to how fast
+     * and high it flies: under 200 kt and 12,000 ft reads as light aircraft.
+     */
+    fun classify(category: String, dbFlags: Int, isHeli: Boolean, gsKts: Double, altFt: Double): Int = when {
+        dbFlags and 1 != 0 -> MILITARY
+        isHeli -> HELICOPTER
+        else -> when (category.uppercase()) {
+            "A2", "A3", "A4", "A5" -> AIRLINER
+            "A1" -> LIGHT
+            "A6" -> OTHER // high-performance
+            "" -> if (gsKts < 200 && altFt < 12_000) LIGHT else AIRLINER
+            else -> OTHER // gliders, balloons, ultralights, drones
+        }
+    }
+}
 
 /** An aircraft plus its recent geodetic trail ([lat, lon, altMeters] points, oldest→newest). */
 class AircraftTrack(
@@ -42,6 +73,7 @@ class AircraftTrack(
     val emergencyText: String,
     val trail: List<DoubleArray>,
     val updatedAtMillis: Long,
+    val kind: Int = RadarKind.OTHER,
 )
 
 /**
@@ -90,10 +122,11 @@ class AircraftManager {
                         val emergencyText = o.optString("emergency", "")
                         val isEmergency = squawk in EMERGENCY_SQUAWKS ||
                             (emergencyText.isNotBlank() && !emergencyText.equals("none", ignoreCase = true))
+                        val kind = RadarKind.classify(category, o.optInt("dbFlags", 0), isHeli, gs, altFt)
                         out.add(
                             Aircraft(
                                 id, callsign, lat, lon, altFt * 0.3048, isHeli, typeCode, gs, track,
-                                registration, vrate, squawk, isEmergency, emergencyText,
+                                registration, vrate, squawk, isEmergency, emergencyText, kind,
                             ),
                         )
                     }

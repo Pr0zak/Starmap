@@ -77,6 +77,12 @@ class AircraftRender(
     val trail: FloatArray,
     /** Wall-clock time (ms) the position fix was taken, for dead-reckoning. */
     val updatedAtMillis: Long,
+    /** [com.starmap.app.aircraft.RadarKind] bit. */
+    val kind: Int = com.starmap.app.aircraft.RadarKind.OTHER,
+    val latitude: Double = Double.NaN,
+    val longitude: Double = Double.NaN,
+    /** Altitude (m) at each trail point, oldest→newest, for the climb history. */
+    val trailAltM: FloatArray = FloatArray(0),
 )
 
 /**
@@ -457,7 +463,8 @@ object SkyBuilder {
                         unit, ac.icaoHex, ac.callsign, ac.isHelicopter, ac.typeCode,
                         ac.altitudeMeters, ac.groundSpeedKts, ac.trackDeg, range,
                         ac.registration, ac.verticalRateFpm, ac.squawk, ac.isEmergency, ac.emergencyText,
-                        trail, ac.updatedAtMillis,
+                        trail, ac.updatedAtMillis, ac.kind, ac.latitude, ac.longitude,
+                        FloatArray(ac.trail.size) { ac.trail[it][2].toFloat() },
                     ),
                 )
             }

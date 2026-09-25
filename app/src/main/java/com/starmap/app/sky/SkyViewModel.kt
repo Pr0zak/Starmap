@@ -402,6 +402,10 @@ class SkyViewModel(app: Application) : AndroidViewModel(app) {
         settingsRepo.setFloat(selector, value)
     }
 
+    fun setInt(selector: SettingsRepository.IntSetting, value: Int) = viewModelScope.launch {
+        settingsRepo.setInt(selector, value)
+    }
+
     fun setManualLocation(enabled: Boolean, lat: Double, lon: Double) {
         viewModelScope.launch { settingsRepo.setManualLocation(enabled, lat, lon) }
         if (enabled) location.setManual(lat, lon) else location.start()

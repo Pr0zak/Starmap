@@ -49,7 +49,7 @@ class AircraftController(
                                     ac.id, ac.callsign, ac.isHelicopter, ac.latitude, ac.longitude,
                                     ac.altitudeMeters, ac.typeCode, ac.groundSpeedKts, ac.trackDeg,
                                     ac.registration, ac.verticalRateFpm, ac.squawk, ac.isEmergency,
-                                    ac.emergencyText, dq.dropLast(1).toList(), now,
+                                    ac.emergencyText, dq.dropLast(1).toList(), now, ac.kind,
                                 )
                             }
                             history.keys.retainAll(seen)

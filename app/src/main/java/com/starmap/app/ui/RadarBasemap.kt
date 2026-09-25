@@ -3,6 +3,9 @@ package com.starmap.app.ui
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
+import androidx.compose.foundation.layout.requiredSize
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -30,13 +33,21 @@ import kotlin.math.ln
 /** Geometry of the radar scope within a [w]×[h] (px) canvas — must match the Canvas. */
 internal data class RadarGeom(val cx: Float, val cy: Float, val r: Float)
 
-internal fun radarGeometry(w: Float, h: Float, density: Float): RadarGeom {
-    // Full-screen scope: the circle fills the width (the altitude tape overlays the
-    // right edge rather than reserving a strip) and uses most of the height. A slight
-    // over-scan past the side edges keeps the scope feeling full-bleed.
-    val cx = w / 2f
-    val cy = h * 0.5f
-    val r = minOf(w * 0.53f, h * 0.43f)
+/**
+ * Screen space (px) the scope keeps clear of on each side: the top controls, the
+ * collapsed drawer, and in landscape the list panel. Every radar layer uses the same
+ * insets so the map, weather and rings line up.
+ */
+internal data class RadarInsets(val left: Float = 0f, val top: Float = 0f, val right: Float = 0f, val bottom: Float = 0f)
+
+internal fun radarGeometry(w: Float, h: Float, insets: RadarInsets): RadarGeom {
+    // The scope fills the free area between the controls and the drawer, nearly
+    // edge to edge; ring and compass labels sit just inside the rim.
+    val aw = (w - insets.left - insets.right).coerceAtLeast(1f)
+    val ah = (h - insets.top - insets.bottom).coerceAtLeast(1f)
+    val cx = insets.left + aw / 2f
+    val cy = insets.top + ah / 2f
+    val r = minOf(aw * 0.46f, ah * 0.47f)
     return RadarGeom(cx, cy, r)
 }
 
@@ -56,6 +67,7 @@ private fun esriTileSource(name: String, service: String) = object : OnlineTileS
 
 private val SATELLITE = esriTileSource("EsriWorldImagery", "World_Imagery")
 private val STREETS = esriTileSource("EsriWorldStreetMap", "World_Street_Map")
+private val DARK = esriTileSource("EsriDarkGrayBase", "Canvas/World_Dark_Gray_Base")
 
 /**
  * Online raster basemap (satellite or street map) drawn underneath the radar scope.
@@ -63,10 +75,10 @@ private val STREETS = esriTileSource("EsriWorldStreetMap", "World_Street_Map")
  * The map is a square the size of the outer range ring, centred on the observer and
  * clipped to a circle so it fills the scope exactly. Its zoom is derived from the
  * scope's metres-per-pixel so a feature at N nm sits on the N-nm ring; when heading-up
- * is on, the map rotates with the phone. [mode] is 1 = satellite, 2 = streets.
+ * is on, the map rotates with the phone. [mode] is 1 = satellite, 2 = streets, 3 = dark.
  */
 @Composable
-fun RadarBasemap(
+internal fun RadarBasemap(
     latitude: Double,
     longitude: Double,
     maxRangeKm: Float,
@@ -74,6 +86,7 @@ fun RadarBasemap(
     bearing: () -> Float,
     mode: Int,
     opacity: Float,
+    insets: RadarInsets,
     modifier: Modifier = Modifier,
 ) {
     val context = LocalContext.current
@@ -125,23 +138,37 @@ fun RadarBasemap(
         val w = sizePx.width.toFloat()
         val h = sizePx.height.toFloat()
         if (w <= 0f || h <= 0f) return@Box
-        val g = radarGeometry(w, h, density)
+        val g = radarGeometry(w, h, insets)
 
         val metersPerPixel = maxRangeKm * 1000.0 / g.r
         val zoom = (ln(156543.03392 * cos(Math.toRadians(latitude)) / metersPerPixel) / ln(2.0))
             .coerceIn(3.0, 19.0)
 
+        // The map view is centred on the observer; move it so that centre sits on the
+        // scope's centre, and oversize it by the same amount so no edge shows.
+        val dx = g.cx - w / 2f
+        val dy = g.cy - h / 2f
+        val extraW = with(LocalDensity.current) { (w + 2 * kotlin.math.abs(dx)).toDp() }
+        val extraH = with(LocalDensity.current) { (h + 2 * kotlin.math.abs(dy)).toDp() }
         AndroidView(
             factory = { mapView },
             update = { mv ->
-                mv.setTileSource(if (mode == 2) STREETS else SATELLITE)
+                mv.setTileSource(
+                    when (mode) {
+                        2 -> STREETS
+                        3 -> DARK
+                        else -> SATELLITE
+                    },
+                )
                 mv.controller.setZoom(zoom)
                 mv.setExpectedCenter(GeoPoint(latitude, longitude))
                 mv.invalidate()
             },
-            // Fill the whole screen (centred on the observer) so there are no black
-            // borders; the range rings are drawn as circles on top.
-            modifier = Modifier.fillMaxSize().alpha(opacity),
+            modifier = Modifier
+                .align(Alignment.Center)
+                .requiredSize(extraW, extraH)
+                .graphicsLayer { translationX = dx; translationY = dy }
+                .alpha(opacity),
         )
     }
 }

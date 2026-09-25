@@ -52,12 +52,28 @@ data class Settings(
     val radarLandmarks: Boolean = true,
     val radarAircraft: Boolean = true,
     val radarRangeNm: Float = 40f,
-    /** 0 = off, 1 = satellite imagery, 2 = street map. */
+    /** 0 = off, 1 = satellite imagery, 2 = street map, 3 = dark map. */
     val radarBasemap: Int = 0,
     val radarBasemapOpacity: Float = 0.6f,
-    /** 0 = off, 1 = rain (radar). */
+    /** 0 = off, 1 = rain (radar), 2 = clouds (infrared satellite). */
     val radarWeather: Int = 0,
     val radarWeatherOpacity: Float = 0.7f,
+    /** Radar distance units: 0 = nautical miles, 1 = statute miles, 2 = kilometres. */
+    val radarUnits: Int = 0,
+    /** On-scope labels: 0 = callsign, 1 = callsign + flight level, 2 = full data block. */
+    val radarLabelMode: Int = 1,
+    /** Aircraft list order: 0 = distance, 1 = closest approach, 2 = altitude, 3 = speed. */
+    val radarSort: Int = 0,
+    /** Aircraft kinds shown, as RadarKind bits (all on by default). */
+    val radarKinds: Int = 0xFF,
+    val radarSweep: Boolean = false,
+    /** Banner + vibration when a plane will pass close or fly low nearby. */
+    val radarHeadsUp: Boolean = true,
+    val radarHeadsUpNm: Float = 2f,
+    /** Side-view altitude/distance strip under the scope. */
+    val radarProfile: Boolean = false,
+    /** Runway outlines and METAR wind for airports in range. */
+    val radarAirports: Boolean = true,
     val showBelowHorizon: Boolean = false,
     val applyRefraction: Boolean = true,
     val centerIdentify: Boolean = true,
@@ -131,6 +147,15 @@ class SettingsRepository(private val context: Context) {
         val radarBasemapOpacity = floatPreferencesKey("radar_basemap_opacity")
         val radarWeather = intPreferencesKey("radar_weather")
         val radarWeatherOpacity = floatPreferencesKey("radar_weather_opacity")
+        val radarUnits = intPreferencesKey("radar_units")
+        val radarLabelMode = intPreferencesKey("radar_label_mode")
+        val radarSort = intPreferencesKey("radar_sort")
+        val radarKinds = intPreferencesKey("radar_kinds")
+        val radarSweep = booleanPreferencesKey("radar_sweep")
+        val radarHeadsUp = booleanPreferencesKey("radar_heads_up")
+        val radarHeadsUpNm = floatPreferencesKey("radar_heads_up_nm")
+        val radarProfile = booleanPreferencesKey("radar_profile")
+        val radarAirports = booleanPreferencesKey("radar_airports")
         val orientationMode = intPreferencesKey("orientation_mode")
         val fovCirclesMode = intPreferencesKey("fov_circles_mode")
         val useExtendedCatalog = booleanPreferencesKey("use_extended_catalog")
@@ -180,10 +205,19 @@ class SettingsRepository(private val context: Context) {
             radarLandmarks = p[Keys.radarLandmarks] ?: true,
             radarAircraft = p[Keys.radarAircraft] ?: true,
             radarRangeNm = (p[Keys.radarRangeNm] ?: 40f).coerceIn(5f, 150f),
-            radarBasemap = (p[Keys.radarBasemap] ?: 0).coerceIn(0, 2),
+            radarBasemap = (p[Keys.radarBasemap] ?: 0).coerceIn(0, 3),
             radarBasemapOpacity = (p[Keys.radarBasemapOpacity] ?: 0.6f).coerceIn(0f, 1f),
-            radarWeather = (p[Keys.radarWeather] ?: 0).coerceIn(0, 1),
+            radarWeather = (p[Keys.radarWeather] ?: 0).coerceIn(0, 2),
             radarWeatherOpacity = (p[Keys.radarWeatherOpacity] ?: 0.7f).coerceIn(0f, 1f),
+            radarUnits = (p[Keys.radarUnits] ?: 0).coerceIn(0, 2),
+            radarLabelMode = (p[Keys.radarLabelMode] ?: 1).coerceIn(0, 2),
+            radarSort = (p[Keys.radarSort] ?: 0).coerceIn(0, 3),
+            radarKinds = p[Keys.radarKinds] ?: 0xFF,
+            radarSweep = p[Keys.radarSweep] ?: false,
+            radarHeadsUp = p[Keys.radarHeadsUp] ?: true,
+            radarHeadsUpNm = (p[Keys.radarHeadsUpNm] ?: 2f).coerceIn(0.5f, 10f),
+            radarProfile = p[Keys.radarProfile] ?: false,
+            radarAirports = p[Keys.radarAirports] ?: true,
             showBelowHorizon = p[Keys.showBelowHorizon] ?: false,
             applyRefraction = p[Keys.applyRefraction] ?: true,
             centerIdentify = p[Keys.centerIdentify] ?: true,
@@ -225,6 +259,16 @@ class SettingsRepository(private val context: Context) {
     suspend fun setRadarWeather(mode: Int) =
         context.dataStore.edit { it[Keys.radarWeather] = mode }
 
+    suspend fun setInt(selector: IntSetting, value: Int) =
+        context.dataStore.edit { it[selector.key] = value }
+
+    enum class IntSetting(val key: Preferences.Key<Int>) {
+        RadarUnits(Keys.radarUnits),
+        RadarLabelMode(Keys.radarLabelMode),
+        RadarSort(Keys.radarSort),
+        RadarKinds(Keys.radarKinds),
+    }
+
     enum class FloatSetting(val key: Preferences.Key<Float>) {
         MagnitudeLimit(Keys.magnitudeLimit),
         LabelMagnitudeLimit(Keys.labelMagnitudeLimit),
@@ -235,6 +279,7 @@ class SettingsRepository(private val context: Context) {
         ArDim(Keys.arDim),
         RadarBasemapOpacity(Keys.radarBasemapOpacity),
         RadarWeatherOpacity(Keys.radarWeatherOpacity),
+        RadarHeadsUpNm(Keys.radarHeadsUpNm),
     }
 
     enum class BoolSetting(val key: Preferences.Key<Boolean>) {
@@ -266,6 +311,10 @@ class SettingsRepository(private val context: Context) {
         RadarHeadingUp(Keys.radarHeadingUp),
         RadarLandmarks(Keys.radarLandmarks),
         RadarAircraft(Keys.radarAircraft),
+        RadarSweep(Keys.radarSweep),
+        RadarHeadsUp(Keys.radarHeadsUp),
+        RadarProfile(Keys.radarProfile),
+        RadarAirports(Keys.radarAirports),
         Landmarks(Keys.showLandmarks),
         LandmarkCities(Keys.landmarkCities),
         LandmarkAirports(Keys.landmarkAirports),

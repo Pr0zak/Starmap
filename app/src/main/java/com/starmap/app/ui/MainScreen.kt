@@ -132,6 +132,8 @@ import com.starmap.app.sky.SkyModel
 import com.starmap.app.sky.SkyViewModel
 import com.starmap.app.sky.resolveTargetEnu
 import com.starmap.app.sky.RiseSet
+import com.starmap.app.sky.RadarMath
+import androidx.compose.material.icons.filled.Visibility
 import com.starmap.app.sky.AlertsController
 import com.starmap.app.events.SkyEvent
 import com.starmap.app.events.android.DeepLink
@@ -1245,6 +1247,8 @@ internal fun AircraftInfoCard(
     onTrack: () -> Unit,
     onClose: () -> Unit,
     modifier: Modifier = Modifier,
+    /** Radar only: switch to the sky view already following this plane. */
+    onFindInSky: (() -> Unit)? = null,
 ) {
     val shape = RoundedCornerShape(18.dp)
     val cardMod = if (ac.isEmergency) {
@@ -1347,6 +1351,29 @@ internal fun AircraftInfoCard(
             route?.let {
                 if (it.origin.code != "?" || it.destination.code != "?") {
                     AirportRoute(it.origin, it.destination)
+                }
+            }
+            if (onFindInSky != null) {
+                // Where to look for it from here, and a shortcut to the sky view.
+                val (el, az) = RadarMath.lookAngles(ac.enu)
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 10.dp, end = 8.dp)
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(Hud.Gold.copy(alpha = 0.08f))
+                        .border(1.dp, Hud.HairlineGold, RoundedCornerShape(12.dp))
+                        .padding(start = 10.dp, end = 6.dp, top = 6.dp, bottom = 6.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Icon(Icons.Filled.Visibility, contentDescription = null, tint = Hud.Gold, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(8.dp))
+                    Text(
+                        if (el >= 0f) "Look ${el.roundToInt()}° up, to the ${compassLabel(az)}"
+                        else "Below your horizon, to the ${compassLabel(az)}",
+                        color = Hud.Text, fontSize = 13.sp, modifier = Modifier.weight(1f),
+                    )
+                    ActionPill(Icons.Filled.MyLocation, "Find in sky", primary = true, onClick = onFindInSky)
                 }
             }
             if (photo != null && photoOk && photo.photographer.isNotBlank()) {
