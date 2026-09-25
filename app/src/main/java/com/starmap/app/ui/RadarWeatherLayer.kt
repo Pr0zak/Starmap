@@ -87,7 +87,7 @@ internal fun RadarWeatherLayer(
         // RainViewer only has data to ~z7. Pick a tile zoom that keeps the grid small
         // and within range (instead of always z7, which blew up the grid — and went
         // blank — at large ranges), then scale to the exact scope zoom.
-        val tileZoom = floor(desiredZoom).toInt().coerceIn(2, 7)
+        val tileZoom = floor(desiredZoom).toInt().coerceIn(2, if (mode == 2) CloudTiles.MAX_ZOOM else 7)
         val nativeScale = Math.pow(2.0, desiredZoom - tileZoom).toFloat()
 
         val n = 1 shl tileZoom
@@ -115,7 +115,11 @@ internal fun RadarWeatherLayer(
 
         var done = 0
         for (f in frames) {
-            val bmp = WeatherTiles.loadFrameBitmap(host, f.path, rain = mode == 1, grid = grid, outPx = outPx)
+            val bmp = if (mode == 2) {
+                CloudTiles.loadBitmap(grid, outPx, longitude)
+            } else {
+                WeatherTiles.loadFrameBitmap(host, f.path, rain = mode == 1, grid = grid, outPx = outPx)
+            }
             if (bmp != null) bitmaps[f.path] = bmp
             done++
             onBuffered(done, frames.size) // count attempts so a failed tile can't stall buffering

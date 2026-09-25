@@ -13,6 +13,10 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalHapticFeedback
 import com.starmap.app.aircraft.RadarKind
+import com.starmap.app.aircraft.Metar
+import com.starmap.app.landmark.LandmarkManager
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.drawscope.DrawScope
 import com.starmap.app.settings.SettingsRepository.IntSetting
 import com.starmap.app.sky.RadarMath
 import com.starmap.app.sky.positionInto
@@ -142,8 +146,17 @@ fun RadarView(
     var playing by remember { mutableStateOf(false) }
     var weatherLoaded by remember { mutableIntStateOf(0) }
     var weatherTotal by remember { mutableIntStateOf(0) }
+    // Clouds are a single latest image, refreshed every 10 minutes.
+    var cloudStamp by remember { mutableLongStateOf(0L) }
     LaunchedEffect(weather) {
-        if (weather == 0) return@LaunchedEffect
+        if (weather != 2) return@LaunchedEffect
+        while (true) {
+            cloudStamp = System.currentTimeMillis() / 600_000L
+            delay(10 * 60 * 1000L)
+        }
+    }
+    LaunchedEffect(weather) {
+        if (weather != 1) return@LaunchedEffect
         while (true) {
             // Refresh every few minutes so frame paths don't expire (RainViewer rolls
             // its ~2 h window); only re-cache when the newest frame actually changed.
@@ -154,7 +167,10 @@ fun RadarView(
             delay(5 * 60 * 1000L)
         }
     }
-    val weatherFrames = weatherMaps?.frames(weather) ?: emptyList()
+    val weatherFrames = when (weather) {
+        2 -> if (cloudStamp > 0) listOf(WeatherTiles.Frame(cloudStamp * 600, "clouds-$cloudStamp")) else emptyList()
+        else -> weatherMaps?.frames(weather) ?: emptyList()
+    }
     val weatherBuffered = weatherTotal > 0 && weatherLoaded >= weatherTotal
     LaunchedEffect(weatherFrames.size, weather) {
         if (weatherFrames.isNotEmpty()) frameIdx = weatherFrames.lastIndex
@@ -242,6 +258,25 @@ fun RadarView(
         )
     }
 
+    // Runways and the current wind at nearby airports. Runways are fetched once per
+    // ~5 km of movement; METARs every 15 minutes.
+    var runways by remember { mutableStateOf<List<LandmarkManager.Runway>>(emptyList()) }
+    var metars by remember { mutableStateOf<List<Metar.Station>>(emptyList()) }
+    val fixNow = model?.location
+    val fixKey = fixNow?.let { (it.latitude * 20).roundToInt() to (it.longitude * 20).roundToInt() }
+    LaunchedEffect(settings.radarAirports, fixKey) {
+        val f = fixNow
+        if (!settings.radarAirports || f == null) {
+            runways = emptyList(); metars = emptyList()
+            return@LaunchedEffect
+        }
+        LandmarkManager().fetchRunways(f.latitude, f.longitude, 60_000)?.let { runways = it }
+        while (true) {
+            Metar.fetch(f.latitude, f.longitude, 90.0)?.let { metars = it }
+            delay(15 * 60 * 1000L)
+        }
+    }
+
     // Heads-up: a banner (and a short buzz) when something will pass close, flies low
     // nearby, or a helicopter or emergency shows up. Each plane is announced once per reason.
     var headsUp by remember { mutableStateOf<String?>(null) }
@@ -325,7 +360,7 @@ fun RadarView(
                 bearing = bearingProvider,
                 mode = weather,
                 opacity = weatherOpacity,
-                host = weatherMaps?.host,
+                host = if (weather == 2) "gibs" else weatherMaps?.host,
                 frames = weatherFrames,
                 frameIndex = frameIdx,
                 onBuffered = { loaded, total -> weatherLoaded = loaded; weatherTotal = total },
@@ -502,6 +537,24 @@ fun RadarView(
                         else -> Color(0xFFFFE082)
                     }
                     drawCircle(col.copy(alpha = 0.85f), 2.5f * density, o)
+                }
+            }
+
+            // Runways and surface wind at airports in range.
+            if (settings.radarAirports && fix != null) {
+                for (rw in runways) {
+                    val (e1, n1) = groundEnu(fix.latitude, fix.longitude, rw.lat1, rw.lon1)
+                    if (hypot(e1, n1) > maxRangeKm) continue
+                    val (e2, n2) = groundEnu(fix.latitude, fix.longitude, rw.lat2, rw.lon2)
+                    drawLine(
+                        Color(0xD99FB6D8), proj(e1, n1), proj(e2, n2),
+                        strokeWidth = 3f * density, cap = StrokeCap.Round,
+                    )
+                }
+                for (st in metars) {
+                    val (e, n) = groundEnu(fix.latitude, fix.longitude, st.lat, st.lon)
+                    if (hypot(e, n) > maxRangeKm) continue
+                    drawWindBarb(proj(e, n), st, a, density, labelPaint)
                 }
             }
 
@@ -865,7 +918,7 @@ fun RadarView(
                                     },
                                     valueRange = 0.1f..1f,
                                 )
-                                if (weatherFrames.isEmpty()) {
+                                if (weather == 1 && weatherFrames.isEmpty()) {
                                     Spacer(Modifier.height(4.dp))
                                     Text(
                                         if (weatherMaps == null) "Loading frames…" else "No data available",
@@ -935,8 +988,17 @@ fun RadarView(
                     },
                 )
             }
-            if (weather != 0) {
+            if (weather == 1) {
                 WeatherLegend(modifier = Modifier.padding(start = 12.dp, bottom = 4.dp))
+            }
+            if (weather == 2) {
+                val sat = fix?.let { CloudTiles.satelliteFor(it.longitude) }
+                Text(
+                    if (sat != null) "Clouds from $sat infrared · colder tops show brighter"
+                    else "No cloud imagery covers this area (GOES and Himawari only)",
+                    color = Color(0xFFB6C2D2), fontSize = 10.sp,
+                    modifier = Modifier.padding(start = 12.dp, bottom = 4.dp),
+                )
             }
             if (basemap != 0 || weather != 0) {
                 Text(
@@ -944,7 +1006,7 @@ fun RadarView(
                         if (basemap != 0) append("Map © Esri")
                         if (weather != 0) {
                             if (isNotEmpty()) append("   ·   ")
-                            append("Weather © RainViewer")
+                            append(if (weather == 2) "Clouds: NASA GIBS / NOAA" else "Weather © RainViewer")
                         }
                     },
                     color = Color(0x99B6C2D2), fontSize = 9.sp,
@@ -953,7 +1015,7 @@ fun RadarView(
             }
             // Weather timeline: pinned above the drawer so it stays visible while the
             // animation plays on the full scope.
-            if (weather != 0 && weatherFrames.isNotEmpty()) {
+            if (weather == 1 && weatherFrames.isNotEmpty()) {
                 Box(modifier = Modifier.fillMaxWidth().bottomSheet(22.dp)) {
                     Row(
                         modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 2.dp),
@@ -1011,11 +1073,72 @@ fun RadarView(
                 expanded = listExpanded,
                 onExpandedChange = { listExpanded = it },
                 // Flat top when the weather timeline already caps the sheet stack above it.
-                roundedTop = !(weather != 0 && weatherFrames.isNotEmpty()),
+                roundedTop = !(weather == 1 && weatherFrames.isNotEmpty()),
                 modifier = Modifier.fillMaxWidth(),
             )
         }
     }
+}
+
+/**
+ * A standard wind barb at an airport: the staff points to where the wind comes from,
+ * with a pennant per 50 kt, a full feather per 10 and a half per 5. Calm is a circle.
+ * [scopeRot] is the scope's heading-up rotation (radians).
+ */
+private fun DrawScope.drawWindBarb(
+    at: Offset,
+    st: Metar.Station,
+    scopeRot: Double,
+    density: Float,
+    paint: android.graphics.Paint,
+) {
+    val c = Color(0xFFE7ECF6)
+    val speed = st.speedKt
+    val dir = st.dirDeg
+    if (speed < 3 || dir == null) {
+        drawCircle(c, 5f * density, at, style = Stroke(1.4f * density))
+    } else {
+        val th = Math.toRadians(dir.toDouble()) - scopeRot
+        val ux = sin(th).toFloat()
+        val uy = -cos(th).toFloat()
+        val staff = 24f * density
+        val tip = Offset(at.x + ux * staff, at.y + uy * staff)
+        drawLine(c, at, tip, strokeWidth = 1.5f * density)
+        // Feathers go on the clockwise side of the staff, from the tip inwards.
+        val px = -uy
+        val py = ux
+        var remaining = ((speed + 2) / 5) * 5
+        var pos = 0f
+        val step = 4.5f * density
+        val len = 9f * density
+        while (remaining >= 50) {
+            val b0 = Offset(tip.x - ux * pos, tip.y - uy * pos)
+            val b1 = Offset(b0.x - ux * step, b0.y - uy * step)
+            val path = Path().apply {
+                moveTo(b0.x, b0.y); lineTo(b0.x + px * len, b0.y + py * len); lineTo(b1.x, b1.y); close()
+            }
+            drawPath(path, c)
+            pos += step * 1.4f; remaining -= 50
+        }
+        while (remaining >= 10) {
+            val b = Offset(tip.x - ux * pos, tip.y - uy * pos)
+            drawLine(c, b, Offset(b.x + px * len + ux * 3f * density, b.y + py * len + uy * 3f * density), strokeWidth = 1.5f * density)
+            pos += step; remaining -= 10
+        }
+        if (remaining >= 5) {
+            if (pos == 0f) pos = step
+            val b = Offset(tip.x - ux * pos, tip.y - uy * pos)
+            drawLine(c, b, Offset(b.x + px * len / 2 + ux * 1.5f * density, b.y + py * len / 2 + uy * 1.5f * density), strokeWidth = 1.5f * density)
+        }
+    }
+    drawCircle(c, 2.5f * density, at)
+    val label = st.icao + "  " + when {
+        speed < 3 -> "calm"
+        dir == null -> "VRB ${speed} kt"
+        else -> compassLabel(dir.toFloat()) + " $speed" + (st.gustKt?.let { "G$it" } ?: "") + " kt"
+    }
+    paint.color = c.copy(alpha = 0.9f).toArgb()
+    drawContext.canvas.nativeCanvas.drawText(label, at.x + 6f * density, at.y + 14f * density, paint)
 }
 
 /** Range steps (nm) that "Fit" and double-tap snap to. */

@@ -97,6 +97,51 @@ class LandmarkManager {
             Result.Failed(errors.firstOrNull() ?: "no response")
         }
 
+    /** A runway as its two ends, with the OSM "ref" (e.g. "08/26"). */
+    class Runway(val ref: String, val lat1: Double, val lon1: Double, val lat2: Double, val lon2: Double)
+
+    /**
+     * Runways within [radiusMeters], for the radar's airport overlay. Uses the same
+     * mirror list as [fetch]; returns null only when every server failed.
+     */
+    suspend fun fetchRunways(lat: Double, lon: Double, radiusMeters: Int): List<Runway>? =
+        withContext(Dispatchers.IO) {
+            val latDelta = radiusMeters / 111_320.0
+            val lonDelta = radiusMeters / (111_320.0 * kotlin.math.cos(Math.toRadians(lat)).coerceAtLeast(0.01))
+            val bbox = "${lat - latDelta},${lon - lonDelta},${lat + latDelta},${lon + lonDelta}"
+            val query = """
+                [out:json][timeout:25];
+                way["aeroway"="runway"]($bbox);
+                out geom 200;
+            """.trimIndent()
+            val encoded = URLEncoder.encode(query, "UTF-8")
+            for (endpoint in ENDPOINTS) {
+                val host = runCatching { URL(endpoint).host }.getOrDefault(endpoint)
+                val a = attempt(host, endpoint, encoded, 20_000)
+                if (a !is Attempt.Body) continue
+                val json = runCatching { JSONObject(a.text) }.getOrNull() ?: continue
+                val els = json.optJSONArray("elements") ?: continue
+                val out = ArrayList<Runway>()
+                for (i in 0 until els.length()) {
+                    val e = els.optJSONObject(i) ?: continue
+                    val geom = e.optJSONArray("geometry") ?: continue
+                    if (geom.length() < 2) continue
+                    val first = geom.getJSONObject(0)
+                    val last = geom.getJSONObject(geom.length() - 1)
+                    out.add(
+                        Runway(
+                            e.optJSONObject("tags")?.optString("ref").orEmpty(),
+                            first.optDouble("lat"), first.optDouble("lon"),
+                            last.optDouble("lat"), last.optDouble("lon"),
+                        ),
+                    )
+                }
+                DiagLog.log("Runways: ${out.size} from $host")
+                return@withContext out
+            }
+            null
+        }
+
     /**
      * One endpoint: POST (Overpass's canonical method) first, with a GET fallback.
      * overpass-api.de returns 406 to our GET regardless of the Accept header, so
