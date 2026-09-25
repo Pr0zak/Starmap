@@ -1091,8 +1091,11 @@ private fun TimeBar(viewModel: SkyViewModel) {
                     state.selectedDateMillis?.let { sel ->
                         // Keep the time of day; change only the date.
                         val date = java.time.Instant.ofEpochMilli(sel).atZone(java.time.ZoneOffset.UTC).toLocalDate()
-                        val target = shown.with(date).toInstant().toEpochMilli()
-                        viewModel.jumpTime(target - viewModel.currentSkyTimeMillis())
+                        // Re-confirming the date already shown mustn't drop out of live time.
+                        if (date != shown.toLocalDate()) {
+                            val target = shown.with(date).toInstant().toEpochMilli()
+                            viewModel.jumpTime(target - viewModel.currentSkyTimeMillis())
+                        }
                     }
                     pickDate = false
                 }) { Text("Go") }
