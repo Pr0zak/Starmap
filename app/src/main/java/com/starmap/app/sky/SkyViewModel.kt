@@ -374,8 +374,12 @@ class SkyViewModel(app: Application) : AndroidViewModel(app) {
                     Log.e(TAG, "Sky build failed", t)
                 }
             }
-            // Refresh faster while time-travelling so the time-lapse looks smooth.
-            kotlinx.coroutines.delay(if (!timeMachine.isLive && timeMachine.flowRate != 0L) 120 else 1000)
+            // Refresh faster while a time-lapse runs or the time is being scrubbed, and
+            // wake at once when the shown time is changed by hand.
+            val animating = !timeMachine.isLive && (timeMachine.flowRate != 0L || timeMachine.recentlyChanged)
+            kotlinx.coroutines.withTimeoutOrNull(if (animating) 120L else 1000L) {
+                timeMachine.changed.receive()
+            }
         }
     }
 

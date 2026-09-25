@@ -3,6 +3,7 @@ package com.starmap.app.sky
 import androidx.compose.runtime.State
 import androidx.compose.runtime.mutableStateOf
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
@@ -29,6 +30,22 @@ class TimeMachine(scope: CoroutineScope) {
     val isLive: Boolean get() = _liveTime.value
     val flowRate: Long get() = _timeFlowRate.value
 
+    /**
+     * Signalled whenever the shown time changes by hand (a jump, a scrub, going live),
+     * so the sky rebuild loop can redraw at once instead of waiting out its idle delay.
+     */
+    val changed = Channel<Unit>(Channel.CONFLATED)
+
+    @Volatile private var lastManualChangeAt = 0L
+
+    /** True for a moment after a manual change, so a scrub redraws smoothly. */
+    val recentlyChanged: Boolean get() = System.currentTimeMillis() - lastManualChangeAt < 1_500
+
+    private fun markChanged() {
+        lastManualChangeAt = System.currentTimeMillis()
+        changed.trySend(Unit)
+    }
+
     /** The instant the sky should be drawn for. */
     fun currentSkyTimeMillis(): Long =
         if (_liveTime.value) System.currentTimeMillis() else simTimeMillis
@@ -37,12 +54,14 @@ class TimeMachine(scope: CoroutineScope) {
     fun jumpTime(deltaMillis: Long) {
         simTimeMillis = currentSkyTimeMillis() + deltaMillis
         _liveTime.value = false
+        markChanged()
     }
 
     /** Snap back to the real clock. */
     fun goLive() {
         _liveTime.value = true
         _timeFlowRate.value = 0L
+        markChanged()
     }
 
     /** Animate time at [rate] simulated-millis per real second (0 pauses). */
@@ -52,6 +71,7 @@ class TimeMachine(scope: CoroutineScope) {
             _liveTime.value = false
         }
         _timeFlowRate.value = rate
+        markChanged()
     }
 
     init {

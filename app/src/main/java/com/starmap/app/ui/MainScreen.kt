@@ -12,6 +12,22 @@ import android.net.Uri
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
+import androidx.compose.material.icons.filled.Pause
+import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material3.DatePicker
+import androidx.compose.material3.DatePickerDialog
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.rememberDatePickerState
+import androidx.compose.runtime.mutableLongStateOf
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.nativeCanvas
+import androidx.compose.ui.graphics.toArgb
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -437,7 +453,7 @@ private fun SkyScreen(
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             if (showTimePanel) {
-                TimeBar(viewModel, model)
+                TimeBar(viewModel)
                 Spacer(Modifier.height(8.dp))
             }
             val selAc by viewModel.selectedAircraft
@@ -908,80 +924,154 @@ private fun quickFacts(obj: IdentifiedObject?, model: SkyModel?): List<Pair<Stri
     return out
 }
 
+/**
+ * The time machine: the shown date and time (tap to pick a date), a ruler you drag
+ * to scrub through the hours, one-day jumps, a time-lapse speed pill and "Now".
+ */
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun TimeBar(viewModel: SkyViewModel, model: SkyModel?) {
+private fun TimeBar(viewModel: SkyViewModel) {
     val live by viewModel.liveTime
     val rate by viewModel.timeFlowRate
-    val millis = model?.timeMillis ?: System.currentTimeMillis()
-    val fmt = remember {
-        java.text.SimpleDateFormat("EEE d MMM yyyy · h:mm a", java.util.Locale.getDefault())
+    // Read the sky clock every frame so the ruler tracks a drag or time-lapse smoothly.
+    var millis by remember { mutableLongStateOf(viewModel.currentSkyTimeMillis()) }
+    LaunchedEffect(Unit) {
+        while (true) {
+            millis = viewModel.currentSkyTimeMillis()
+            awaitFrame()
+        }
     }
+    val fmt = remember { java.text.SimpleDateFormat("EEE d MMM yyyy · h:mm a", java.util.Locale.getDefault()) }
+    var pickDate by remember { mutableStateOf(false) }
+
     Box(modifier = Modifier.fillMaxWidth().glass(RoundedCornerShape(18.dp))) {
         Column(modifier = Modifier.padding(12.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
                     fmt.format(java.util.Date(millis)),
-                    color = Color(0xFFE8ECF6), fontSize = 15.sp, fontWeight = FontWeight.SemiBold,
-                    modifier = Modifier.weight(1f),
+                    color = Hud.Text, fontSize = 15.sp, fontWeight = FontWeight.SemiBold,
+                    textDecoration = TextDecoration.Underline,
+                    modifier = Modifier.weight(1f).clickable { pickDate = true },
                 )
                 Text(
                     if (live) "● LIVE" else "TIME TRAVEL",
-                    color = if (live) Color(0xFF7FE3A0) else Color(0xFFFFD54F),
-                    fontSize = 12.sp, fontWeight = FontWeight.SemiBold,
+                    color = if (live) Color(0xFF7FE3A0) else Hud.Gold,
+                    fontSize = 11.sp, fontWeight = FontWeight.SemiBold, letterSpacing = 0.5.sp,
                 )
             }
-            Spacer(Modifier.height(8.dp))
-            Row(
-                modifier = Modifier.horizontalScroll(rememberScrollState()),
-                horizontalArrangement = Arrangement.spacedBy(6.dp),
-            ) {
-                TimeChip("-1d") { viewModel.jumpTime(-86_400_000L) }
-                TimeChip("-1h") { viewModel.jumpTime(-3_600_000L) }
-                TimeChip("-5m") { viewModel.jumpTime(-300_000L) }
-                TimeChip("Now", highlight = live) { viewModel.goLiveTime() }
-                TimeChip("+5m") { viewModel.jumpTime(300_000L) }
-                TimeChip("+1h") { viewModel.jumpTime(3_600_000L) }
-                TimeChip("+1d") { viewModel.jumpTime(86_400_000L) }
-            }
-            Spacer(Modifier.height(6.dp))
-            Row(
-                horizontalArrangement = Arrangement.spacedBy(6.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Text("Speed", color = Color(0x99FFFFFF), fontSize = 12.sp)
-                TimeChip("Pause", highlight = !live && rate == 0L) { viewModel.setTimeFlowRate(0L) }
-                TimeChip("1m/s", highlight = rate == 60_000L) { viewModel.setTimeFlowRate(60_000L) }
-                TimeChip("1h/s", highlight = rate == 3_600_000L) { viewModel.setTimeFlowRate(3_600_000L) }
-                TimeChip("1d/s", highlight = rate == 86_400_000L) { viewModel.setTimeFlowRate(86_400_000L) }
+            Spacer(Modifier.height(10.dp))
+            TimeRuler(millis) { viewModel.jumpTime(it) }
+            Spacer(Modifier.height(10.dp))
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                ActionPill(Icons.AutoMirrored.Filled.KeyboardArrowLeft, "1 day") { viewModel.jumpTime(-86_400_000L) }
+                Spacer(Modifier.width(6.dp))
+                ActionPill(Icons.AutoMirrored.Filled.KeyboardArrowRight, "1 day") { viewModel.jumpTime(86_400_000L) }
+                Spacer(Modifier.weight(1f))
+                // One pill cycles the time-lapse speed, so the row fits a phone.
+                val speeds = listOf(0L, 60_000L, 3_600_000L, 86_400_000L)
+                val playing = !live && rate != 0L
+                ActionPill(
+                    if (playing) Icons.Filled.Pause else Icons.Filled.PlayArrow,
+                    when (rate) {
+                        60_000L -> "1 min/s"
+                        3_600_000L -> "1 h/s"
+                        86_400_000L -> "1 day/s"
+                        else -> "Play"
+                    },
+                    active = playing,
+                ) {
+                    val next = speeds[(speeds.indexOf(if (playing) rate else 0L) + 1) % speeds.size]
+                    viewModel.setTimeFlowRate(next)
+                }
+                Spacer(Modifier.width(6.dp))
+                ActionPill(Icons.Filled.Schedule, "Now", primary = !live) { viewModel.goLiveTime() }
             }
         }
     }
+
+    if (pickDate) {
+        val zone = java.time.ZoneId.systemDefault()
+        val shown = java.time.Instant.ofEpochMilli(millis).atZone(zone)
+        val state = rememberDatePickerState(
+            initialSelectedDateMillis = shown.toLocalDate().atStartOfDay(java.time.ZoneOffset.UTC).toInstant().toEpochMilli(),
+        )
+        DatePickerDialog(
+            onDismissRequest = { pickDate = false },
+            confirmButton = {
+                TextButton(onClick = {
+                    state.selectedDateMillis?.let { sel ->
+                        // Keep the time of day; change only the date.
+                        val date = java.time.Instant.ofEpochMilli(sel).atZone(java.time.ZoneOffset.UTC).toLocalDate()
+                        val target = shown.with(date).toInstant().toEpochMilli()
+                        viewModel.jumpTime(target - viewModel.currentSkyTimeMillis())
+                    }
+                    pickDate = false
+                }) { Text("Go") }
+            },
+            dismissButton = { TextButton(onClick = { pickDate = false }) { Text("Cancel") } },
+        ) { DatePicker(state = state) }
+    }
 }
 
+/**
+ * A horizontal time ruler centred on [millis]: 10-minute ticks, labelled hours, and a
+ * fixed gold needle. Dragging it left moves time forward, like sliding a tape.
+ */
 @Composable
-private fun TimeChip(label: String, highlight: Boolean = false, onClick: () -> Unit) {
-    val shape = RoundedCornerShape(10.dp)
-    Box(
-        modifier = Modifier.minimumInteractiveComponentSize().clickable(onClick = onClick),
-        contentAlignment = Alignment.Center,
-    ) {
-        Box(
-            modifier = if (highlight) {
-                Modifier.glow(shape, Hud.Gold, 7.dp).clip(shape)
-                    .background(Brush.verticalGradient(listOf(Hud.GoldSoft, Hud.Gold)))
-            } else {
-                Modifier.clip(shape).background(Color(0x1FFFFFFF))
-                    .border(BorderStroke(1.dp, Hud.Hairline), shape)
-            },
-        ) {
-            Text(
-                label,
-                color = if (highlight) Hud.Ink else Hud.Text,
-                fontSize = 13.sp,
-                fontWeight = if (highlight) FontWeight.SemiBold else FontWeight.Normal,
-                modifier = Modifier.padding(horizontal = 11.dp, vertical = 6.dp),
-            )
+private fun TimeRuler(millis: Long, onScrub: (Long) -> Unit) {
+    val density = LocalDensity.current.density
+    val pxPerHour = 64f * density
+    val hourFmt = remember { java.text.SimpleDateFormat("h a", java.util.Locale.getDefault()) }
+    val dayFmt = remember { java.text.SimpleDateFormat("EEE", java.util.Locale.getDefault()) }
+    val labelPaint = remember {
+        android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
+            textAlign = android.graphics.Paint.Align.CENTER
         }
+    }
+    val tz = remember { java.util.TimeZone.getDefault() }
+    Canvas(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(46.dp)
+            .clip(RoundedCornerShape(10.dp))
+            .background(Color(0x0DFFFFFF))
+            .pointerInput(Unit) {
+                detectHorizontalDragGestures { change, dx ->
+                    change.consume()
+                    onScrub((-dx / pxPerHour * 3_600_000f).toLong())
+                }
+            },
+    ) {
+        val cx = size.width / 2f
+        val step = 600_000L // 10 minutes
+        val offset = tz.getOffset(millis).toLong()
+        val halfSpan = (cx / pxPerHour * 3_600_000f).toLong() + step
+        var k = Math.floorDiv(millis + offset - halfSpan, step)
+        val kEnd = Math.floorDiv(millis + offset + halfSpan, step) + 1
+        labelPaint.textSize = 10f * density
+        while (k <= kEnd) {
+            val localT = k * step
+            val t = localT - offset
+            val x = cx + (t - millis) / 3_600_000f * pxPerHour
+            val isHour = localT % 3_600_000L == 0L
+            val isMidnight = localT % 86_400_000L == 0L
+            val h = size.height
+            val top = if (isHour) h * 0.42f else h * 0.66f
+            drawLine(
+                Color.White.copy(alpha = if (isHour) 0.45f else 0.2f),
+                Offset(x, top), Offset(x, h), strokeWidth = (if (isHour) 1.5f else 1f) * density,
+            )
+            if (isHour) {
+                labelPaint.color = if (isMidnight) Hud.GoldSoft.toArgb() else android.graphics.Color.argb(170, 190, 202, 217)
+                drawContext.canvas.nativeCanvas.drawText(
+                    if (isMidnight) dayFmt.format(java.util.Date(t)) else hourFmt.format(java.util.Date(t)),
+                    x, 13f * density, labelPaint,
+                )
+            }
+            k++
+        }
+        drawLine(Hud.Gold.copy(alpha = 0.35f), Offset(cx, 0f), Offset(cx, size.height), strokeWidth = 6f * density)
+        drawLine(Hud.Gold, Offset(cx, 0f), Offset(cx, size.height), strokeWidth = 2f * density)
     }
 }
 
