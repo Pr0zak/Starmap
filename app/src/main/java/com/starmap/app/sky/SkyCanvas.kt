@@ -130,6 +130,12 @@ fun SkyCanvas(viewModel: SkyViewModel, settings: Settings, modifier: Modifier = 
         }
     }
 
+    // Per-frame label placement, and the star labels waiting to be placed brightest-first.
+    val labelPlacer = remember { LabelPlacer() }
+    val starLabelIdx = remember { IntArray(512) }
+    val starLabelX = remember { FloatArray(512) }
+    val starLabelY = remember { FloatArray(512) }
+
     // Reusable camera-basis buffers (avoid 3 FloatArray allocs every frame).
     val lookBuf = remember { FloatArray(3) }
     val rightBuf = remember { FloatArray(3) }
@@ -366,6 +372,38 @@ fun SkyCanvas(viewModel: SkyViewModel, settings: Settings, modifier: Modifier = 
             drawEnuPolyline(m.eclipticLine, if (night) Color(0x99BB6644) else Color(0x99D4AF37), 1.5f * density)
         }
 
+        // --- Label budget: the Sun, Moon, planets and the search target claim their label
+        // space first; star and constellation names then only go where they fit.
+        labelPlacer.reset()
+        val target = viewModel.searchTarget.value
+        fun reserveLabel(text: String, x: Float, y: Float, sizeSp: Float) {
+            bodyPaint.textSize = sizeSp * density
+            val w = bodyPaint.measureText(text)
+            labelPlacer.reserve(x - 2f, y - sizeSp * density, x + w + 2f, y + 4f * density)
+        }
+        if (settings.showPlanets) {
+            for (pl in m.planets) {
+                if (!settings.showBelowHorizon && pl.enu[2] < 0f) continue
+                if (project(pl.enu, p)) reserveLabel(pl.name, p[0] + pl.sizeDp * density + 3f * density, p[1] + 4f * density, 13f)
+            }
+        }
+        if (settings.showSun) m.sun?.let {
+            if ((settings.showBelowHorizon || it.enu[2] >= 0f) && project(it.enu, p)) reserveLabel("Sun", p[0] + 13f * density, p[1], 14f)
+        }
+        if (settings.showMoon) m.moon?.let {
+            if ((settings.showBelowHorizon || it.enu[2] >= 0f) && project(it.enu, p)) reserveLabel("Moon", p[0] + 12f * density, p[1], 14f)
+        }
+        target?.let { tg ->
+            resolveTargetEnu(m, tg)?.let {
+                if (project(it, p)) {
+                    reserveLabel(tg.label, p[0] + 30f * density, p[1] + 5f * density, 15f)
+                    // Keep other names out of the target reticle too.
+                    val rr = 29f * density
+                    labelPlacer.reserve(p[0] - rr, p[1] - rr, p[0] + rr, p[1] + rr)
+                }
+            }
+        }
+
         // --- Constellation stick figures ---
         if (settings.showConstellations) {
             val lineColor = if (night) Color(0x55AA2222) else Color(0x554060A0)
@@ -392,22 +430,13 @@ fun SkyCanvas(viewModel: SkyViewModel, settings: Settings, modifier: Modifier = 
                     }
                 }
             }
-            if (settings.showConstellationNames) {
-                conPaint.textSize = 12f * density
-                conPaint.color = (if (night) Color(0xAA993333) else Color(0xAA7090C0)).toArgb()
-                for (con in m.constellations) {
-                    if (!settings.showBelowHorizon && con.labelEnu[2] < 0f) continue
-                    if (project(con.labelEnu, p)) {
-                        drawContext.canvas.nativeCanvas.drawText(con.name, p[0], p[1], conPaint)
-                    }
-                }
-            }
         }
 
         // --- Stars ---
         val magLimit = settings.magnitudeLimit
         val labelLimit = settings.labelMagnitudeLimit
         starPaint.textSize = 12f * density
+        var starLabelCount = 0
         for (i in 0 until m.count) {
             val mag = m.starMag[i]
             if (mag > magLimit) continue
@@ -426,12 +455,49 @@ fun SkyCanvas(viewModel: SkyViewModel, settings: Settings, modifier: Modifier = 
             val color = if (night) Color(1f, 0.25f, 0.2f) else SkyRender.starColor(m.starCi[i])
             drawCircle(color, radius, androidx.compose.ui.geometry.Offset(sx, sy))
 
-            if (settings.showStarLabels && mag <= labelLimit) {
-                m.labels[i]?.let { label ->
-                    starPaint.color = (if (night) Color(0xCCBB4444) else Color(0xCCD8E0F0)).toArgb()
-                    drawContext.canvas.nativeCanvas.drawText(
-                        label, sx + radius + 3f * density, sy + 4f * density, starPaint,
-                    )
+            if (settings.showStarLabels && mag <= labelLimit && starLabelCount < starLabelIdx.size) {
+                // A star that is the search target gets the target's label instead.
+                val isTarget = target is SearchTarget.StarT && target.index == i
+                if (!isTarget && m.labels[i] != null) {
+                    starLabelIdx[starLabelCount] = i
+                    starLabelX[starLabelCount] = sx + radius + 3f * density
+                    starLabelY[starLabelCount] = sy + 4f * density
+                    starLabelCount++
+                }
+            }
+        }
+
+        // Star names, brightest first, only where they don't collide.
+        if (starLabelCount > 0) {
+            val order = (0 until starLabelCount).sortedBy { m.starMag[starLabelIdx[it]] }
+            starPaint.color = (if (night) Color(0xCCBB4444) else Color(0xCCD8E0F0)).toArgb()
+            for (k in order) {
+                val label = m.labels[starLabelIdx[k]] ?: continue
+                val x = starLabelX[k]
+                val y = starLabelY[k]
+                val w = starPaint.measureText(label)
+                if (labelPlacer.tryPlace(x - 1f, y - 11f * density, x + w + 1f, y + 3f * density)) {
+                    drawContext.canvas.nativeCanvas.drawText(label, x, y, starPaint)
+                }
+            }
+        }
+
+        // Constellation names last among the labels: they're the least specific, so they
+        // yield to star names (nudged below the figure's label point if that helps).
+        if (settings.showConstellations && settings.showConstellationNames) {
+            conPaint.textSize = 12f * density
+            conPaint.color = (if (night) Color(0xAA993333) else Color(0xAA7090C0)).toArgb()
+            for (con in m.constellations) {
+                if (!settings.showBelowHorizon && con.labelEnu[2] < 0f) continue
+                if (target is SearchTarget.ConstellationT && target.label == con.name) continue
+                if (!project(con.labelEnu, p)) continue
+                val w = conPaint.measureText(con.name)
+                for (dy in floatArrayOf(0f, 16f, -16f)) {
+                    val y = p[1] + dy * density
+                    if (labelPlacer.tryPlace(p[0] - 1f, y - 11f * density, p[0] + w + 1f, y + 3f * density)) {
+                        drawContext.canvas.nativeCanvas.drawText(con.name, p[0], y, conPaint)
+                        break
+                    }
                 }
             }
         }
@@ -461,7 +527,11 @@ fun SkyCanvas(viewModel: SkyViewModel, settings: Settings, modifier: Modifier = 
                     else -> drawCircle(color, 2f * density, o)
                 }
                 bodyPaint.color = color.toArgb()
-                drawContext.canvas.nativeCanvas.drawText(d.name, dx + r + 4f * density, dy + 4f * density, bodyPaint)
+                val lx = dx + r + 4f * density
+                val ly = dy + 4f * density
+                if (labelPlacer.tryPlace(lx - 1f, ly - 10f * density, lx + bodyPaint.measureText(d.name) + 1f, ly + 3f * density)) {
+                    drawContext.canvas.nativeCanvas.drawText(d.name, lx, ly, bodyPaint)
+                }
             }
         }
 
@@ -475,9 +545,11 @@ fun SkyCanvas(viewModel: SkyViewModel, settings: Settings, modifier: Modifier = 
                     val r = pl.sizeDp * density
                     drawCircle(color, r, androidx.compose.ui.geometry.Offset(p[0], p[1]))
                     bodyPaint.color = (if (night) Color(0xCCBB4444) else Color(0xFFE8E8F0)).toArgb()
-                    drawContext.canvas.nativeCanvas.drawText(
-                        pl.name, p[0] + r + 3f * density, p[1] + 4f * density, bodyPaint,
-                    )
+                    if (!(target is SearchTarget.PlanetT && target.label == pl.name)) {
+                        drawContext.canvas.nativeCanvas.drawText(
+                            pl.name, p[0] + r + 3f * density, p[1] + 4f * density, bodyPaint,
+                        )
+                    }
                 }
             }
         }
@@ -633,7 +705,9 @@ fun SkyCanvas(viewModel: SkyViewModel, settings: Settings, modifier: Modifier = 
                 )
                 bodyPaint.textSize = 14f * density
                 bodyPaint.color = (if (night) Color(0xFFBB5500) else Color(0xFFFFE070)).toArgb()
-                drawContext.canvas.nativeCanvas.drawText("Sun", p[0] + r + 4f * density, p[1], bodyPaint)
+                if (!(target is SearchTarget.SpecialT && target.label == "Sun")) {
+                    drawContext.canvas.nativeCanvas.drawText("Sun", p[0] + r + 4f * density, p[1], bodyPaint)
+                }
             }
         }
 
@@ -644,7 +718,9 @@ fun SkyCanvas(viewModel: SkyViewModel, settings: Settings, modifier: Modifier = 
                 drawMoon(p[0], p[1], r, moon, sunScreen = m.sun?.let { if (project(it.enu, q)) q else null }, night)
                 bodyPaint.textSize = 14f * density
                 bodyPaint.color = (if (night) Color(0xFFAA4444) else Color(0xFFE8E8F0)).toArgb()
-                drawContext.canvas.nativeCanvas.drawText("Moon", p[0] + r + 4f * density, p[1], bodyPaint)
+                if (!(target is SearchTarget.SpecialT && target.label == "Moon")) {
+                    drawContext.canvas.nativeCanvas.drawText("Moon", p[0] + r + 4f * density, p[1], bodyPaint)
+                }
             }
         }
 
