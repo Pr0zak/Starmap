@@ -183,7 +183,12 @@ fun RadarView(
     // The big detail card can be dismissed while keeping the aircraft selected
     // (highlighted, with its on-scope data block). Re-shown when the selection changes.
     var detailsHidden by remember { mutableStateOf(false) }
-    LaunchedEffect(selectedHex) { detailsHidden = false }
+    // The aircraft list collapses when a plane is picked, making room for its card.
+    var listExpanded by remember { mutableStateOf(false) }
+    LaunchedEffect(selectedHex) {
+        detailsHidden = false
+        if (selectedHex != null) listExpanded = false
+    }
 
     val hits = remember { mutableListOf<Pair<Offset, AircraftRender>>() }
     fun nearestTo(p: Offset): AircraftRender? {
@@ -327,9 +332,6 @@ fun RadarView(
             drawContext.canvas.nativeCanvas.drawText(
                 "HDG ${az.roundToInt() % 360}°", cx, cy - r - 22f * density, ringPaint,
             )
-            drawContext.canvas.nativeCanvas.drawText(
-                "${rangeNm.roundToInt()} nm  ·  pinch to zoom", cx, cy + r + 20f * density, ringPaint,
-            )
             ringPaint.textAlign = android.graphics.Paint.Align.LEFT
 
             drawCircle(Color(0xFFD8E0F0), 3f * density, Offset(cx, cy))
@@ -346,8 +348,6 @@ fun RadarView(
                         else -> Color(0xFFFFE082)
                     }
                     drawCircle(col.copy(alpha = 0.85f), 2.5f * density, o)
-                    labelPaint.color = col.copy(alpha = 0.8f).toArgb()
-                    drawContext.canvas.nativeCanvas.drawText(lm.name, o.x + 4f * density, o.y + 3f * density, labelPaint)
                 }
             }
 
@@ -488,6 +488,43 @@ fun RadarView(
                     }
                 }
             }
+
+            // Landmark names go last, into whatever space the aircraft labels left:
+            // towns before airports before masts, nearest first. The rest stay as dots.
+            var hiddenLabels = 0
+            if (showPois) {
+                fun rank(type: String) = when (type) { "city" -> 0; "airport" -> 1; else -> 2 }
+                labelPaint.textSize = 9.5f * density
+                for (lm in landmarks.sortedWith(compareBy({ rank(it.type) }, { it.distanceKm }))) {
+                    val dist = lm.distanceKm
+                    if (dist > maxRangeKm) continue
+                    val o = proj(lm.enu[0] * dist, lm.enu[1] * dist)
+                    val tw = labelPaint.measureText(lm.name)
+                    val lx = o.x + 5f * density
+                    val ly = o.y + 3.5f * density
+                    val rect = android.graphics.RectF(lx - 2f, ly - 9f * density, lx + tw + 2f, ly + 2.5f * density)
+                    if (taken.none { android.graphics.RectF.intersects(it, rect) }) {
+                        taken.add(rect)
+                        val col = when (lm.type) {
+                            "airport" -> Color(0xFF80C8FF)
+                            "tower" -> Color(0xFFFF9E80)
+                            else -> Color(0xFFFFE082)
+                        }
+                        labelPaint.color = col.copy(alpha = 0.85f).toArgb()
+                        drawContext.canvas.nativeCanvas.drawText(lm.name, lx, ly, labelPaint)
+                    } else {
+                        hiddenLabels++
+                    }
+                }
+                labelPaint.textSize = 10f * density
+            }
+            ringPaint.textAlign = android.graphics.Paint.Align.CENTER
+            drawContext.canvas.nativeCanvas.drawText(
+                "${rangeNm.roundToInt()} nm  ·  pinch to zoom" +
+                    (if (hiddenLabels > 0) "  ·  $hiddenLabels names hidden" else ""),
+                cx, cy + r + 20f * density, ringPaint,
+            )
+            ringPaint.textAlign = android.graphics.Paint.Align.LEFT
         }
 
         // Tap anywhere outside the basemap/weather menu to dismiss it.
@@ -608,8 +645,12 @@ fun RadarView(
                     }
                 }
             }
+        }
+
+        Column(modifier = Modifier.align(Alignment.BottomCenter).fillMaxWidth()) {
+            // The selected aircraft's card sits just above the drawer, so the north
+            // half of the scope and the Layers panel stay clear.
             selAc?.takeIf { !detailsHidden }?.let { ac ->
-                Spacer(Modifier.height(8.dp))
                 val route by viewModel.selectedRoute
                 val photo by viewModel.selectedPhoto
                 val followHex by viewModel.followAircraftHex
@@ -618,15 +659,9 @@ fun RadarView(
                     tracking = followHex == ac.icaoHex,
                     onTrack = { viewModel.followAircraft(if (followHex == ac.icaoHex) null else ac.icaoHex) },
                     onClose = { detailsHidden = true },
+                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
                 )
             }
-        }
-
-        AltitudeLegend(
-            modifier = Modifier.align(Alignment.CenterEnd).fillMaxHeight(0.55f).padding(end = 2.dp),
-        )
-
-        Column(modifier = Modifier.align(Alignment.BottomCenter).fillMaxWidth()) {
             if (weather != 0) {
                 WeatherLegend(modifier = Modifier.padding(start = 12.dp, bottom = 4.dp))
             }
@@ -699,6 +734,8 @@ fun RadarView(
             }
             RadarDrawer(
                 viewModel, aircraft, selectedHex,
+                expanded = listExpanded,
+                onExpandedChange = { listExpanded = it },
                 // Flat top when the weather timeline already caps the sheet stack above it.
                 roundedTop = !(weather != 0 && weatherFrames.isNotEmpty()),
                 modifier = Modifier.fillMaxWidth(),
@@ -760,53 +797,21 @@ private fun BasemapChip(label: String, selected: Boolean, onClick: () -> Unit) {
     }
 }
 
-/**
- * Static altitude colour legend on the right edge: a gradient bar keyed to the blip
- * colours (ground green → high-altitude pink) with a few "ft" labels. Purely a key —
- * altitude is no longer used to filter which aircraft are shown.
- */
+/** Altitude colour key (ground green → high-altitude pink), shown in the drawer header. */
 @Composable
-private fun AltitudeLegend(modifier: Modifier = Modifier) {
-    val density = LocalDensity.current.density
+private fun AltitudeKey(modifier: Modifier = Modifier) {
     val maxFt = 60000.0
-    val labelPaint = remember {
-        android.graphics.Paint().apply {
-            isAntiAlias = true
-            textSize = 9f * density
-            textAlign = android.graphics.Paint.Align.RIGHT
-            color = android.graphics.Color.argb(220, 182, 194, 210)
-        }
-    }
-    Box(modifier = modifier.width(46.dp)) {
-        Canvas(Modifier.fillMaxSize()) {
-            val h = size.height
-            val barW = 9f * density
-            val barLeft = size.width - barW - 3f * density
-            val radius = CornerRadius(barW / 2f, barW / 2f)
-            val brush = Brush.verticalGradient(
-                colors = listOf(
-                    altColor(maxFt),
-                    altColor(maxFt * 0.75),
-                    altColor(maxFt * 0.5),
-                    altColor(maxFt * 0.25),
-                    altColor(0.0),
+    Row(modifier = modifier, verticalAlignment = Alignment.CenterVertically) {
+        Text("GND", color = Hud.TextDim.copy(alpha = 0.7f), fontSize = 9.sp, letterSpacing = 1.sp)
+        Box(
+            Modifier.weight(1f).padding(horizontal = 8.dp).height(5.dp).clip(RoundedCornerShape(3.dp))
+                .background(
+                    Brush.horizontalGradient(
+                        listOf(0.0, 0.25, 0.5, 0.75, 1.0).map { altColor(maxFt * it) },
+                    ),
                 ),
-                startY = 0f, endY = h,
-            )
-            drawRoundRect(brush, Offset(barLeft, 0f), Size(barW, h), radius)
-            // Altitude tick labels alongside the bar (top = high, bottom = ground).
-            for (ft in listOf(0, 20000, 40000, 60000)) {
-                val y = ((1f - (ft / maxFt).toFloat()) * h).coerceIn(7f * density, h - 1f * density)
-                drawLine(
-                    Color(0x55B6C2D2), Offset(barLeft - 2f * density, y),
-                    Offset(barLeft + barW + 2f * density, y), strokeWidth = 1f * density,
-                )
-                drawContext.canvas.nativeCanvas.drawText(
-                    if (ft == 0) "GND" else "${ft / 1000}k",
-                    barLeft - 5f * density, y + 3f * density, labelPaint,
-                )
-            }
-        }
+        )
+        Text("60k ft", color = Hud.TextDim.copy(alpha = 0.7f), fontSize = 9.sp, letterSpacing = 1.sp)
     }
 }
 
@@ -816,10 +821,11 @@ private fun RadarDrawer(
     viewModel: SkyViewModel,
     aircraft: List<AircraftRender>,
     selectedHex: String?,
+    expanded: Boolean,
+    onExpandedChange: (Boolean) -> Unit,
     roundedTop: Boolean = true,
     modifier: Modifier = Modifier,
 ) {
-    var expanded by remember { mutableStateOf(false) }
     val sorted = aircraft.sortedBy { it.rangeKm }
     Box(modifier = modifier.fillMaxWidth().bottomSheet(if (roundedTop) 22.dp else 0.dp)) {
         Column(
@@ -827,7 +833,7 @@ private fun RadarDrawer(
                 .navigationBarsPadding().padding(horizontal = 14.dp),
         ) {
             Box(
-                modifier = Modifier.fillMaxWidth().clickable { expanded = !expanded }.padding(vertical = 9.dp),
+                modifier = Modifier.fillMaxWidth().clickable { onExpandedChange(!expanded) }.padding(vertical = 9.dp),
                 contentAlignment = Alignment.Center,
             ) {
                 Box(
@@ -836,11 +842,11 @@ private fun RadarDrawer(
                 )
             }
             Row(
-                modifier = Modifier.fillMaxWidth().padding(bottom = if (expanded) 8.dp else 14.dp),
+                modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Row(
-                    modifier = Modifier.clickable { expanded = !expanded },
+                    modifier = Modifier.clickable { onExpandedChange(!expanded) },
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Text("${sorted.size}", color = Hud.Gold, fontSize = 16.sp, fontWeight = FontWeight.Bold)
@@ -855,9 +861,10 @@ private fun RadarDrawer(
                 Spacer(Modifier.weight(1f))
                 Text(
                     if (expanded) "Hide ▾" else "List ▸", color = Hud.Gold, fontSize = 12.sp,
-                    modifier = Modifier.clickable { expanded = !expanded },
+                    modifier = Modifier.clickable { onExpandedChange(!expanded) },
                 )
             }
+            AltitudeKey(Modifier.fillMaxWidth().padding(bottom = if (expanded) 10.dp else 12.dp))
             if (expanded) {
                 Row(modifier = Modifier.fillMaxWidth().padding(start = 8.dp, end = 4.dp, bottom = 4.dp)) {
                     val hc = Hud.TextDim.copy(alpha = 0.55f)

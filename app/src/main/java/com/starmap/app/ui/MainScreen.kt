@@ -1152,19 +1152,39 @@ internal fun AircraftInfoCard(
     tracking: Boolean,
     onTrack: () -> Unit,
     onClose: () -> Unit,
+    modifier: Modifier = Modifier,
 ) {
     val shape = RoundedCornerShape(18.dp)
     val cardMod = if (ac.isEmergency) {
-        Modifier.fillMaxWidth()
+        modifier.fillMaxWidth()
             .glass(shape, top = Color(0xD14A1C1C), bottom = Color(0xD12A1010), border = Color(0x55FF8A8A))
     } else {
-        Modifier.fillMaxWidth().glass(shape)
+        modifier.fillMaxWidth().glass(shape)
     }
     val accent = if (ac.isHelicopter) Color(0xFF7FD8C6) else Color(0xFFFFC061)
     Box(modifier = cardMod) {
         Column(modifier = Modifier.padding(start = 14.dp, top = 12.dp, bottom = 14.dp, end = 6.dp)) {
+            // A found photo replaces the icon badge as a thumbnail; no photo, no extra row.
+            var photoOk by remember(photo?.thumbnailUrl) { mutableStateOf(false) }
             Row(verticalAlignment = Alignment.CenterVertically) {
-                IconBadge(Icons.Filled.Flight, accent, size = 40.dp)
+                Box(contentAlignment = Alignment.Center) {
+                    IconBadge(Icons.Filled.Flight, accent, size = 40.dp)
+                    if (photo != null) {
+                        AsyncImage(
+                            model = ImageRequest.Builder(LocalContext.current)
+                                .data(photo.thumbnailUrl)
+                                .setHeader("Referer", "https://www.planespotters.net/")
+                                .crossfade(true)
+                                .build(),
+                            contentDescription = "Photo of ${ac.registration}",
+                            contentScale = ContentScale.Crop,
+                            onState = { st -> photoOk = st is AsyncImagePainter.State.Success },
+                            modifier = Modifier
+                                .size(width = 64.dp, height = 44.dp)
+                                .clip(RoundedCornerShape(9.dp)),
+                        )
+                    }
+                }
                 Column(modifier = Modifier.weight(1f).padding(start = 12.dp)) {
                     val title = ac.callsign.ifBlank { ac.registration.ifBlank { "Aircraft" } }
                     Text(title, color = Color(0xFFFFE9A8), fontSize = 18.sp, fontWeight = FontWeight.SemiBold)
@@ -1206,34 +1226,6 @@ internal fun AircraftInfoCard(
                 )
             }
 
-            // Only a found photo gets space; "no photo" isn't worth a row.
-            if (photo != null) {
-                var imgFailed by remember(photo.thumbnailUrl) { mutableStateOf(false) }
-                if (!imgFailed) {
-                    AsyncImage(
-                        model = ImageRequest.Builder(LocalContext.current)
-                            .data(photo.thumbnailUrl)
-                            .setHeader("Referer", "https://www.planespotters.net/")
-                            .crossfade(true)
-                            .build(),
-                        contentDescription = "Photo of ${ac.registration}",
-                        contentScale = ContentScale.Crop,
-                        onState = { st -> if (st is AsyncImagePainter.State.Error) imgFailed = true },
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(140.dp)
-                            .padding(top = 10.dp, end = 8.dp)
-                            .clip(RoundedCornerShape(10.dp)),
-                    )
-                    if (photo.photographer.isNotBlank()) {
-                        Text(
-                            "Photo ${photo.photographer} / planespotters.net",
-                            color = Color(0x66FFFFFF), fontSize = 10.sp,
-                        )
-                    }
-                }
-            }
-
             val ft = (ac.altitudeMeters / 0.3048).roundToInt()
             val vr = ac.verticalRateFpm
             val climbing = vr > 100
@@ -1264,6 +1256,13 @@ internal fun AircraftInfoCard(
                 if (it.origin.code != "?" || it.destination.code != "?") {
                     AirportRoute(it.origin, it.destination)
                 }
+            }
+            if (photo != null && photoOk && photo.photographer.isNotBlank()) {
+                Text(
+                    "Photo ${photo.photographer} / planespotters.net",
+                    color = Color(0x66FFFFFF), fontSize = 10.sp,
+                    modifier = Modifier.padding(top = 6.dp),
+                )
             }
         }
     }
