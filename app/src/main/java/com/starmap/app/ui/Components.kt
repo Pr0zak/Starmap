@@ -295,11 +295,12 @@ fun GlassSearchField(
     placeholder: String,
     modifier: Modifier = Modifier,
     fieldModifier: Modifier = Modifier,
+    sidePadding: androidx.compose.ui.unit.Dp = 16.dp,
 ) {
     Row(
         modifier = modifier
             .fillMaxWidth()
-            .padding(horizontal = 16.dp)
+            .padding(horizontal = sidePadding)
             .glass(RoundedCornerShape(14.dp))
             .padding(start = 12.dp, end = 4.dp)
             .height(48.dp),

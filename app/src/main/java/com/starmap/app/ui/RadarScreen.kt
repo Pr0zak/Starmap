@@ -1004,7 +1004,8 @@ fun RadarView(
                 }
             }
             RadarDrawer(
-                viewModel, aircraft, selectedHex,
+                viewModel, settings, sortedAircraft, approaches, selectedHex,
+                totalCount = aircraft.size,
                 expanded = listExpanded,
                 onExpandedChange = { listExpanded = it },
                 // Flat top when the weather timeline already caps the sheet stack above it.
@@ -1103,124 +1104,6 @@ private fun BasemapChip(label: String, selected: Boolean, onClick: () -> Unit) {
     }
 }
 
-/** Altitude colour key (ground green → high-altitude pink), shown in the drawer header. */
-@Composable
-private fun AltitudeKey(modifier: Modifier = Modifier) {
-    val maxFt = 60000.0
-    Row(modifier = modifier, verticalAlignment = Alignment.CenterVertically) {
-        Text("GND", color = Hud.TextDim.copy(alpha = 0.7f), fontSize = 9.sp, letterSpacing = 1.sp)
-        Box(
-            Modifier.weight(1f).padding(horizontal = 8.dp).height(5.dp).clip(RoundedCornerShape(3.dp))
-                .background(
-                    Brush.horizontalGradient(
-                        listOf(0.0, 0.25, 0.5, 0.75, 1.0).map { altColor(maxFt * it) },
-                    ),
-                ),
-        )
-        Text("60k ft", color = Hud.TextDim.copy(alpha = 0.7f), fontSize = 9.sp, letterSpacing = 1.sp)
-    }
-}
-
-/** Bottom drawer: a handle to expand/collapse, then the aircraft list by distance. */
-@Composable
-private fun RadarDrawer(
-    viewModel: SkyViewModel,
-    aircraft: List<AircraftRender>,
-    selectedHex: String?,
-    expanded: Boolean,
-    onExpandedChange: (Boolean) -> Unit,
-    roundedTop: Boolean = true,
-    modifier: Modifier = Modifier,
-) {
-    val sorted = aircraft.sortedBy { it.rangeKm }
-    Box(modifier = modifier.fillMaxWidth().bottomSheet(if (roundedTop) 22.dp else 0.dp)) {
-        Column(
-            modifier = Modifier.animateContentSize().fillMaxWidth()
-                .navigationBarsPadding().padding(horizontal = 14.dp),
-        ) {
-            Box(
-                modifier = Modifier.fillMaxWidth().clickable { onExpandedChange(!expanded) }.padding(vertical = 9.dp),
-                contentAlignment = Alignment.Center,
-            ) {
-                Box(
-                    modifier = Modifier.width(34.dp).height(4.dp)
-                        .background(Color(0x55FFFFFF), RoundedCornerShape(2.dp)),
-                )
-            }
-            Row(
-                modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Row(
-                    modifier = Modifier.clickable { onExpandedChange(!expanded) },
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Text("${sorted.size}", color = Hud.Gold, fontSize = 16.sp, fontWeight = FontWeight.Bold)
-                    Text(" aircraft", color = Hud.Text, fontSize = 14.sp, fontWeight = FontWeight.Medium)
-                    sorted.firstOrNull()?.let {
-                        Text(
-                            "  ·  nearest ${(it.rangeKm * 0.539957).roundToInt()} nm",
-                            color = Hud.TextDim, fontSize = 12.sp,
-                        )
-                    }
-                }
-                Spacer(Modifier.weight(1f))
-                Text(
-                    if (expanded) "Hide ▾" else "List ▸", color = Hud.Gold, fontSize = 12.sp,
-                    modifier = Modifier.clickable { onExpandedChange(!expanded) },
-                )
-            }
-            AltitudeKey(Modifier.fillMaxWidth().padding(bottom = if (expanded) 10.dp else 12.dp))
-            if (expanded) {
-                Row(modifier = Modifier.fillMaxWidth().padding(start = 8.dp, end = 4.dp, bottom = 4.dp)) {
-                    val hc = Hud.TextDim.copy(alpha = 0.55f)
-                    Text("CALLSIGN", color = hc, fontSize = 9.sp, letterSpacing = 1.sp, modifier = Modifier.weight(1f))
-                    Text("ALT", color = hc, fontSize = 9.sp, letterSpacing = 1.sp, textAlign = TextAlign.End, modifier = Modifier.width(64.dp))
-                    Text("SPD", color = hc, fontSize = 9.sp, letterSpacing = 1.sp, textAlign = TextAlign.End, modifier = Modifier.width(46.dp))
-                    Text("DIST", color = hc, fontSize = 9.sp, letterSpacing = 1.sp, textAlign = TextAlign.End, modifier = Modifier.width(48.dp))
-                }
-                HorizontalDivider(color = Hud.Hairline)
-                LazyColumn(modifier = Modifier.heightIn(max = 340.dp)) {
-                    items(sorted) { ac ->
-                        AircraftRowTabular(ac, ac.icaoHex == selectedHex) { viewModel.selectAircraft(ac) }
-                    }
-                }
-                Spacer(Modifier.height(10.dp))
-            }
-        }
-    }
-}
-
-/** Compact aircraft list row: altitude-colour dot + callsign + tabular ALT/SPD/DIST, gold accent bar when selected. */
-@Composable
-private fun AircraftRowTabular(ac: AircraftRender, selected: Boolean, onClick: () -> Unit) {
-    val nm = (ac.rangeKm * 0.539957).roundToInt()
-    val ft = (ac.altitudeMeters / 0.3048).roundToInt()
-    val gs = ac.groundSpeedKts.roundToInt()
-    val arrow = if (ac.verticalRateFpm > 100) " ↑" else if (ac.verticalRateFpm < -100) " ↓" else ""
-    val name = ac.callsign.ifBlank { ac.registration.ifBlank { ac.typeCode.ifBlank { "Aircraft" } } }
-    val col = aircraftColor(ac)
-    Row(
-        modifier = Modifier.fillMaxWidth()
-            .clip(RoundedCornerShape(7.dp))
-            .drawBehind { if (selected) drawRect(Hud.Gold, size = Size(3.dp.toPx(), size.height)) }
-            .background(if (selected) Color(0x22FFD54F) else Color.Transparent)
-            .clickable(onClick = onClick)
-            .padding(start = 11.dp, end = 4.dp, top = 6.dp, bottom = 6.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Box(modifier = Modifier.size(8.dp).clip(CircleShape).background(col))
-        Text(
-            name, color = if (ac.isEmergency) Color(0xFFFF6B6B) else Hud.Text,
-            fontSize = 13.sp, fontWeight = FontWeight.Medium, maxLines = 1, overflow = TextOverflow.Ellipsis,
-            modifier = Modifier.weight(1f).padding(start = 10.dp),
-        )
-        Text("${"%,d".format(ft)}$arrow", color = Hud.Text, fontSize = 12.sp, textAlign = TextAlign.End, modifier = Modifier.width(64.dp))
-        Text("$gs", color = Hud.TextDim, fontSize = 12.sp, textAlign = TextAlign.End, modifier = Modifier.width(46.dp))
-        Text("$nm", color = Hud.Text, fontSize = 12.sp, fontWeight = FontWeight.Medium, textAlign = TextAlign.End, modifier = Modifier.width(48.dp))
-    }
-}
-
 /** Continuous altitude→colour ramp (low green → high pink), like FR24/tar1090. */
 private val ALT_STOPS = arrayOf(
     0f to Color(0xFF66BB6A),
@@ -1230,7 +1113,7 @@ private val ALT_STOPS = arrayOf(
     48000f to Color(0xFFFF7AA2),
 )
 
-private fun altColor(ft: Double): Color {
+internal fun altColor(ft: Double): Color {
     val f = ft.toFloat()
     if (f <= ALT_STOPS.first().first) return ALT_STOPS.first().second
     for (i in 0 until ALT_STOPS.size - 1) {
@@ -1273,7 +1156,7 @@ private fun gcPoint(lat1: Double, lon1: Double, lat2: Double, lon2: Double, f: D
 }
 
 /** Blip/row colour: emergency red, gray on the ground, else the altitude ramp. */
-private fun aircraftColor(ac: AircraftRender): Color = when {
+internal fun aircraftColor(ac: AircraftRender): Color = when {
     ac.isEmergency -> Color(0xFFFF5252)
     ac.altitudeMeters < 30.0 -> Color(0xFF9AA4B0)
     else -> altColor(ac.altitudeMeters / 0.3048)
