@@ -8,6 +8,27 @@ import android.os.Build
 import android.provider.Settings
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.KeyboardArrowUp
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.Icon
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.style.TextOverflow
+import com.starmap.app.events.AlertPrefs
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -58,8 +79,9 @@ import kotlin.math.roundToInt
  * and writing "on" while the system silently drops every post is the worst of both
  * worlds.
  */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
-fun AlertsScreen(alerts: AlertsController, onBack: () -> Unit) {
+fun AlertsScreen(alerts: AlertsController, onShowEvent: (SkyEvent) -> Unit, onBack: () -> Unit) {
     val context = LocalContext.current
     val prefs by alerts.prefs.collectAsState()
     val state by alerts.state.collectAsState()
@@ -92,8 +114,7 @@ fun AlertsScreen(alerts: AlertsController, onBack: () -> Unit) {
     DetailScaffold(title = "Sky alerts", onBack = onBack) {
         Column(modifier = Modifier.verticalScroll(rememberScrollState()).padding(bottom = 32.dp)) {
 
-            SectionHeader("Sky alerts")
-            SettingsGroup {
+                        SettingsGroup {
                 SettingSwitch(
                     "Tell me when something's up",
                     when {
@@ -148,22 +169,55 @@ fun AlertsScreen(alerts: AlertsController, onBack: () -> Unit) {
                 }
             }
 
-            SectionHeader("What to tell me about")
-            SettingsGroup {
-                for (type in AlertType.entries) {
-                    SettingSwitch(
-                        type.label,
-                        type.blurb,
-                        checked = prefs[type],
-                        enabled = prefs.enabled,
-                    ) { alerts.setType(type, it) }
+            // What's coming up leads: it's the point of the screen. Tapping one shows it in the sky.
+            SectionHeader("Coming up · next 30 days")
+            when (val p = preview) {
+                is AlertsController.PreviewState.Loading -> SettingsGroup { PreviewMessage("Working out what's coming…") }
+                is AlertsController.PreviewState.NoLocation -> SettingsGroup {
+                    PreviewMessage("Starmap needs to know where you are before it can work this out.")
+                }
+                is AlertsController.PreviewState.Ready -> when {
+                    !prefs.anyTypeOn -> SettingsGroup {
+                        PreviewMessage("Nothing switched on yet. Pick a few kinds below and they'll show up here.")
+                    }
+                    p.events.isEmpty() -> SettingsGroup {
+                        PreviewMessage(
+                            "Nothing in the next 30 days matches your settings. Loosen the limits below — or enjoy the quiet.",
+                        )
+                    }
+                    else -> Column(
+                        modifier = Modifier.padding(horizontal = 12.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        for (e in p.events.take(12)) EventCard(e) { onShowEvent(e) }
+                    }
+                }
+            }
 
-                    // Each type's own threshold sits under it, so a knob is never shown
-                    // for something switched off.
-                    if (prefs[type]) {
+            SectionHeader("Tell me about")
+            FlowRow(
+                modifier = Modifier.padding(horizontal = 14.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                for (type in AlertType.entries) {
+                    TypeChip(type.label, selected = prefs[type], enabled = prefs.enabled) {
+                        alerts.setType(type, !prefs[type])
+                    }
+                }
+            }
+            // Per-kind thresholds live behind one fold, shown only for kinds that are on.
+            val limitTypes = listOf(AlertType.MeteorPeak, AlertType.Conjunction, AlertType.DarkSkyNight, AlertType.IssPass)
+                .filter { prefs[it] }
+            if (limitTypes.isNotEmpty()) {
+                Spacer(Modifier.height(10.dp))
+                SettingsGroup {
+                    var showLimits by rememberSaveable { mutableStateOf(false) }
+                    FoldRow("Limits", limitsSummary(prefs, limitTypes), showLimits) { showLimits = !showLimits }
+                    if (showLimits) for (type in limitTypes) {
                         when (type) {
                             AlertType.MeteorPeak -> SettingSlider(
-                                label = "Only showers busier than",
+                                label = "Meteor showers busier than",
                                 value = prefs.meteorMinZhr.toFloat(),
                                 valueText = "${prefs.meteorMinZhr}/hour",
                                 range = 0f..150f,
@@ -171,7 +225,7 @@ fun AlertsScreen(alerts: AlertsController, onBack: () -> Unit) {
                                 onChange = { alerts.setInt(AlertInt.MeteorMinZhr, it.roundToInt()) },
                             )
                             AlertType.Conjunction -> SettingSlider(
-                                label = "Only pairings closer than",
+                                label = "Pairings closer than",
                                 value = prefs.conjunctionMaxSepDeg,
                                 valueText = "≤ %.1f°".format(prefs.conjunctionMaxSepDeg),
                                 range = 0.5f..10f,
@@ -179,7 +233,7 @@ fun AlertsScreen(alerts: AlertsController, onBack: () -> Unit) {
                                 onChange = { alerts.setFloat(AlertFloat.ConjunctionMaxSep, it) },
                             )
                             AlertType.DarkSkyNight -> SettingSlider(
-                                label = "Only when the Moon is under",
+                                label = "Moonless: Moon under",
                                 value = prefs.darkSkyMaxMoon,
                                 valueText = "${(prefs.darkSkyMaxMoon * 100).roundToInt()}% lit",
                                 range = 0f..0.6f,
@@ -187,7 +241,7 @@ fun AlertsScreen(alerts: AlertsController, onBack: () -> Unit) {
                                 onChange = { alerts.setFloat(AlertFloat.DarkSkyMaxMoon, it) },
                             )
                             AlertType.IssPass -> SettingSlider(
-                                label = "Only passes that climb above",
+                                label = "ISS passes that climb above",
                                 value = prefs.issMinPeakAltDeg,
                                 valueText = "${prefs.issMinPeakAltDeg.roundToInt()}° up",
                                 range = 10f..80f,
@@ -202,95 +256,64 @@ fun AlertsScreen(alerts: AlertsController, onBack: () -> Unit) {
 
             SectionHeader("Timing")
             SettingsGroup {
-                ChoiceRow(
-                    "Heads-up for big nights",
-                    "Meteor peaks and the like arrive at dusk, so there's still time to get somewhere dark.",
-                    options = listOf("On the night", "1 night before", "2 nights"),
-                    selected = prefs.leadDays.coerceIn(0, 2),
-                ) { alerts.setInt(AlertInt.LeadDays, it) }
+                var showTiming by rememberSaveable { mutableStateOf(false) }
+                FoldRow("When and how often", timingSummary(prefs), showTiming) { showTiming = !showTiming }
+                if (showTiming) {
+                    ChoiceRow(
+                        "Heads-up for big nights",
+                        "Meteor peaks and the like arrive at dusk, so there's still time to get somewhere dark.",
+                        options = listOf("On the night", "1 night before", "2 nights"),
+                        selected = prefs.leadDays.coerceIn(0, 2),
+                    ) { alerts.setInt(AlertInt.LeadDays, it) }
 
-                SettingSwitch(
-                    "Quiet hours",
-                    "Stay silent overnight. Anything that falls inside is skipped rather than saved " +
-                        "for the morning, because by then it would be wrong.",
-                    checked = prefs.quietEnabled,
-                    enabled = prefs.enabled,
-                ) { alerts.setBool(AlertBool.QuietHours, it) }
-
-                if (prefs.quietEnabled) {
-                    SettingSlider(
-                        label = "From",
-                        value = prefs.quietStartHour.toFloat(),
-                        valueText = hourLabel(prefs.quietStartHour),
-                        range = 0f..23f,
-                        steps = 22,
-                        onChange = { alerts.setInt(AlertInt.QuietStartHour, it.roundToInt()) },
-                    )
-                    SettingSlider(
-                        label = "Until",
-                        value = prefs.quietEndHour.toFloat(),
-                        valueText = hourLabel(prefs.quietEndHour),
-                        range = 0f..23f,
-                        steps = 22,
-                        onChange = { alerts.setInt(AlertInt.QuietEndHour, it.roundToInt()) },
-                    )
                     SettingSwitch(
-                        "…but let eclipses through",
-                        "An eclipse won't wait until morning.",
-                        checked = prefs.quietAllowEclipses,
+                        "Quiet hours",
+                        "Stay silent overnight. Anything that falls inside is skipped rather than saved " +
+                            "for the morning, because by then it would be wrong.",
+                        checked = prefs.quietEnabled,
                         enabled = prefs.enabled,
-                    ) { alerts.setBool(AlertBool.QuietAllowEclipses, it) }
-                    Text(
-                        "Quiet hours only affect Starmap. Android's Do Not Disturb still applies.",
-                        fontSize = 12.sp,
-                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
-                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp),
-                    )
-                }
+                    ) { alerts.setBool(AlertBool.QuietHours, it) }
 
-                ChoiceRow(
-                    "Moonlight",
-                    "A bright Moon washes out meteors and anything faint.",
-                    options = listOf("Ignore", "Mention it", "Skip the alert"),
-                    selected = prefs.moonlight.coerceIn(0, 2),
-                ) { alerts.setInt(AlertInt.Moonlight, it) }
-
-                SettingSlider(
-                    label = "At most per night",
-                    value = prefs.maxPerDay.toFloat(),
-                    valueText = "${prefs.maxPerDay}",
-                    range = 1f..5f,
-                    steps = 3,
-                    onChange = { alerts.setInt(AlertInt.MaxPerDay, it.roundToInt()) },
-                )
-            }
-
-            SectionHeader("Coming up")
-            SettingsGroup {
-                Text(
-                    if (prefs.enabled) {
-                        "The next 30 days, worked out from your settings."
-                    } else {
-                        "These are the things Starmap would tell you about."
-                    },
-                    fontSize = 12.sp,
-                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
-                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
-                )
-                when (val p = preview) {
-                    is AlertsController.PreviewState.Loading -> PreviewMessage("Working out what's coming…")
-                    is AlertsController.PreviewState.NoLocation ->
-                        PreviewMessage("Starmap needs to know where you are before it can work this out.")
-                    is AlertsController.PreviewState.Ready -> when {
-                        !prefs.anyTypeOn -> PreviewMessage(
-                            "Nothing switched on yet. Pick a few things above and they'll show up here.",
+                    if (prefs.quietEnabled) {
+                        // One time range instead of two 0–23 sliders.
+                        Row(
+                            modifier = Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, bottom = 6.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            HourPicker(prefs.quietStartHour) { alerts.setInt(AlertInt.QuietStartHour, it) }
+                            Text("  to  ", color = Hud.TextDim, fontSize = 14.sp)
+                            HourPicker(prefs.quietEndHour) { alerts.setInt(AlertInt.QuietEndHour, it) }
+                        }
+                        SettingSwitch(
+                            "…but let eclipses through",
+                            "An eclipse won't wait until morning.",
+                            checked = prefs.quietAllowEclipses,
+                            enabled = prefs.enabled,
+                            indent = true,
+                        ) { alerts.setBool(AlertBool.QuietAllowEclipses, it) }
+                        Text(
+                            "Quiet hours only affect Starmap. Android's Do Not Disturb still applies.",
+                            fontSize = 12.sp,
+                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp),
                         )
-                        p.events.isEmpty() -> PreviewMessage(
-                            "Nothing in the next 30 days matches your settings. Loosen the limits " +
-                                "above — or enjoy the quiet.",
-                        )
-                        else -> for (e in p.events.take(12)) PreviewRow(e)
                     }
+
+                    ChoiceRow(
+                        "Moonlight",
+                        "A bright Moon washes out meteors and anything faint.",
+                        options = listOf("Ignore", "Mention it", "Skip the alert"),
+                        selected = prefs.moonlight.coerceIn(0, 2),
+                    ) { alerts.setInt(AlertInt.Moonlight, it) }
+
+                    SettingSlider(
+                        label = "At most per night",
+                        value = prefs.maxPerDay.toFloat(),
+                        valueText = "${prefs.maxPerDay}",
+                        range = 1f..5f,
+                        steps = 3,
+                        onChange = { alerts.setInt(AlertInt.MaxPerDay, it.roundToInt()) },
+                    )
                 }
             }
 
@@ -343,27 +366,141 @@ private fun PreviewMessage(text: String) {
     )
 }
 
+/** One upcoming event: a date tile coloured by kind, the title, and what to expect. */
 @Composable
-private fun PreviewRow(event: SkyEvent) {
-    Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp)) {
-        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-            Text(previewTitle(event), fontSize = 15.sp, fontWeight = FontWeight.Medium,
-                modifier = Modifier.weight(1f, fill = false))
-            Spacer(Modifier.height(2.dp))
+private fun EventCard(event: SkyEvent, onClick: () -> Unit) {
+    val zone = ZoneId.systemDefault()
+    val date = Instant.ofEpochMilli(event.peakMillis).atZone(zone)
+    val accent = eventAccent(event.kind)
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .glass(RoundedCornerShape(14.dp))
+            .clickable(onClick = onClick)
+            .padding(horizontal = 12.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.Top,
+    ) {
+        Column(
+            modifier = Modifier
+                .width(46.dp)
+                .clip(RoundedCornerShape(10.dp))
+                .background(accent.copy(alpha = 0.13f))
+                .border(1.dp, accent.copy(alpha = 0.35f), RoundedCornerShape(10.dp))
+                .padding(vertical = 4.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
             Text(
-                relativeWhen(event.peakMillis),
-                fontSize = 12.sp,
-                color = MaterialTheme.colorScheme.primary,
+                DateTimeFormatter.ofPattern("EEE", Locale.getDefault()).format(date).uppercase(),
+                color = accent, fontSize = 9.5.sp, letterSpacing = 1.sp,
+            )
+            Text("${date.dayOfMonth}", color = Hud.Text, fontSize = 18.sp, fontWeight = FontWeight.SemiBold, lineHeight = 20.sp)
+            Text(
+                DateTimeFormatter.ofPattern("MMM", Locale.getDefault()).format(date).uppercase(),
+                color = Hud.TextDim.copy(alpha = 0.7f), fontSize = 9.5.sp,
             )
         }
-        Text(
-            event.body,
-            fontSize = 12.sp,
-            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.65f),
-            modifier = Modifier.padding(top = 2.dp),
+        Column(Modifier.weight(1f).padding(start = 12.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    previewTitle(event), color = Hud.Text, fontSize = 15.sp, fontWeight = FontWeight.SemiBold,
+                    modifier = Modifier.weight(1f),
+                )
+                Text(relativeWhen(event.peakMillis), color = Hud.Gold, fontSize = 11.sp)
+            }
+            Text(
+                event.body, color = Hud.TextDim.copy(alpha = 0.8f), fontSize = 12.5.sp, lineHeight = 17.sp,
+                maxLines = 3, overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.padding(top = 2.dp),
+            )
+        }
+    }
+}
+
+private fun eventAccent(kind: SkyEventKind): Color = when (kind) {
+    SkyEventKind.MeteorPeak -> Color(0xFFCE93D8)
+    SkyEventKind.LunarEclipse, SkyEventKind.SolarEclipse -> Color(0xFFFF8A80)
+    SkyEventKind.PlanetConjunction, SkyEventKind.MoonConjunction,
+    SkyEventKind.FullMoon, SkyEventKind.NewMoon, SkyEventKind.DarkNight -> Color(0xFFB0BEC5)
+    SkyEventKind.Opposition, SkyEventKind.GreatestElongation -> Color(0xFFFFC061)
+    SkyEventKind.Equinox, SkyEventKind.Solstice -> Color(0xFFFFE082)
+    SkyEventKind.IssPass -> Color(0xFF80CBC4)
+}
+
+/** A toggle chip for one kind of alert. */
+@Composable
+private fun TypeChip(label: String, selected: Boolean, enabled: Boolean, onClick: () -> Unit) {
+    val shape = RoundedCornerShape(50)
+    Text(
+        (if (selected) "✓ " else "") + label,
+        color = when {
+            !enabled -> Hud.TextDim.copy(alpha = 0.4f)
+            selected -> Hud.Ink
+            else -> Hud.TextDim
+        },
+        fontSize = 13.sp,
+        fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
+        modifier = Modifier
+            .clip(shape)
+            .then(
+                if (selected && enabled) {
+                    Modifier.background(Hud.Gold)
+                } else {
+                    Modifier.background(Color(0x14FFFFFF)).border(1.dp, Hud.Hairline, shape)
+                },
+            )
+            .clickable(enabled = enabled, onClick = onClick)
+            .padding(horizontal = 12.dp, vertical = 7.dp),
+    )
+}
+
+/** A row that folds a group of settings away behind a one-line summary. */
+@Composable
+private fun FoldRow(title: String, summary: String, open: Boolean, onToggle: () -> Unit) {
+    Row(
+        modifier = Modifier.fillMaxWidth().clickable(onClick = onToggle).padding(horizontal = 16.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(Modifier.weight(1f)) {
+            Text(title, fontSize = 16.sp)
+            Text(summary, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f))
+        }
+        Icon(
+            if (open) Icons.Filled.KeyboardArrowUp else Icons.Filled.KeyboardArrowDown,
+            contentDescription = if (open) "Hide" else "Show", tint = Hud.TextDim,
         )
     }
 }
+
+/** An hour-of-day button that opens a list of the 24 hours. */
+@Composable
+private fun HourPicker(hour: Int, onPick: (Int) -> Unit) {
+    var open by remember { mutableStateOf(false) }
+    Box {
+        OutlinedButton(onClick = { open = true }) { Text(hourLabel(hour)) }
+        DropdownMenu(expanded = open, onDismissRequest = { open = false }, modifier = Modifier.heightIn(max = 320.dp)) {
+            for (h in 0 until 24) {
+                DropdownMenuItem(text = { Text(hourLabel(h)) }, onClick = { open = false; onPick(h) })
+            }
+        }
+    }
+}
+
+private fun limitsSummary(prefs: AlertPrefs, types: List<AlertType>): String = types.mapNotNull {
+    when (it) {
+        AlertType.MeteorPeak -> "meteors > ${prefs.meteorMinZhr}/h"
+        AlertType.Conjunction -> "pairings ≤ %.1f°".format(prefs.conjunctionMaxSepDeg)
+        AlertType.DarkSkyNight -> "Moon < ${(prefs.darkSkyMaxMoon * 100).roundToInt()}%"
+        AlertType.IssPass -> "ISS > ${prefs.issMinPeakAltDeg.roundToInt()}°"
+        else -> null
+    }
+}.joinToString(" · ").replaceFirstChar { it.uppercase() }
+
+private fun timingSummary(prefs: AlertPrefs): String = listOfNotNull(
+    when (prefs.leadDays.coerceIn(0, 2)) { 0 -> "On the night"; 1 -> "1 night before"; else -> "2 nights before" },
+    if (prefs.quietEnabled) "quiet ${hourLabel(prefs.quietStartHour)}–${hourLabel(prefs.quietEndHour)}" else null,
+    when (prefs.moonlight.coerceIn(0, 2)) { 1 -> "mention the Moon"; 2 -> "skip moonlit nights"; else -> null },
+    "max ${prefs.maxPerDay} a night",
+).joinToString(" · ")
 
 @Composable
 private fun NoticeRow(text: String, action: String?, onAction: () -> Unit) {
@@ -446,7 +583,7 @@ private fun hourLabel(hour: Int): String = when {
  * list of things weeks away it is not, and "Partial lunar eclipse tonight — in 5 days"
  * reads as a contradiction, so the word is dropped for anything not happening today.
  */
-private fun previewTitle(event: SkyEvent): String {
+internal fun previewTitle(event: SkyEvent): String {
     val hoursAway = (event.peakMillis - System.currentTimeMillis()) / 3_600_000.0
     if (hoursAway < 20) return event.title
     return event.title
@@ -454,7 +591,7 @@ private fun previewTitle(event: SkyEvent): String {
         .trim()
 }
 
-private fun relativeWhen(atMillis: Long): String {
+internal fun relativeWhen(atMillis: Long): String {
     val days = (atMillis - System.currentTimeMillis()) / 86_400_000.0
     return when {
         days < 1 -> "today"

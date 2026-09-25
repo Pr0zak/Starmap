@@ -132,6 +132,10 @@ import com.starmap.app.sky.SkyModel
 import com.starmap.app.sky.SkyViewModel
 import com.starmap.app.sky.resolveTargetEnu
 import com.starmap.app.sky.RiseSet
+import com.starmap.app.sky.AlertsController
+import com.starmap.app.events.SkyEvent
+import com.starmap.app.events.android.DeepLink
+import com.starmap.app.update.UpdateChecker
 import kotlinx.coroutines.android.awaitFrame
 import kotlin.math.abs
 import kotlin.math.asin
@@ -261,6 +265,20 @@ fun MainScreen(viewModel: SkyViewModel = viewModel()) {
         viewModel.search(target).firstOrNull()?.let { viewModel.selectSearchTarget(it.target) }
     }
 
+    // Show an upcoming event in the sky: jump to when it can be seen and aim at it.
+    val showEvent: (SkyEvent) -> Unit = { e ->
+        val t = if (e.peakMillis in e.windowStartMillis..e.windowEndMillis) e.peakMillis else e.windowStartMillis
+        viewModel.jumpTime(t - viewModel.currentSkyTimeMillis())
+        val target = DeepLink.searchTarget(e)
+        if (target.isNotBlank()) {
+            viewModel.search(target).firstOrNull()?.let {
+                viewModel.selectSearchTarget(it.target)
+                viewModel.setFollow(true)
+            }
+        }
+        screen = Screen.Sky
+    }
+
     // System back returns to the sky from any detail screen (instead of exiting).
     BackHandler(enabled = screen != Screen.Sky) {
         screen = when (screen) {
@@ -283,6 +301,7 @@ fun MainScreen(viewModel: SkyViewModel = viewModel()) {
                     else -> cameraPermLauncher.launch(Manifest.permission.CAMERA)
                 }
             },
+            onShowEvent = showEvent,
             onOpen = {
                 // Opened from the sky's menu, so back returns to the sky.
                 alertsFrom = Screen.Sky
@@ -304,7 +323,7 @@ fun MainScreen(viewModel: SkyViewModel = viewModel()) {
             onOpenAlerts = { alertsFrom = Screen.Settings; screen = Screen.Alerts },
             onOpenAbout = { aboutFrom = Screen.Settings; screen = Screen.About },
         ) { screen = Screen.Sky }
-        Screen.Alerts -> AlertsScreen(viewModel.alerts) { screen = alertsFrom }
+        Screen.Alerts -> AlertsScreen(viewModel.alerts, onShowEvent = showEvent) { screen = alertsFrom }
         // The old Offline downloads screen is now the Offline data page of Settings.
         Screen.Downloads -> SettingsScreen(
             viewModel,
@@ -325,6 +344,7 @@ private fun SkyScreen(
     hasLocationPermission: Boolean,
     arActive: Boolean,
     onToggleAr: () -> Unit,
+    onShowEvent: (SkyEvent) -> Unit,
     onOpen: (Screen) -> Unit,
     onRequestPermission: () -> Unit,
 ) {
@@ -380,6 +400,12 @@ private fun SkyScreen(
         }
     }
     val loadingCatalog by viewModel.loading
+    // Work out what's coming up once we know where we are, for the "Tonight" chip.
+    LaunchedEffect(location != null) {
+        if (location != null && viewModel.alerts.preview.value !is AlertsController.PreviewState.Ready) {
+            viewModel.alerts.refreshPreview()
+        }
+    }
 
     // Which top-level mode the switcher reflects, and how to move between them.
     // Radar is its own full-screen view; Sky and AR share the star-field Box below.
@@ -441,7 +467,8 @@ private fun SkyScreen(
                     showTimePanel = !showTimePanel
                 }
                 HudIconButton(Icons.Filled.Search, "Search") { onOpen(Screen.Search) }
-                OverflowMenu(onOpen)
+                val update by viewModel.updateResult
+                OverflowMenu(onOpen, (update as? UpdateChecker.Result.Available)?.release?.versionName)
             }
             Row(
                 modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp),
@@ -458,6 +485,14 @@ private fun SkyScreen(
                 else -> null
             }
             HintChip(hint)
+            // The next thing worth looking up for, from the alerts engine. Tap to see it.
+            val searchTarget by viewModel.searchTarget
+            if (hint == null && searchTarget == null) {
+                val preview by viewModel.alerts.preview.collectAsState()
+                val next = (preview as? AlertsController.PreviewState.Ready)?.events
+                    ?.firstOrNull { it.windowEndMillis > System.currentTimeMillis() }
+                next?.let { TonightChip(it) { onShowEvent(it) } }
+            }
             SearchBanner(viewModel, model)
         }
 
@@ -598,7 +633,7 @@ private fun SkyScreen(
  */
 @Composable
 private fun HeadingPill(azimuth: Float, altitude: Float, travelMillis: Long?) {
-    val fmt = remember { java.text.SimpleDateFormat("EEE d MMM · h:mm a", java.util.Locale.getDefault()) }
+    val fmt = remember { java.text.SimpleDateFormat("d MMM h:mm a", java.util.Locale.getDefault()) }
     val az = azimuth.roundToInt() % 360
     val alt = altitude.roundToInt()
     Column(
@@ -619,6 +654,8 @@ private fun HeadingPill(azimuth: Float, altitude: Float, travelMillis: Long?) {
             color = if (travelMillis != null) Hud.Gold else Hud.TextDim,
             fontSize = 11.sp,
             lineHeight = 13.sp,
+            maxLines = 1,
+            softWrap = false,
         )
     }
 }
@@ -658,12 +695,46 @@ private fun HintChip(hint: HudHint?) {
     }
 }
 
+/** The next upcoming sky event as a small glass chip under the mode switcher. */
 @Composable
-private fun OverflowMenu(onOpen: (Screen) -> Unit) {
+private fun TonightChip(event: SkyEvent, onClick: () -> Unit) {
+    Box(Modifier.fillMaxWidth().padding(top = 8.dp), contentAlignment = Alignment.Center) {
+        Row(
+            modifier = Modifier
+                .glass(RoundedCornerShape(50))
+                .clickable(onClick = onClick)
+                .padding(start = 10.dp, end = 12.dp, top = 6.dp, bottom = 6.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Icon(Icons.Filled.AutoAwesome, contentDescription = null, tint = Hud.GoldSoft, modifier = Modifier.size(14.dp))
+            Spacer(Modifier.width(7.dp))
+            Text(previewTitle(event), color = Hud.Text, fontSize = 12.5.sp, maxLines = 1)
+            Spacer(Modifier.width(8.dp))
+            Text(relativeWhen(event.peakMillis), color = Hud.Gold, fontSize = 12.sp)
+        }
+    }
+}
+
+@Composable
+private fun OverflowMenu(onOpen: (Screen) -> Unit, updateVersion: String?) {
     var expanded by remember { mutableStateOf(false) }
     Box {
         HudIconButton(Icons.Filled.MoreVert, "Menu", active = expanded) { expanded = true }
+        // A waiting update shows as a gold dot on the menu button and a row at the top.
+        if (updateVersion != null) {
+            Box(
+                Modifier.align(Alignment.TopEnd).padding(top = 6.dp, end = 6.dp).size(8.dp)
+                    .background(Hud.Gold, CircleShape),
+            )
+        }
         DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+            if (updateVersion != null) {
+                DropdownMenuItem(
+                    text = { Text("Update ready · v$updateVersion", color = Hud.Gold) },
+                    leadingIcon = { Icon(Icons.Filled.Download, null, tint = Hud.Gold) },
+                    onClick = { expanded = false; onOpen(Screen.About) },
+                )
+            }
             DropdownMenuItem(
                 text = { Text("Settings") },
                 leadingIcon = { Icon(Icons.Filled.Settings, null) },

@@ -44,8 +44,8 @@ object DeepLink {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
 
-    /** What the sky view should go and look at when the notification is tapped. */
-    private fun searchTarget(event: SkyEvent): String = when (event.kind) {
+    /** What the sky view should go and look at when the notification (or event card) is tapped. */
+    fun searchTarget(event: SkyEvent): String = when (event.kind) {
         SkyEventKind.MeteorPeak -> event.subject
         SkyEventKind.LunarEclipse, SkyEventKind.FullMoon, SkyEventKind.NewMoon -> "Moon"
         SkyEventKind.SolarEclipse -> "Sun"
